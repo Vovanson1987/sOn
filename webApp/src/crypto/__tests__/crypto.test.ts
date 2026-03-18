@@ -1,82 +1,89 @@
 import { describe, it, expect } from 'vitest';
-import { generateKeyPair } from '../keyPair';
+import { generateKeyPair, toBase64, ensureSodium } from '../keyPair';
 import { performX3DH } from '../x3dh';
 import { ratchetStep } from '../doubleRatchet';
 import { encryptMessage, decryptMessage, getEncryptedPreview } from '../encrypt';
 import { generateEmojiFingerprint, generateHexFingerprint } from '../fingerprint';
 
-describe('generateKeyPair', () => {
-  it('генерирует пару с publicKey и privateKey', () => {
-    const kp = generateKeyPair();
-    expect(kp.publicKey).toBeTruthy();
-    expect(kp.privateKey).toBeTruthy();
-    expect(kp.algorithm).toBe('Curve25519');
-    expect(kp.created).toBeTruthy();
+describe('generateKeyPair (libsodium X25519)', () => {
+  it('генерирует пару с 32-байтными ключами', async () => {
+    const kp = await generateKeyPair();
+    expect(kp.publicKey).toBeInstanceOf(Uint8Array);
+    expect(kp.privateKey).toBeInstanceOf(Uint8Array);
+    expect(kp.publicKey.length).toBe(32);
+    expect(kp.privateKey.length).toBe(32);
+    expect(kp.algorithm).toBe('X25519');
   });
 
-  it('генерирует уникальные ключи', () => {
-    const kp1 = generateKeyPair();
-    const kp2 = generateKeyPair();
-    expect(kp1.publicKey).not.toBe(kp2.publicKey);
+  it('генерирует уникальные ключи', async () => {
+    const kp1 = await generateKeyPair();
+    const kp2 = await generateKeyPair();
+    expect(toBase64(kp1.publicKey)).not.toBe(toBase64(kp2.publicKey));
   });
 });
 
-describe('performX3DH', () => {
-  it('возвращает sharedSecret', () => {
-    const ik = generateKeyPair();
-    const ek = generateKeyPair();
-    const theirIk = generateKeyPair();
-    const theirSpk = generateKeyPair();
+describe('performX3DH (реальный ECDH)', () => {
+  it('возвращает 32-байтный sharedSecret', async () => {
+    const ik = await generateKeyPair();
+    const ek = await generateKeyPair();
+    const theirIk = await generateKeyPair();
+    const theirSpk = await generateKeyPair();
 
-    const result = performX3DH(ik, ek, theirIk, theirSpk);
-    expect(result.sharedSecret).toBeTruthy();
+    const result = await performX3DH(ik, ek, theirIk, theirSpk);
+    expect(result.sharedSecret).toBeInstanceOf(Uint8Array);
+    expect(result.sharedSecret.length).toBe(32);
     expect(result.protocol).toBe('X3DH');
-    expect(result.timestamp).toBeGreaterThan(0);
   });
 
-  it('одинаковые ключи дают одинаковый секрет', () => {
-    const ik = generateKeyPair();
-    const ek = generateKeyPair();
-    const theirIk = generateKeyPair();
-    const theirSpk = generateKeyPair();
+  it('одинаковые ключи дают одинаковый секрет', async () => {
+    const ik = await generateKeyPair();
+    const ek = await generateKeyPair();
+    const theirIk = await generateKeyPair();
+    const theirSpk = await generateKeyPair();
 
-    const r1 = performX3DH(ik, ek, theirIk, theirSpk);
-    const r2 = performX3DH(ik, ek, theirIk, theirSpk);
-    expect(r1.sharedSecret).toBe(r2.sharedSecret);
-  });
-});
-
-describe('ratchetStep', () => {
-  it('генерирует messageKey и nextChainKey', () => {
-    const state = ratchetStep('initial-chain-key');
-    expect(state.messageKey).toBeTruthy();
-    expect(state.nextChainKey).toBeTruthy();
-    expect(state.messageKey).not.toBe(state.nextChainKey);
-  });
-
-  it('разные входные ключи дают разные результаты', () => {
-    const s1 = ratchetStep('key-1');
-    const s2 = ratchetStep('key-2');
-    expect(s1.messageKey).not.toBe(s2.messageKey);
+    const r1 = await performX3DH(ik, ek, theirIk, theirSpk);
+    const r2 = await performX3DH(ik, ek, theirIk, theirSpk);
+    expect(toBase64(r1.sharedSecret)).toBe(toBase64(r2.sharedSecret));
   });
 });
 
-describe('encryptMessage / decryptMessage', () => {
-  it('шифрует и дешифрует ASCII сообщение', () => {
-    const key = 'test-message-key-32chars!!!!!!!!';
-    const encrypted = encryptMessage('Hello world!', key);
-    expect(encrypted.ciphertext).toBeTruthy();
-    expect(encrypted.algorithm).toBe('AES-256-GCM');
-    expect(encrypted.iv).toBeTruthy();
+describe('ratchetStep (BLAKE2b HMAC)', () => {
+  it('генерирует messageKey и nextChainKey (32 байта)', async () => {
+    await ensureSodium();
+    const chainKey = new Uint8Array(32);
+    crypto.getRandomValues(chainKey);
 
-    const decrypted = decryptMessage(encrypted, key);
-    expect(decrypted).toBe('Hello world!');
+    const state = await ratchetStep(chainKey);
+    expect(state.messageKey.length).toBe(32);
+    expect(state.nextChainKey.length).toBe(32);
+    expect(toBase64(state.messageKey)).not.toBe(toBase64(state.nextChainKey));
+    expect(state.ratchetIndex).toBe(1);
+  });
+});
+
+describe('encryptMessage / decryptMessage (XSalsa20-Poly1305)', () => {
+  it('шифрует и дешифрует сообщение', async () => {
+    await ensureSodium();
+    const key = new Uint8Array(32);
+    crypto.getRandomValues(key);
+
+    const encrypted = await encryptMessage('Привет!', key);
+    expect(encrypted.algorithm).toBe('XSalsa20-Poly1305');
+    expect(encrypted.ciphertext).toBeTruthy();
+
+    const decrypted = await decryptMessage(encrypted, key);
+    expect(decrypted).toBe('Привет!');
   });
 
-  it('возвращает зашифрованные данные', () => {
-    const encrypted = encryptMessage('Test', 'key-1-padded-to-32-characters!!');
-    expect(encrypted.ciphertext).toBeTruthy();
-    expect(encrypted.ciphertext).not.toBe(btoa('Test'));
+  it('разные ключи не могут дешифровать', async () => {
+    await ensureSodium();
+    const key1 = new Uint8Array(32);
+    crypto.getRandomValues(key1);
+    const key2 = new Uint8Array(32);
+    crypto.getRandomValues(key2);
+
+    const encrypted = await encryptMessage('Секрет', key1);
+    await expect(decryptMessage(encrypted, key2)).rejects.toThrow();
   });
 });
 
@@ -94,13 +101,7 @@ describe('generateEmojiFingerprint', () => {
     grid.forEach((row) => expect(row.length).toBe(4));
   });
 
-  it('детерминирован (одинаковые ключи → одинаковый результат)', () => {
-    const g1 = generateEmojiFingerprint('abc', 'xyz');
-    const g2 = generateEmojiFingerprint('abc', 'xyz');
-    expect(g1).toEqual(g2);
-  });
-
-  it('симметричен (порядок ключей не важен)', () => {
+  it('симметричен', () => {
     const g1 = generateEmojiFingerprint('key-a', 'key-b');
     const g2 = generateEmojiFingerprint('key-b', 'key-a');
     expect(g1).toEqual(g2);

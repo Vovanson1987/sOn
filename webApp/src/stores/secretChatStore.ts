@@ -3,6 +3,7 @@ import { generateKeyPair, type KeyPair } from '@/crypto/keyPair';
 import { performX3DH, type X3DHResult } from '@/crypto/x3dh';
 import { ratchetStep, type RatchetState } from '@/crypto/doubleRatchet';
 import { generateEmojiFingerprint, generateHexFingerprint } from '@/crypto/fingerprint';
+import { saveKeyPair, saveSharedSecret, deleteKeys } from '@/crypto/keyStore';
 
 export interface SecretSession {
   chatId: string;
@@ -21,18 +22,18 @@ export interface SecretSession {
 interface SecretChatStore {
   sessions: Record<string, SecretSession>;
 
-  /** Инициализировать секретную сессию */
-  initSession: (chatId: string) => SecretSession;
+  /** Инициализировать секретную сессию (async — реальная криптография) */
+  initSession: (chatId: string) => Promise<SecretSession>;
   /** Получить сессию */
   getSession: (chatId: string) => SecretSession | undefined;
   /** Выполнить шаг рэтчета */
-  advanceRatchet: (chatId: string) => void;
+  advanceRatchet: (chatId: string) => Promise<void>;
   /** Подтвердить верификацию */
   verifySession: (chatId: string) => void;
   /** Установить таймер самоуничтожения */
   setSelfDestruct: (chatId: string, seconds: number | null) => void;
   /** Пересоздать ключи */
-  regenerateKeys: (chatId: string) => void;
+  regenerateKeys: (chatId: string) => Promise<void>;
   /** Завершить секретный чат */
   endSession: (chatId: string) => void;
 }
@@ -40,14 +41,23 @@ interface SecretChatStore {
 export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   sessions: {},
 
-  initSession: (chatId) => {
-    const myKeys = generateKeyPair();
-    const myEphemeral = generateKeyPair();
-    const theirKeys = generateKeyPair();
-    const theirSpk = generateKeyPair();
+  initSession: async (chatId) => {
+    // Реальная генерация ключей Curve25519 через libsodium
+    const myKeys = await generateKeyPair();
+    const myEphemeral = await generateKeyPair();
+    // В продакшене: получить pre-key bundle собеседника с сервера
+    const theirKeys = await generateKeyPair();
+    const theirSpk = await generateKeyPair();
 
-    const x3dhResult = performX3DH(myKeys, myEphemeral, theirKeys, theirSpk);
-    const ratchet = ratchetStep(x3dhResult.sharedSecret);
+    // Реальный X3DH обмен через libsodium crypto_scalarmult
+    const x3dhResult = await performX3DH(myKeys, myEphemeral, theirKeys, theirSpk);
+
+    // Реальный Double Ratchet через BLAKE2b HMAC
+    const ratchet = await ratchetStep(x3dhResult.sharedSecret);
+
+    // Сохранить ключи в зашифрованное IndexedDB хранилище
+    await saveKeyPair(chatId, myKeys).catch(() => {});
+    await saveSharedSecret(chatId, x3dhResult.sharedSecret).catch(() => {});
 
     const session: SecretSession = {
       chatId,
@@ -69,10 +79,10 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
   getSession: (chatId) => get().sessions[chatId],
 
-  advanceRatchet: (chatId) => {
+  advanceRatchet: async (chatId) => {
     const session = get().sessions[chatId];
     if (!session) return;
-    const newRatchet = ratchetStep(session.ratchet.nextChainKey);
+    const newRatchet = await ratchetStep(session.ratchet.nextChainKey, session.ratchetIndex);
     set((s) => ({
       sessions: {
         ...s.sessions,
@@ -101,18 +111,17 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
     });
   },
 
-  regenerateKeys: (chatId) => {
-    const oldSession = get().sessions[chatId];
-    if (!oldSession) return;
-    // Пересоздаём сессию с новыми ключами
+  regenerateKeys: async (chatId) => {
     get().endSession(chatId);
-    get().initSession(chatId);
+    await get().initSession(chatId);
   },
 
   endSession: (chatId) => {
+    // Удалить ключи из IndexedDB
+    deleteKeys(chatId).catch(() => {});
     set((s) => {
       const { [chatId]: _removed, ...rest } = s.sessions;
-      void _removed; // Явное использование для удалённой сессии
+      void _removed;
       return { sessions: rest };
     });
   },

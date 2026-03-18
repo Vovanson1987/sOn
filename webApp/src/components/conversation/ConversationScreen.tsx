@@ -193,8 +193,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
         <KeyExchangeAnimation
           contactName={chatName}
           onComplete={() => {
-            initSession(chat.id);
-            setShowKeyExchange(false);
+            initSession(chat.id).then(() => setShowKeyExchange(false));
           }}
         />
       )}
@@ -221,7 +220,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
           ratchetIndex={secretSession.ratchetIndex}
           isVerified={secretSession.isVerified}
           onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
-          onRegenerateKeys={() => { regenerateKeys(chat.id); setShowEncryptionInfo(false); setShowKeyExchange(true); }}
+          onRegenerateKeys={() => { regenerateKeys(chat.id).then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); }); }}
           onEndSecretChat={() => { endSession(chat.id); setShowEncryptionInfo(false); }}
           onClose={() => setShowEncryptionInfo(false)}
         />
