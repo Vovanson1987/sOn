@@ -14,10 +14,9 @@ interface ChatStore {
   setFilter: (f: ChatFilter) => void;
   deleteChat: (id: string) => void;
   markAsRead: (chatId: string) => void;
-  filteredChats: () => Chat[];
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+export const useChatStore = create<ChatStore>((set) => ({
   chats: mockChats,
   activeChatId: null,
   searchQuery: '',
@@ -33,25 +32,4 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => ({
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     })),
-
-  filteredChats: () => {
-    const { chats, searchQuery, filter } = get();
-    let result = chats;
-
-    if (filter === 'unread') result = result.filter((c) => c.unreadCount > 0);
-    else if (filter === 'groups') result = result.filter((c) => c.type === 'group');
-    else if (filter === 'secret') result = result.filter((c) => c.type === 'secret');
-    else if (filter === 'archived') result = result.filter((c) => c.isArchived);
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          (c.name?.toLowerCase().includes(q) ?? false) ||
-          c.members.some((m) => m.displayName.toLowerCase().includes(q)),
-      );
-    }
-
-    return result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  },
 }));

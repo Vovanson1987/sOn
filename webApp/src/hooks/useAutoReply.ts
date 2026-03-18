@@ -20,7 +20,7 @@ const AUTO_REPLIES = [
  * затем через 1-2 сек отправляет случайный ответ.
  */
 export function useAutoReply(chat: Chat) {
-  const messages = useMessageStore((s) => s.getMessages(chat.id));
+  const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const addMessage = useMessageStore((s) => s.addMessage);
   const setTyping = useMessageStore((s) => s.setTyping);
   const clearTyping = useMessageStore((s) => s.clearTyping);

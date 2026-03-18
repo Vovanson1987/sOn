@@ -73,13 +73,11 @@ function formatHeaderDate(dateStr: string): string {
 /** Экран переписки в стиле iMessage Mac */
 export function ConversationScreen({ chat }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const getMessages = useMessageStore((s) => s.getMessages);
+  const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
   const addReaction = useMessageStore((s) => s.addReaction);
-  const deleteMessage = useMessageStore((s) => s.deleteMessage);
+  const deleteMessageFn = useMessageStore((s) => s.deleteMessage);
   const typingUsers = useMessageStore((s) => s.typingUsers);
-
-  const messages = getMessages(chat.id);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   const other = chat.members.find((m) => m.id !== 'user-me');
@@ -152,10 +150,10 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
 
   const handleDelete = useCallback(() => {
     if (tapbackMessage) {
-      deleteMessage(chat.id, tapbackMessage.id);
+      deleteMessageFn(chat.id, tapbackMessage.id);
       setTapbackMessage(null);
     }
-  }, [chat.id, tapbackMessage, deleteMessage]);
+  }, [chat.id, tapbackMessage, deleteMessageFn]);
 
   return (
     <div className="flex flex-col h-full bg-black">
