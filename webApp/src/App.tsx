@@ -10,6 +10,7 @@ import { useMessageStore } from '@stores/messageStore';
 import { useCallStore } from '@stores/callStore';
 import { useAuthStore } from '@stores/authStore';
 import { connectWS, disconnectWS, onWS } from '@/api/client';
+import { handleSignaling } from '@/utils/webrtc';
 
 /** Хук для определения ширины окна */
 function useWindowWidth() {
@@ -53,11 +54,13 @@ export default function App() {
       connectWS();
       fetchChats();
 
-      // Слушать входящие сообщения через WebSocket
+      // Слушать входящие события через WebSocket
       const unsub = onWS((data: unknown) => {
-        const msg = data as Record<string, string>;
+        const msg = data as Record<string, unknown>;
+
+        // Новое сообщение
         if (msg.type === 'new_message') {
-          const m = (data as Record<string, Record<string, string>>).message;
+          const m = msg.message as Record<string, string>;
           addMessage(m.chat_id, {
             id: m.id,
             chatId: m.chat_id,
@@ -70,6 +73,11 @@ export default function App() {
             isDestroyed: false,
             createdAt: m.created_at,
           });
+        }
+
+        // WebRTC signaling события
+        if (['call_answer', 'ice_candidate', 'call_end', 'call_reject'].includes(msg.type as string)) {
+          handleSignaling(msg as Record<string, unknown>);
         }
       });
 

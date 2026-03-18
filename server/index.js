@@ -235,6 +235,69 @@ function handleWsMessage(user, ws, msg) {
     case 'read':
       broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);
       break;
+
+    // ==================== WebRTC Signaling ====================
+
+    case 'call_offer':
+      // Переслать SDP offer целевому пользователю
+      sendToUser(msg.target_user_id, {
+        type: 'call_offer',
+        caller_id: user.id,
+        caller_name: user.display_name,
+        chat_id: msg.chat_id,
+        sdp: msg.sdp,
+        is_video: msg.is_video || false,
+      });
+      break;
+
+    case 'call_answer':
+      // Переслать SDP answer вызывающему
+      sendToUser(msg.target_user_id, {
+        type: 'call_answer',
+        answerer_id: user.id,
+        chat_id: msg.chat_id,
+        sdp: msg.sdp,
+      });
+      break;
+
+    case 'ice_candidate':
+      // Переслать ICE candidate другой стороне
+      sendToUser(msg.target_user_id, {
+        type: 'ice_candidate',
+        from_user_id: user.id,
+        chat_id: msg.chat_id,
+        candidate: msg.candidate,
+      });
+      break;
+
+    case 'call_end':
+      // Уведомить собеседника о завершении звонка
+      sendToUser(msg.target_user_id, {
+        type: 'call_end',
+        from_user_id: user.id,
+        chat_id: msg.chat_id,
+        reason: msg.reason || 'ended',
+      });
+      break;
+
+    case 'call_reject':
+      // Уведомить о отклонении звонка
+      sendToUser(msg.target_user_id, {
+        type: 'call_reject',
+        from_user_id: user.id,
+        chat_id: msg.chat_id,
+      });
+      break;
+  }
+}
+
+/** Отправить сообщение конкретному пользователю */
+function sendToUser(userId, data) {
+  const userConns = connections.get(userId);
+  if (!userConns) return;
+  const payload = JSON.stringify(data);
+  for (const ws of userConns) {
+    if (ws.readyState === 1) ws.send(payload);
   }
 }
 
