@@ -54,7 +54,7 @@ export async function performX3DH(
   const dhMaterial = concat(dh1, dh2, dh3);
 
   // HKDF: извлекаем 32-байтный shared secret через BLAKE2b
-  const sharedSecret = sodium.crypto_generichash(32, dhMaterial);
+  const sharedSecret = sodium.crypto_generichash(32, dhMaterial, null);
 
   return {
     sharedSecret,

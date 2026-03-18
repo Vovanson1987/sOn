@@ -1,9 +1,9 @@
 export interface User {
   id: string;
-  phone: string;
+  phone?: string;
   displayName: string;
   avatarUrl?: string;
-  statusText: string;
-  isOnline: boolean;
-  lastSeenAt: string;
+  statusText?: string;
+  isOnline?: boolean;
+  lastSeenAt?: string;
 }
