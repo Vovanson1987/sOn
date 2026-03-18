@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import { ChevronRight, Phone, Video } from 'lucide-react';
+import { ChevronRight, Video } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -158,22 +158,21 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   return (
     <div className="flex flex-col h-full bg-black">
       {/* Шапка */}
-      <FrostedGlassBar className="flex items-center px-4 py-2 relative min-h-[60px]">
+      <FrostedGlassBar className="flex items-center px-6 py-2 relative min-h-[70px]">
         <div className="w-[60px]" />
         <div className="flex-1 flex flex-col items-center">
-          <Avatar size={35} name={chatName} src={other?.avatarUrl} />
-          <button className="flex items-center gap-[1px] mt-[2px]">
+          <Avatar size={40} name={chatName} src={other?.avatarUrl} />
+          <button className="flex items-center gap-[2px] mt-[3px]">
             <span className="text-[13px] font-semibold text-white">{chatName}</span>
-            <ChevronRight size={12} color="#8E8E93" />
+            <ChevronRight size={13} color="#8E8E93" />
           </button>
           <span className="text-[10px]" style={{ color: '#8E8E93' }}>{chatSubtype}</span>
           {lastMessageDate && (
             <span className="text-[10px]" style={{ color: '#8E8E93' }}>{lastMessageDate}</span>
           )}
         </div>
-        <div className="flex items-center gap-3 w-[60px] justify-end">
-          <button aria-label="Видеозвонок"><Video size={20} color="#8E8E93" /></button>
-          <button aria-label="Аудиозвонок"><Phone size={18} color="#8E8E93" /></button>
+        <div className="w-[60px] flex justify-end pr-1">
+          <button aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
 
@@ -202,7 +201,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
                 showSenderName={isGroup}
               />
               {isOwn && isLastOwn && message.type !== 'system' && (
-                <div className="flex justify-end pr-4 mt-[2px]">
+                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '24px' }}>
                   <DeliveryStatus status={message.status} readAt={message.readAt} />
                 </div>
               )}

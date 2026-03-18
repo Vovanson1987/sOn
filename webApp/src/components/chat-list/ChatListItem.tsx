@@ -23,6 +23,7 @@ function getChatAvatar(chat: Chat) {
     name: getChatName(chat),
     src: isGroup ? undefined : other?.avatarUrl,
     isOnline: isGroup ? false : other?.isOnline,
+    groupMembers: isGroup ? chat.members.filter((m) => m.id !== 'user-me').map((m) => m.displayName) : undefined,
   };
 }
 
@@ -36,15 +37,14 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
   return (
     <button
       onClick={() => onSelect(chat.id)}
-      className="w-full flex items-center gap-[10px] px-3 py-[8px] text-left rounded-[10px] mx-[4px]"
+      className="w-full flex items-center gap-[10px] px-[14px] py-[8px] text-left rounded-[10px]"
       style={{
         background: isActive ? '#007AFF' : 'transparent',
-        width: 'calc(100% - 8px)',
       }}
       role="listitem"
       aria-label={`Чат с ${name}${chat.unreadCount > 0 ? `, ${chat.unreadCount} непрочитанных` : ''}`}
     >
-      <Avatar size={50} name={avatar.name} src={avatar.src} isOnline={avatar.isOnline} />
+      <Avatar size={50} name={avatar.name} src={avatar.src} isOnline={avatar.isOnline} groupMembers={avatar.groupMembers} />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
