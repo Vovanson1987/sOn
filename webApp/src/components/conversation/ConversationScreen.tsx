@@ -16,6 +16,7 @@ import { SelfDestructPicker } from '@components/secret-chat/SelfDestructPicker';
 import { EncryptionInfo } from '@components/secret-chat/EncryptionInfo';
 import { useMessageStore } from '@stores/messageStore';
 import { useSecretChatStore } from '@stores/secretChatStore';
+import { useAuthStore } from '@stores/authStore';
 import { useAutoReply } from '@hooks/useAutoReply';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
@@ -80,12 +81,20 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
+  const fetchMessages = useMessageStore((s) => s.fetchMessages);
   const addReaction = useMessageStore((s) => s.addReaction);
   const deleteMessageFn = useMessageStore((s) => s.deleteMessage);
   const typingUsers = useMessageStore((s) => s.typingUsers);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
-  const other = chat.members.find((m) => m.id !== 'user-me');
+  // Загрузить сообщения с сервера при открытии чата
+  useEffect(() => {
+    fetchMessages(chat.id);
+  }, [chat.id, fetchMessages]);
+
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const myUserId = authUserId || 'user-me';
+  const other = chat.members.find((m) => m.id !== myUserId);
   const chatName = chat.name ?? other?.displayName ?? 'Неизвестный';
   const isGroup = chat.type === 'group';
   const isSecret = chat.type === 'secret';
@@ -128,7 +137,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
 
   const lastOwnMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].senderId === 'user-me' && messages[i].type !== 'system') {
+      if (messages[i].senderId === myUserId && messages[i].type !== 'system') {
         return messages[i];
       }
     }
@@ -146,7 +155,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const handleReact = useCallback(
     (emoji: TapbackEmoji) => {
       if (tapbackMessage) {
-        addReaction(chat.id, tapbackMessage.id, emoji, 'user-me');
+        addReaction(chat.id, tapbackMessage.id, emoji, myUserId);
         setTapbackMessage(null);
       }
     },
@@ -270,7 +279,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
             return <DateSeparator key={`date-${i}`} date={item.date} />;
           }
           const { message, isFirstInGroup, isLastInGroup } = item;
-          const isOwn = message.senderId === 'user-me';
+          const isOwn = message.senderId === myUserId;
           const isLastOwn = lastOwnMessage?.id === message.id;
 
           return (
@@ -321,7 +330,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
       {tapbackMessage && (
         <TapbackOverlay
           message={tapbackMessage}
-          isOwn={tapbackMessage.senderId === 'user-me'}
+          isOwn={tapbackMessage.senderId === myUserId}
           onReact={handleReact}
           onReply={() => { setReplyTo(tapbackMessage); setTapbackMessage(null); }}
           onCopy={handleCopy}

@@ -1,10 +1,12 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useChatStore } from '@stores/chatStore';
 import { SearchBar } from '@components/ui/SearchBar';
 import { ChatListHeader } from './ChatListHeader';
 import { ChatListItem } from './ChatListItem';
+import { NewChatModal } from './NewChatModal';
 
 export function ChatList() {
+  const [showNewChat, setShowNewChat] = useState(false);
   const chats = useChatStore((s) => s.chats);
   const searchQuery = useChatStore((s) => s.searchQuery);
   const filter = useChatStore((s) => s.filter);
@@ -44,7 +46,7 @@ export function ChatList() {
       style={{ background: '#1C1C1E', borderRight: '0.5px solid #38383A' }}
       aria-label="Список чатов"
     >
-      <ChatListHeader />
+      <ChatListHeader onNewChat={() => setShowNewChat(true)} />
       <div className="px-2 pb-1">
         <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Поиск" />
       </div>
@@ -70,6 +72,17 @@ export function ChatList() {
           ))
         )}
       </div>
+
+      {/* Модальное окно "Новый чат" */}
+      {showNewChat && (
+        <NewChatModal
+          onClose={() => setShowNewChat(false)}
+          onChatCreated={(chatId) => {
+            setShowNewChat(false);
+            setActiveChat(chatId);
+          }}
+        />
+      )}
     </nav>
   );
 }

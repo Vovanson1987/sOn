@@ -6,9 +6,10 @@ import { SettingsScreen } from '@components/settings/SettingsScreen';
 import { AuthScreen } from '@components/auth/AuthScreen';
 import { TabBar, type TabId } from '@components/layout/TabBar';
 import { useChatStore } from '@stores/chatStore';
+import { useMessageStore } from '@stores/messageStore';
 import { useCallStore } from '@stores/callStore';
 import { useAuthStore } from '@stores/authStore';
-import { connectWS, disconnectWS } from '@/api/client';
+import { connectWS, disconnectWS, onWS } from '@/api/client';
 
 /** Хук для определения ширины окна */
 function useWindowWidth() {
@@ -43,13 +44,38 @@ export default function App() {
   // Восстановить сессию при загрузке
   useEffect(() => { restore(); }, [restore]);
 
-  // Подключить WebSocket при авторизации
+  const fetchChats = useChatStore((s) => s.fetchChats);
+  const addMessage = useMessageStore((s) => s.addMessage);
+
+  // Подключить WebSocket и загрузить чаты при авторизации
   useEffect(() => {
     if (isAuthenticated) {
       connectWS();
-      return () => disconnectWS();
+      fetchChats();
+
+      // Слушать входящие сообщения через WebSocket
+      const unsub = onWS((data: unknown) => {
+        const msg = data as Record<string, string>;
+        if (msg.type === 'new_message') {
+          const m = (data as Record<string, Record<string, string>>).message;
+          addMessage(m.chat_id, {
+            id: m.id,
+            chatId: m.chat_id,
+            senderId: m.sender_id,
+            senderName: m.sender_name || '',
+            content: m.content,
+            type: 'text',
+            status: 'delivered',
+            reactions: {},
+            isDestroyed: false,
+            createdAt: m.created_at,
+          });
+        }
+      });
+
+      return () => { disconnectWS(); unsub(); };
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchChats, addMessage]);
 
   // Горячие клавиши
   useEffect(() => {
