@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import { ChevronRight, Video } from 'lucide-react';
+import { ChevronRight, Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -10,7 +10,12 @@ import { ReplyQuote } from './ReplyQuote';
 import { TypingIndicator } from './TypingIndicator';
 import { TapbackOverlay } from '@components/reactions/TapbackOverlay';
 import type { TapbackEmoji } from '@components/reactions/TapbackOverlay';
+import { KeyExchangeAnimation } from '@components/secret-chat/KeyExchangeAnimation';
+import { VerificationModal } from '@components/secret-chat/VerificationModal';
+import { SelfDestructPicker } from '@components/secret-chat/SelfDestructPicker';
+import { EncryptionInfo } from '@components/secret-chat/EncryptionInfo';
 import { useMessageStore } from '@stores/messageStore';
+import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAutoReply } from '@hooks/useAutoReply';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
@@ -83,7 +88,8 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const other = chat.members.find((m) => m.id !== 'user-me');
   const chatName = chat.name ?? other?.displayName ?? 'Неизвестный';
   const isGroup = chat.type === 'group';
-  const chatSubtype = chat.type === 'secret' ? 'Секретный чат' : 'iMessage';
+  const isSecret = chat.type === 'secret';
+  const chatSubtype = isSecret ? 'Секретный чат' : 'iMessage';
 
   const lastMessageDate = messages.length > 0
     ? formatHeaderDate(messages[messages.length - 1].createdAt)
@@ -99,6 +105,26 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
 
   // Состояние reply
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+
+  // Секретный чат: состояние
+  const secretSession = useSecretChatStore((s) => s.sessions[chat.id]);
+  const initSession = useSecretChatStore((s) => s.initSession);
+  const verifySession = useSecretChatStore((s) => s.verifySession);
+  const setSelfDestruct = useSecretChatStore((s) => s.setSelfDestruct);
+  const regenerateKeys = useSecretChatStore((s) => s.regenerateKeys);
+  const endSession = useSecretChatStore((s) => s.endSession);
+
+  const [showKeyExchange, setShowKeyExchange] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
+  const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
+  const [showSelfDestructPicker, setShowSelfDestructPicker] = useState(false);
+
+  // Инициализация секретной сессии при первом открытии
+  useEffect(() => {
+    if (isSecret && !secretSession) {
+      setShowKeyExchange(true);
+    }
+  }, [isSecret, secretSession]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -157,6 +183,55 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
 
   return (
     <div className="flex flex-col h-full bg-black">
+      {/* Анимация обмена ключами */}
+      {showKeyExchange && isSecret && (
+        <KeyExchangeAnimation
+          contactName={chatName}
+          onComplete={() => {
+            initSession(chat.id);
+            setShowKeyExchange(false);
+          }}
+        />
+      )}
+
+      {/* Верификация ключей */}
+      {showVerification && secretSession && (
+        <VerificationModal
+          myName="Владимир"
+          theirName={chatName}
+          emojiGrid={secretSession.emojiGrid}
+          hexFingerprint={secretSession.hexFingerprint}
+          isVerified={secretSession.isVerified}
+          onVerify={() => verifySession(chat.id)}
+          onClose={() => setShowVerification(false)}
+        />
+      )}
+
+      {/* Info-панель шифрования */}
+      {showEncryptionInfo && secretSession && (
+        <EncryptionInfo
+          protocol="Signal Protocol (X3DH + Double Ratchet)"
+          algorithms="Curve25519, AES-256-GCM, HMAC-SHA256"
+          sessionDate={new Date(secretSession.sessionDate).toLocaleDateString('ru-RU')}
+          ratchetIndex={secretSession.ratchetIndex}
+          isVerified={secretSession.isVerified}
+          onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
+          onRegenerateKeys={() => { regenerateKeys(chat.id); setShowEncryptionInfo(false); setShowKeyExchange(true); }}
+          onEndSecretChat={() => { endSession(chat.id); setShowEncryptionInfo(false); }}
+          onClose={() => setShowEncryptionInfo(false)}
+        />
+      )}
+
+      {/* Picker таймера самоуничтожения */}
+      {showSelfDestructPicker && (
+        <SelfDestructPicker
+          isOpen
+          currentValue={secretSession?.selfDestructTimer ?? null}
+          onSelect={(val) => setSelfDestruct(chat.id, val)}
+          onClose={() => setShowSelfDestructPicker(false)}
+        />
+      )}
+
       {/* Шапка */}
       <FrostedGlassBar className="flex items-center px-6 py-2 relative min-h-[70px]">
         <div className="w-[60px]" />
@@ -166,12 +241,27 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
             <span className="text-[13px] font-semibold text-white">{chatName}</span>
             <ChevronRight size={13} color="#8E8E93" />
           </button>
-          <span className="text-[10px]" style={{ color: '#8E8E93' }}>{chatSubtype}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px]" style={{ color: isSecret ? '#34C759' : '#8E8E93' }}>{chatSubtype}</span>
+            {isSecret && secretSession?.isVerified && (
+              <span className="text-[10px]" style={{ color: '#34C759' }}>✓ Verified</span>
+            )}
+          </div>
           {lastMessageDate && (
             <span className="text-[10px]" style={{ color: '#8E8E93' }}>{lastMessageDate}</span>
           )}
         </div>
-        <div className="w-[60px] flex justify-end pr-1">
+        <div className="w-[60px] flex justify-end gap-1 pr-1">
+          {isSecret && (
+            <>
+              <button onClick={() => setShowSelfDestructPicker(true)} aria-label="Таймер самоуничтожения">
+                <Timer size={20} color="#34C759" />
+              </button>
+              <button onClick={() => setShowEncryptionInfo(true)} aria-label="Информация о шифровании">
+                <Shield size={20} color="#34C759" />
+              </button>
+            </>
+          )}
           <button aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
