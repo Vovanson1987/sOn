@@ -1,0 +1,134 @@
+import { ChevronRight, User, Palette, Bell, Shield, HardDrive, Lock, Info } from 'lucide-react';
+import { Avatar } from '@components/ui/Avatar';
+
+interface SettingsScreenProps {
+  onClose?: () => void;
+}
+
+interface SettingRow {
+  icon: React.ReactNode;
+  label: string;
+  value?: string;
+  color?: string;
+  onClick?: () => void;
+}
+
+function SettingsRow({ icon, label, value, onClick }: SettingRow) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-4 py-[11px] text-left"
+    >
+      {icon}
+      <span className="flex-1 text-[15px] text-white">{label}</span>
+      {value && <span className="text-[14px]" style={{ color: '#8E8E93' }}>{value}</span>}
+      <ChevronRight size={16} color="#38383A" />
+    </button>
+  );
+}
+
+function Divider() {
+  return <div style={{ height: '0.5px', background: '#38383A', marginLeft: '52px' }} />;
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <p className="px-4 pt-5 pb-2 text-[12px] font-semibold uppercase" style={{ color: '#8E8E93' }}>
+      {title}
+    </p>
+  );
+}
+
+/** Экран настроек в стиле iOS */
+export function SettingsScreen({ onClose }: SettingsScreenProps) {
+  return (
+    <div className="flex flex-col h-full bg-black overflow-y-auto">
+      {/* Профиль */}
+      <div className="flex flex-col items-center py-6">
+        <Avatar size={80} name="Владимир" />
+        <h2 className="text-[20px] font-semibold text-white mt-3">Владимир</h2>
+        <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>+7 (999) 123-45-67</p>
+      </div>
+
+      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
+        <SettingsRow
+          icon={<User size={20} color="#007AFF" />}
+          label="Профиль"
+          value="Изменить"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Palette size={20} color="#FF9500" />}
+          label="Тема"
+          value="Тёмная"
+        />
+      </div>
+
+      <SectionHeader title="Уведомления" />
+      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
+        <SettingsRow
+          icon={<Bell size={20} color="#FF3B30" />}
+          label="Уведомления"
+          value="Включены"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Bell size={20} color="#FF3B30" />}
+          label="Звук"
+          value="По умолчанию"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Bell size={20} color="#FF3B30" />}
+          label="Предпросмотр"
+          value="Всегда"
+        />
+      </div>
+
+      <SectionHeader title="Конфиденциальность" />
+      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
+        <SettingsRow
+          icon={<Shield size={20} color="#34C759" />}
+          label="Онлайн-статус"
+          value="Все"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Shield size={20} color="#34C759" />}
+          label="Отчёты о прочтении"
+          value="Включены"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Lock size={20} color="#34C759" />}
+          label="Блокировка приложения"
+          value="Выкл"
+        />
+      </div>
+
+      <SectionHeader title="Данные" />
+      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
+        <SettingsRow
+          icon={<HardDrive size={20} color="#5856D6" />}
+          label="Хранилище"
+          value="1.2 ГБ"
+        />
+        <Divider />
+        <SettingsRow
+          icon={<Lock size={20} color="#34C759" />}
+          label="Шифрование"
+          value="Signal Protocol"
+        />
+      </div>
+
+      <SectionHeader title="О приложении" />
+      <div className="rounded-[10px] mx-4 overflow-hidden mb-8" style={{ background: '#1C1C1E' }}>
+        <SettingsRow
+          icon={<Info size={20} color="#8E8E93" />}
+          label="Версия"
+          value="1.0.0 (Sprint 6)"
+        />
+      </div>
+    </div>
+  );
+}
