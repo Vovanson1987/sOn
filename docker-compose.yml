@@ -1,0 +1,223 @@
+## docker-compose.yml — sOn Messenger: локальная разработка
+## Запуск: docker-compose up -d
+## Все сервисы в единой сети son-network
+
+services:
+
+  ## ====== Базы данных ======
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: son-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: son_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - son-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: son-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - son-network
+
+  scylladb:
+    image: scylladb/scylla:5.4
+    container_name: son-scylladb
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status | grep -q UN"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - son-network
+
+  ## ====== Объектное хранилище ======
+
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: son-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - son-network
+
+  ## ====== Очередь сообщений ======
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: son-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - son-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: son-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_started
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - son-network
+
+  ## ====== WebRTC ======
+
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: son-coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/udp"
+      - "5349:5349/tcp"
+      - "49152-49200:49152-49200/udp"
+    environment:
+      TURN_SECRET: ${TURN_SECRET:-son-turn-secret}
+    networks:
+      - son-network
+
+  ## ====== Сервисы приложения ======
+
+  gateway:
+    build: ./backend/gateway
+    container_name: son-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/son_dev
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-secret-key-base-must-be-at-least-64-bytes-long-for-security}
+      GUARDIAN_SECRET: ${GUARDIAN_SECRET:-dev-guardian-secret}
+      PORT: "4000"
+    ports:
+      - "4000:4000"
+    networks:
+      - son-network
+
+  crypto-service:
+    build: ./backend/crypto_service
+    container_name: son-crypto
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      scylladb:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/son_dev
+      SCYLLA_HOSTS: scylladb:9042
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8080:8080"
+    networks:
+      - son-network
+
+  push-service:
+    build: ./backend/push_service
+    container_name: son-push
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "9090:9090"
+    networks:
+      - son-network
+
+  ## ====== Frontend ======
+
+  web:
+    build: ./webApp
+    container_name: son-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    networks:
+      - son-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  scylla_data:
+  minio_data:
+  zookeeper_data:
+  kafka_data:
+
+networks:
+  son-network:
+    driver: bridge
