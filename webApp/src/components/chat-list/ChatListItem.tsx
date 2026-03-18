@@ -37,10 +37,9 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
   return (
     <button
       onClick={() => onSelect(chat.id)}
-      className="w-full flex items-center gap-[10px] px-3 py-[8px] text-left rounded-[10px] mx-[4px]"
+      className="w-full flex items-center gap-[10px] px-[14px] py-[8px] text-left rounded-[10px]"
       style={{
         background: isActive ? '#007AFF' : 'transparent',
-        width: 'calc(100% - 8px)',
       }}
       role="listitem"
       aria-label={`Чат с ${name}${chat.unreadCount > 0 ? `, ${chat.unreadCount} непрочитанных` : ''}`}

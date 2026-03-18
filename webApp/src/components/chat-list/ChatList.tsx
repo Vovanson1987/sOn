@@ -50,7 +50,7 @@ export function ChatList() {
       </div>
 
       <div
-        className="flex-1 overflow-y-auto px-1"
+        className="flex-1 overflow-y-auto px-3"
         role="list"
         aria-label="Чаты"
         style={{ WebkitOverflowScrolling: 'touch' }}

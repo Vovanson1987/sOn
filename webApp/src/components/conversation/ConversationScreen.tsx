@@ -158,8 +158,8 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   return (
     <div className="flex flex-col h-full bg-black">
       {/* Шапка */}
-      <FrostedGlassBar className="flex items-center px-5 py-2 relative min-h-[70px]">
-        <div className="w-[50px]" />
+      <FrostedGlassBar className="flex items-center px-6 py-2 relative min-h-[70px]">
+        <div className="w-[60px]" />
         <div className="flex-1 flex flex-col items-center">
           <Avatar size={40} name={chatName} src={other?.avatarUrl} />
           <button className="flex items-center gap-[2px] mt-[3px]">
@@ -171,7 +171,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
             <span className="text-[10px]" style={{ color: '#8E8E93' }}>{lastMessageDate}</span>
           )}
         </div>
-        <div className="w-[50px] flex justify-end">
+        <div className="w-[60px] flex justify-end pr-1">
           <button aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
@@ -201,7 +201,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
                 showSenderName={isGroup}
               />
               {isOwn && isLastOwn && message.type !== 'system' && (
-                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '20px' }}>
+                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '24px' }}>
                   <DeliveryStatus status={message.status} readAt={message.readAt} />
                 </div>
               )}

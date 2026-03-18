@@ -15,7 +15,7 @@ export default function App() {
   return (
     <div className="flex h-full w-full bg-black">
       {/* Sidebar — список чатов */}
-      <div className="w-[320px] flex-shrink-0 h-full">
+      <div className="w-[340px] flex-shrink-0 h-full">
         <ChatList />
       </div>
 
