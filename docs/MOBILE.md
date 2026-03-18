@@ -11,8 +11,10 @@
 | **Производительность** | Максимальная | Мост = задержки | Хорошая |
 | **Push/CallKit** | Прямой API | Плагины | Плагины |
 | **Безопасность** | Keystore/Keychain напрямую | Через плагины | Через плагины |
-| **Размер приложения** | Минимальный | ~50MB+ движок | ~20MB+ движок |
-| **Общий код** | ~65% | ~85% (но с ограничениями) | ~90% (но свой рендер) |
+| **Размер приложения** | 15-25 MB (с Compose, Ktor, SQLDelight, Libsodium) | ~50MB+ движок | ~20MB+ движок |
+| **Общий код** | ~65% | ~60-70% (с нативными интеграциями) | ~90% (но свой рендер) |
+
+> \* React Native UI — через JS-мост к нативным компонентам
 
 ---
 
@@ -24,23 +26,43 @@ messenger-kmp/
 ├── shared/                          # Общий код (Kotlin) — 60-70%
 │   └── src/
 │       ├── commonMain/kotlin/com/son/
-│       │   ├── crypto/              # Signal Protocol
-│       │   ├── network/             # Ktor Client + WebSocket
+│       │   ├── crypto/
+│       │   │   ├── X3DH.kt                    # Extended Triple Diffie-Hellman
+│       │   │   ├── DoubleRatchet.kt            # Double Ratchet Algorithm
+│       │   │   ├── SignalSession.kt            # Управление сессиями
+│       │   │   ├── KeyPairGenerator.kt         # Curve25519 ключи
+│       │   │   ├── MessageEncryptor.kt         # AES-256-GCM шифрование
+│       │   │   ├── KeyStore.kt                 # Хранение ключей (expect/actual)
+│       │   │   ├── FingerprintGenerator.kt     # Визуальные отпечатки (эмодзи + hex)
+│       │   │   └── SelfDestructTimer.kt        # Таймер самоуничтожения
+│       │   ├── network/
+│       │   │   ├── WebSocketClient.kt          # WebSocket соединение (Ktor)
+│       │   │   ├── ApiClient.kt                # REST API (Ktor HttpClient)
+│       │   │   ├── MessageTransport.kt         # Отправка/получение сообщений
+│       │   │   ├── PresenceManager.kt          # Онлайн-статусы
+│       │   │   ├── SyncEngine.kt               # Синхронизация offline → online
+│       │   │   ├── RetryPolicy.kt              # Reconnect + exponential backoff
+│       │   │   └── CertificatePinner.kt        # Certificate pinning
 │       │   ├── data/                # Models + Repository + SQLDelight
 │       │   ├── domain/              # Use Cases
 │       │   ├── viewmodel/           # Shared ViewModels
 │       │   └── util/                # Утилиты
 │       │
-│       ├── androidMain/             # Android-специфичный код
-│       │   ├── crypto/AndroidKeyStore.kt
-│       │   ├── notifications/FcmService.kt
-│       │   └── biometric/AndroidBiometric.kt
+│       ├── androidMain/kotlin/         # Android-специфичный код
+│       │   ├── crypto/AndroidKeyStore.kt        # Android Keystore для ключей
+│       │   ├── network/AndroidWebSocket.kt      # OkHttp WebSocket
+│       │   ├── notifications/FcmService.kt      # Firebase Cloud Messaging
+│       │   ├── media/AndroidMediaRecorder.kt    # Запись голосовых
+│       │   ├── biometric/AndroidBiometric.kt    # Fingerprint / Face Unlock
+│       │   └── calls/AndroidCallService.kt      # ConnectionService / Telecom API
 │       │
-│       ├── iosMain/                 # iOS-специфичный код
-│       │   ├── crypto/IosKeyChain.kt
-│       │   ├── notifications/ApnsPush.kt
-│       │   ├── biometric/IosBiometric.kt
-│       │   └── calls/CallKitIntegration.kt
+│       ├── iosMain/kotlin/             # iOS-специфичный код
+│       │   ├── crypto/IosKeyChain.kt            # iOS Keychain для ключей
+│       │   ├── network/IosWebSocket.kt          # URLSessionWebSocketTask
+│       │   ├── notifications/ApnsPush.kt        # Apple Push Notification Service
+│       │   ├── media/IosMediaRecorder.kt        # AVAudioRecorder
+│       │   ├── biometric/IosBiometric.kt        # Face ID / Touch ID
+│       │   └── calls/CallKitIntegration.kt      # Интеграция с CallKit
 │       │
 │       └── commonTest/              # Общие тесты
 │
@@ -98,8 +120,9 @@ messenger-kmp/
 | **data/repository** | ChatRepository, MessageRepository, KeyRepository | 90% |
 | **domain** | Use cases (SendMessage, CreateSecretChat, ...) | 100% |
 | **viewmodel** | Shared ViewModels (Kotlin Coroutines + Flow) | 85% |
-| **util** | Форматирование, Base64, логирование | 80% |
-| | **ИТОГО** | **~65%** |
+| **util** | Форматирование, Base64, логирование | 65% |
+| **webrtc** | Аудио/видео звонки (нативный код) | 0% (полностью платформо-специфичный) |
+| | **ИТОГО** | **~60%** |
 
 ### 3.2 expect/actual — Платформо-специфичный код
 
@@ -149,6 +172,59 @@ actual class PushNotificationManager {
 }
 ```
 
+#### Дополнительные expect/actual классы
+
+```kotlin
+// ═══ commonMain ═══
+expect class WebSocketEngine {
+    fun connect(url: String, token: String)
+    fun send(message: ByteArray)
+    fun disconnect()
+    fun onMessage(handler: (ByteArray) -> Unit)
+}
+
+expect class MediaRecorder {
+    suspend fun startRecording(): Flow<Float>  // amplitude 0-1
+    suspend fun stopRecording(): ByteArray      // opus-encoded audio
+    fun isRecording(): Boolean
+}
+
+expect class CoroutineDispatchers {
+    val main: CoroutineDispatcher
+    val io: CoroutineDispatcher
+    val default: CoroutineDispatcher
+}
+
+// ═══ androidMain ═══
+actual class WebSocketEngine {
+    // OkHttp WebSocket (okhttp3.WebSocket)
+}
+
+actual class MediaRecorder {
+    // Android MediaRecorder API (android.media.MediaRecorder)
+}
+
+actual class CoroutineDispatchers {
+    // Dispatchers.Main (Main thread)
+    // Dispatchers.IO (IO thread pool)
+    // Dispatchers.Default (CPU-bound)
+}
+
+// ═══ iosMain ═══
+actual class WebSocketEngine {
+    // URLSessionWebSocketTask (Foundation)
+}
+
+actual class MediaRecorder {
+    // AVAudioRecorder (AVFoundation)
+}
+
+actual class CoroutineDispatchers {
+    // NSRunLoop-based main dispatcher
+    // Background dispatch queues for IO/Default
+}
+```
+
 ---
 
 ## 4. KMP-библиотеки
@@ -160,13 +236,15 @@ actual class PushNotificationManager {
 | Сериализация | **kotlinx.serialization** | Все |
 | Корутины | **kotlinx.coroutines** | Все |
 | DI | **Koin** | Все |
-| Shared ViewModel | **KMP-ViewModel** | Android, iOS |
-| Криптография | **Libsodium KMP** | Android, iOS |
-| Навигация | **Decompose** | Android, iOS |
+| Shared ViewModel | **KMP-ViewModel (Rickclephas)**. Альтернатива: androidx.lifecycle:lifecycle-viewmodel-compose 2.8+ (официальная поддержка KMP от Google, начиная с Kotlin 2.0) | Android, iOS |
+| Криптография | **com.ionspin.kotlin:multiplatform-crypto-libsodium-bindings:0.9.2** (Libsodium KMP) | Android, iOS |
+| Навигация | **Decompose 3.x** | Android, iOS |
 | Дата/время | **kotlinx-datetime** | Все |
 | Логирование | **Napier** | Все |
 | Настройки | **multiplatform-settings** | Android, iOS |
 | Protobuf | **pbandk** | Все |
+| WebRTC | **нативный** — expect/actual | Android (Google WebRTC SDK), iOS (Apple WebRTC SDK) |
+| Изображения | **Coil 3** (Android) / **SDWebImageSwiftUI** (iOS) | Раздельно |
 
 ---
 
@@ -183,6 +261,8 @@ actual class PushNotificationManager {
 | Запись медиа | CameraX + MediaStore |
 | Фоновая синхронизация | WorkManager |
 | Уведомления | Notification Channels (сообщения / звонки / системные) |
+| Screen sharing | MediaProjection API |
+| WebRTC | Google WebRTC SDK (libwebrtc) |
 | Иконка | Adaptive Icon |
 
 ### 5.2 iOS-only
@@ -198,6 +278,7 @@ actual class PushNotificationManager {
 | Шаринг | ShareExtension |
 | Виджет | WidgetKit |
 | Dynamic Island | Live Activities |
+| WebRTC | Apple WebRTC SDK |
 | Голосовой помощник | App Intents (Siri) |
 
 ---
@@ -205,14 +286,14 @@ actual class PushNotificationManager {
 ## 6. План миграции
 
 ```
-ФАЗА 0: WEB MVP (Месяцы 1-3)                    ← ТЕКУЩАЯ ФАЗА
+ФАЗА 0: WEB MVP (Месяцы 1-4)                    ← ТЕКУЩАЯ ФАЗА
 ├── React + TypeScript фронтенд
 ├── Базовый бэкенд: Elixir/Phoenix + PostgreSQL
 ├── WebSocket real-time
 ├── Web Crypto API для E2E
 └── Docker + docker-compose
 
-ФАЗА 1: SHARED CORE (Месяцы 3-5)
+ФАЗА 1: SHARED CORE (Месяцы 5-8)
 ├── Создание KMP-проекта (shared модуль)
 ├── Перенос моделей данных в Kotlin
 ├── Signal Protocol на Kotlin (X3DH + Double Ratchet)
@@ -220,7 +301,7 @@ actual class PushNotificationManager {
 ├── SQLDelight (локальная БД)
 └── Тесты: crypto 100%, domain 90%
 
-ФАЗА 2: ANDROID (Месяцы 5-7)
+ФАЗА 2: ANDROID (Месяцы 9-14)
 ├── Jetpack Compose UI
 ├── Firebase Cloud Messaging
 ├── Android Keystore
@@ -228,7 +309,7 @@ actual class PushNotificationManager {
 ├── CameraX + MediaStore
 └── Google Play Internal Testing → Release
 
-ФАЗА 3: iOS (Месяцы 7-9)
+ФАЗА 3: iOS (Месяцы 15-20)
 ├── SwiftUI UI
 ├── CallKit + PushKit
 ├── Keychain + Secure Enclave
@@ -236,17 +317,44 @@ actual class PushNotificationManager {
 ├── Live Activities + Dynamic Island
 └── TestFlight → App Store
 
-ФАЗА 4: СИНХРОНИЗАЦИЯ (Месяцы 9-11)
+ФАЗА 4: СИНХРОНИЗАЦИЯ (Месяцы 21-26)
 ├── Multi-device (Sesame Protocol)
 ├── Web ↔ Android ↔ iOS синхронизация
 ├── Desktop: Tauri обёртка
 ├── Accessibility + Локализация (RU, EN, KZ)
 └── Performance optimization
 
-ФАЗА 5: МАСШТАБИРОВАНИЕ (Месяц 12+)
+ФАЗА 5: МАСШТАБИРОВАНИЕ (Месяц 27+)
 ├── Post-Quantum Cryptography (CRYSTALS-Kyber)
 ├── Decentralized identity
 ├── Open source клиенты
 ├── Security audit
 └── Federation
+
+> Сроки рассчитаны для команды из 3-5 разработчиков
+```
+
+---
+
+## 7. Общая схема архитектуры
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      КЛИЕНТЫ                                │
+│  ┌───────────┐  ┌───────────────┐  ┌─────────────────────┐  │
+│  │  Web App  │  │  Android App  │  │      iOS App        │  │
+│  │ React/TS  │  │Jetpack Compose│  │      SwiftUI        │  │
+│  └─────┬─────┘  └──────┬────────┘  └──────────┬──────────┘  │
+│        │        ┌──────┴──────────────────────┘             │
+│        │        │    KMP Shared Module (com.son)            │
+│        │        │    Signal Protocol + Ktor + SQLDelight    │
+└────────┼────────┼───────────────────────────────────────────┘
+         │        │
+    WebSocket  WebSocket + gRPC (inter-service only)
+         │        │
+┌────────┴────────┴───────────────────────────────────────────┐
+│  Elixir/Phoenix │ Rust Crypto │ Go Push │ coturn (TURN)    │
+│  Kafka │ PostgreSQL │ ScyllaDB │ Redis │ MinIO             │
+│  Kubernetes + Istio + Vault + Prometheus                    │
+└─────────────────────────────────────────────────────────────┘
 ```

@@ -3,55 +3,63 @@
 ## Общая схема
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         КЛИЕНТЫ                                  │
-│                                                                  │
-│  ┌───────────┐    ┌───────────────┐    ┌─────────────────────┐  │
-│  │  Web App  │    │  Android App  │    │      iOS App        │  │
-│  │ React+TS  │    │Jetpack Compose│    │      SwiftUI        │  │
-│  │ Tailwind  │    │    Kotlin     │    │      Swift          │  │
-│  └─────┬─────┘    └──────┬────────┘    └──────────┬──────────┘  │
-│        │                 │                        │              │
-│        │          ┌──────┴────────────────────────┘              │
-│        │          │     KMP Shared Module                        │
-│        │          │  ┌──────────────────────────┐               │
-│        │          │  │ Signal Protocol (E2E)    │               │
-│        │          │  │ Network (Ktor + WS)      │               │
-│        │          │  │ SQLDelight (local DB)    │               │
-│        │          │  │ Domain (use cases)       │               │
-│        │          │  │ ViewModels (Flow)        │               │
-│        │          │  └──────────────────────────┘               │
-│        │          │                                              │
-└────────┼──────────┼──────────────────────────────────────────────┘
-         │          │
-    WebSocket   WebSocket + gRPC
-         │          │
-┌────────┴──────────┴──────────────────────────────────────────────┐
-│                          BACKEND                                  │
-│                                                                   │
-│  ┌───────────────────┐  ┌────────────────┐  ┌────────────────┐  │
-│  │  Elixir / Phoenix │  │  Rust Service  │  │   Go Service   │  │
-│  │  ─────────────────│  │  ──────────────│  │  ──────────────│  │
-│  │  WS Gateway       │  │  Crypto Ops    │  │  Push (FCM)    │  │
-│  │  Presence         │  │  Key Mgmt      │  │  Push (APNs)   │  │
-│  │  Pub/Sub          │  │  Media Process │  │  Web Push      │  │
-│  │  Channels         │  │  File Validate │  │  Analytics     │  │
-│  └────────┬──────────┘  └───────┬────────┘  └───────┬────────┘  │
-│           │                     │                    │           │
-│  ┌────────┴─────────────────────┴────────────────────┘           │
-│  │                 Kafka (Message Bus)                            │
-│  └──────────────────────┬────────────────────────────┘           │
-│                         │                                        │
-│  ┌──────────┐  ┌────────┴──┐  ┌─────────┐  ┌─────────┐        │
-│  │ ScyllaDB │  │PostgreSQL │  │  Redis   │  │  MinIO  │        │
-│  │ Messages │  │Users/Meta │  │ Cache    │  │  Files  │        │
-│  │ History  │  │Groups     │  │ Sessions │  │  Media  │        │
-│  │          │  │Contacts   │  │ Presence │  │ Avatars │        │
-│  └──────────┘  └───────────┘  └─────────┘  └─────────┘        │
-│                                                                  │
-│  Infra: Kubernetes │ Istio │ Envoy │ Vault │ Prometheus+Grafana │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                           КЛИЕНТЫ                                    │
+│                                                                      │
+│  ┌───────────┐    ┌───────────────┐    ┌─────────────────────┐      │
+│  │  Web App  │    │  Android App  │    │      iOS App        │      │
+│  │ React+TS  │    │Jetpack Compose│    │      SwiftUI        │      │
+│  │ Tailwind  │    │    Kotlin     │    │      Swift          │      │
+│  └─────┬─────┘    └──────┬────────┘    └──────────┬──────────┘      │
+│        │                 │                        │                  │
+│        │          ┌──────┴────────────────────────┘                  │
+│        │          │     KMP Shared Module (com/son/)                  │
+│        │          │  ┌──────────────────────────┐                   │
+│        │          │  │ Signal Protocol (E2E)    │                   │
+│        │          │  │ Network (Ktor + WS)      │                   │
+│        │          │  │ SQLDelight (local DB)    │                   │
+│        │          │  │ Domain (use cases)       │                   │
+│        │          │  │ ViewModels (Flow)        │                   │
+│        │          │  └──────────────────────────┘                   │
+│        │          │                                                  │
+└────────┼──────────┼──────────────────────────────────────────────────┘
+         │          │                          │
+    WebSocket   WebSocket + REST          WebRTC (P2P)
+    + REST          │                          │
+         │          │                 ┌────────┴────────┐
+┌────────┴──────────┴─────────────────┤  coturn (TURN/  │
+│                                     │  STUN Server)   │
+│              BACKEND                │  UDP 3478/5349  │
+│                                     │  49152-65535    │
+│                                     └─────────────────┘
+│                                                                      │
+│  ┌───────────────────┐  ┌────────────────┐  ┌────────────────┐      │
+│  │  Elixir / Phoenix │  │  Rust Service  │  │   Go Service   │      │
+│  │  ─────────────────│  │  ──────────────│  │  ──────────────│      │
+│  │  WS Gateway       │  │  Crypto Ops    │  │  Push (FCM)    │      │
+│  │  Presence         │  │  Key Mgmt      │  │  Push (APNs)   │      │
+│  │  Pub/Sub          │  │  Media Process │  │  Web Push      │      │
+│  │  REST API         │  │  File Validate │  │  Analytics     │      │
+│  │  Channels         │  │                │  │                │      │
+│  └────────┬──────────┘  └───────┬────────┘  └───────┬────────┘      │
+│           │        gRPC (inter-service)              │               │
+│           ├─────────────────────┤                    │               │
+│  ┌────────┴─────────────────────┴────────────────────┘               │
+│  │                 Kafka (Message Bus)                                │
+│  └──────────────────────┬────────────────────────────┘               │
+│                         │                                            │
+│  ┌──────────┐  ┌────────┴──┐  ┌─────────┐  ┌─────────┐            │
+│  │ ScyllaDB │  │PostgreSQL │  │  Redis   │  │  MinIO  │            │
+│  │ Messages │  │Users/Meta │  │ Cache    │  │  Files  │            │
+│  │ History  │  │Groups     │  │ Sessions │  │  Media  │            │
+│  │          │  │Contacts   │  │ Presence │  │ Avatars │            │
+│  └──────────┘  └───────────┘  └─────────┘  └─────────┘            │
+│                                                                      │
+│  Infra: Kubernetes │ Istio │ Envoy │ Vault │ Prometheus+Grafana     │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Namespace:** весь проект использует единый namespace `com/son/` (Kotlin: `com.son.*`, Swift: модуль `Son`). Подробнее см. [MOBILE.md](./MOBILE.md).
 
 ---
 
@@ -66,7 +74,7 @@
 | Tailwind CSS 4 | Стилизация |
 | Zustand | Управление состоянием |
 | lucide-react | Иконки |
-| Web Crypto API | Шифрование в браузере |
+| Web Crypto API + libsodium.js | Шифрование в браузере (libsodium.js — fallback для браузеров без полной поддержки Web Crypto API) |
 | Vitest + Testing Library | Тестирование |
 
 ### 1.2 Структура проекта
@@ -75,6 +83,7 @@
 src/
 ├── App.tsx                      # Корневой компонент + роутинг
 ├── main.tsx                     # Entry point
+├── service-worker.ts            # Service Worker (push-уведомления, offline cache)
 │
 ├── components/
 │   ├── chat-list/
@@ -132,7 +141,8 @@ src/
 │       ├── ActionSheet.tsx          # iOS Action Sheet
 │       ├── IOSToggle.tsx            # Переключатель iOS-стиля
 │       ├── SearchBar.tsx            # Поле поиска
-│       └── TabBar.tsx               # Нижний tab bar (мобильный)
+│       ├── TabBar.tsx               # Нижний tab bar (мобильный)
+│       └── DropZone.tsx             # Drag & drop зона для файлов
 │
 ├── hooks/
 │   ├── useChat.ts                   # Логика текущего чата
@@ -142,7 +152,9 @@ src/
 │   ├── useAutoReply.ts             # Мок-автоответы
 │   ├── useMediaQuery.ts            # Адаптивность
 │   ├── useLongPress.ts             # Долгое нажатие (Tapback)
-│   └── useSwipe.ts                 # Свайп-жесты
+│   ├── useSwipe.ts                 # Свайп-жесты
+│   ├── useDragDrop.ts              # Drag & drop логика (файлы в чат)
+│   └── useResizeSidebar.ts         # Resize sidebar (col-resize)
 │
 ├── stores/
 │   ├── chatStore.ts                 # Список чатов
@@ -268,6 +280,44 @@ User Action → Component → Zustand Store → Re-render
 - Эффективная работа с goroutines для I/O-bound задач
 - Хорошие SDK для FCM/APNs
 
+#### 2.1.4 TURN/STUN Service — coturn (UDP 3478/5349)
+Медиа-relay сервер для WebRTC-звонков.
+
+**Ответственность:**
+- STUN: определение публичного IP/порта клиента (NAT traversal)
+- TURN: relay медиа-трафика, когда P2P невозможен (symmetric NAT, корпоративные файрволы)
+- Выдача short-lived credentials (HMAC-SHA1, TTL 1 час)
+
+**Порты:**
+- UDP/TCP 3478 — STUN/TURN
+- UDP/TCP 5349 — STUN/TURN over TLS (DTLS)
+- UDP 49152-65535 — relay диапазон (media ports)
+
+**ICE Negotiation Flow:**
+```
+Alice                     Phoenix (Signaling)                    Bob
+  │                              │                                │
+  ├─ POST /api/calls ───────────►│──── WS push "incoming_call" ──►│
+  │                              │                                │
+  │                              │◄── POST /api/calls/:id/answer ─┤
+  │◄── WS push "call_accepted" ──│                                │
+  │                              │                                │
+  ├─ GET /api/turn/credentials ─►│                                │
+  │◄── {urls, username, cred} ───│──── TURN creds ───────────────►│
+  │                              │                                │
+  ├─ ICE candidates (via WS) ───►│──── relay candidates ─────────►│
+  │◄── ICE candidates (via WS) ──│◄─── relay candidates ──────────┤
+  │                              │                                │
+  ├══════════ P2P (DTLS-SRTP) или через TURN relay ══════════════►│
+  │                     Encrypted Media Stream                    │
+```
+
+**Почему coturn:**
+- Открытый исходный код, зрелый проект
+- Поддержка STUN/TURN/ICE в одном сервисе
+- Интеграция с Redis для shared state (multi-instance)
+- REST API для управления credentials
+
 ### 2.2 Межсервисное взаимодействие
 
 ```
@@ -279,18 +329,24 @@ User Action → Component → Zustand Store → Re-render
         ┌─────────────┼─────────────┐
         │             │             │
    ┌────┴────┐  ┌─────┴─────┐  ┌───┴───┐
-   │ Phoenix │  │   Rust    │  │  Go   │
-   │ Gateway │  │  Crypto   │  │ Push  │
+   │ Phoenix │◄─gRPC──►Rust │  │  Go   │
+   │ Gateway │  │  Crypto   │◄─gRPC──►│
    └─────────┘  └───────────┘  └───────┘
 ```
+
+> **Примечание о gRPC:** gRPC используется **только** для межсервисного взаимодействия
+> на бэкенде (Phoenix ↔ Rust ↔ Go). Клиенты (Web, Android, iOS) общаются с бэкендом
+> исключительно через **WebSocket** (real-time) и **REST API** (CRUD-операции).
+> gRPC-сервисы не экспонируются наружу через Envoy/Istio ingress.
 
 **Kafka Topics:**
 - `messages.sent` — новые сообщения (Phoenix → Rust для проверки ключей → Go для push)
 - `messages.delivered` — подтверждение доставки
+- `messages.self_destruct` — таймер истёк: Go Service удаляет сообщение из ScyllaDB и уведомляет клиентов через Phoenix WS
 - `users.presence` — изменения онлайн-статусов
 - `keys.updated` — обновления публичных ключей
 - `media.uploaded` — загруженные файлы (Phoenix → Rust для обработки)
-- `calls.events` — события звонков
+- `calls.events` — события звонков (initiated, answered, rejected, ended)
 
 ### 2.3 Хранение данных
 
@@ -300,6 +356,31 @@ User Action → Component → Zustand Store → Re-render
 | **PostgreSQL** | Пользователи, контакты, группы, метаданные, ключи | ACID, сложные запросы, JOIN, миграции |
 | **Redis Cluster** | Сессии, кэш, presence, rate limiting, typing indicators | In-memory скорость, TTL, pub/sub |
 | **MinIO** | Файлы, медиа, аватары, голосовые | S3-совместимый, self-hosted, pre-signed URLs |
+
+### 2.4 Координация Presence: Redis + Phoenix Presence
+
+Phoenix Presence (CRDTs, in-memory) и Redis выполняют разные роли в системе онлайн-статусов:
+
+| Компонент | Роль | Данные | TTL |
+|-----------|------|--------|-----|
+| **Phoenix Presence** | Real-time, in-memory | Текущие WS-соединения на конкретном узле | Пока WS жив |
+| **Redis** (`presence:{user_id}`) | Persistent store | last_seen, device_id, status (online/away/dnd) | 5 мин TTL, обновляется heartbeat |
+
+**Потоки:**
+1. **Подключение:** клиент → WS → Phoenix Presence track + Redis SET `presence:{user_id}` (status=online, expire 300s)
+2. **Heartbeat:** каждые 30 сек клиент шлёт `heartbeat` → Phoenix обновляет Presence + Redis EXPIRE refresh
+3. **Отключение:** Phoenix Presence автоматически удаляет из in-memory → Redis TTL истекает через 5 мин (grace period для reconnect)
+4. **Переподключение (reconcile):** клиент восстанавливает WS → Phoenix проверяет Redis → если `last_seen` < 5 мин, статус = `online` (без "ушёл/вернулся" мерцания)
+5. **Кросс-нодовая синхронизация:** Phoenix PubSub (через Redis adapter) синхронизирует Presence между нодами кластера
+
+```
+Client ──WS──► Phoenix Node A ──track──► Phoenix Presence (in-memory CRDT)
+                    │                          │
+                    ├──SET──► Redis             │  PubSub sync
+                    │         presence:{uid}    │  (via Redis adapter)
+                    │                          ▼
+               Phoenix Node B ◄────────── Presence Diff broadcast
+```
 
 ---
 
@@ -336,43 +417,94 @@ User Action → Component → Zustand Store → Re-render
 }}
 ```
 
-### 3.2 REST API Endpoints
+#### 3.1.1 WebSocket Fallback Strategy
+
+При недоступности WebSocket клиент автоматически переключается на альтернативные транспорты:
 
 ```
+Приоритет подключения:
+1. WebSocket (wss://)          — основной, полный дуплекс
+2. SSE (Server-Sent Events)    — fallback #1, только server→client push
+   + REST POST для отправки    — client→server через HTTP
+3. Long Polling (HTTP)         — fallback #2, последний вариант
+   GET /api/poll?since=ts      — клиент опрашивает каждые 3-5 сек
+
+Автоматическое переключение:
+  WS connect failed (3 попытки, backoff 1s→2s→4s)
+    → SSE EventSource(/api/stream, {token})
+      → SSE failed
+        → Long Polling loop
+          → WS reconnect attempt каждые 30 сек
+```
+
+> SSE и Long Polling — деградированный режим: typing indicators и presence
+> обновляются с задержкой (5-10 сек вместо real-time). Клиент показывает
+> баннер "Ограниченный режим связи" при работе через fallback.
+
+### 3.2 REST API Endpoints
+
+> **Примечание:** ниже представлен краткий обзор основных endpoints.
+> Полная спецификация (request/response схемы, коды ошибок, примеры) — в [API.md](./API.md).
+
+```
+# ── Аутентификация ──────────────────────────────────────────────
 POST   /api/auth/register
 POST   /api/auth/login
 POST   /api/auth/refresh
 DELETE /api/auth/logout
+GET    /api/auth/sessions                    # Список активных сессий (устройств)
+DELETE /api/auth/sessions/:device_id         # Завершить сессию на устройстве
 
+# ── Пользователи ───────────────────────────────────────────────
 GET    /api/users/me
 PATCH  /api/users/me
 GET    /api/users/:id
 GET    /api/users/search?q=
+POST   /api/users/:id/block                  # Заблокировать пользователя
 
+# ── Контакты ────────────────────────────────────────────────────
 GET    /api/contacts
 POST   /api/contacts
 DELETE /api/contacts/:id
 
+# ── Чаты ────────────────────────────────────────────────────────
 GET    /api/chats
 POST   /api/chats
 GET    /api/chats/:id
+PATCH  /api/chats/:id                        # Обновление: archive, mute, pin
 DELETE /api/chats/:id
 
+# ── Сообщения ───────────────────────────────────────────────────
 GET    /api/chats/:id/messages?before=&limit=
 POST   /api/chats/:id/messages
 DELETE /api/chats/:id/messages/:msg_id
 
+# ── Группы ──────────────────────────────────────────────────────
 POST   /api/groups
 PATCH  /api/groups/:id
 POST   /api/groups/:id/members
 DELETE /api/groups/:id/members/:user_id
 
+# ── Звонки (Calls) ─────────────────────────────────────────────
+POST   /api/calls                            # Инициировать звонок
+GET    /api/calls                            # История звонков
+POST   /api/calls/:id/answer                 # Принять звонок
+POST   /api/calls/:id/reject                 # Отклонить звонок
+
+# ── WebRTC / TURN ───────────────────────────────────────────────
+GET    /api/turn/credentials                 # TURN credentials (short-lived, HMAC-SHA1)
+
+# ── Ключи шифрования ───────────────────────────────────────────
 POST   /api/keys/prekey-bundle
 GET    /api/keys/:user_id/prekey-bundle
 POST   /api/keys/signed-prekey
 
+# ── Медиа ───────────────────────────────────────────────────────
 POST   /api/media/upload
 GET    /api/media/:id
+
+# ── Устройства / Push ──────────────────────────────────────────
+POST   /api/devices/push-token               # Регистрация push-токена (FCM/APNs/Web Push)
 ```
 
 ---
@@ -395,6 +527,67 @@ GET    /api/media/:id
 - Curve25519: эллиптические кривые
 - AES-256-GCM: симметричное шифрование
 - HMAC-SHA256: аутентификация
+
+#### 4.3.1 E2E Message Flow (полный цикл)
+
+```
+Alice (отправитель)                                              Bob (получатель)
+┌──────────────────┐                                    ┌──────────────────┐
+│  1. Compose msg  │                                    │                  │
+│  "Привет, Bob!"  │                                    │                  │
+│                  │                                    │                  │
+│  2. Double       │                                    │                  │
+│     Ratchet      │                                    │                  │
+│     step()       │                                    │                  │
+│     → msg_key    │                                    │                  │
+│                  │                                    │                  │
+│  3. AES-256-GCM  │                                    │                  │
+│     encrypt(     │                                    │                  │
+│       plaintext, │                                    │                  │
+│       msg_key,   │                                    │                  │
+│       nonce      │                                    │                  │
+│     )            │                                    │                  │
+│     → ciphertext │                                    │                  │
+│       + auth_tag │                                    │                  │
+│                  │                                    │                  │
+│  4. WS send ─────┼───► Phoenix Gateway ──────────────►│                  │
+│     {encrypted_  │     │                              │                  │
+│      content:    │     │  5. Сервер НЕ расшифровывает │                  │
+│      base64(...),│     │     Сохраняет encrypted blob │                  │
+│      header:     │     │     в ScyllaDB as-is         │                  │
+│      ratchet_pub}│     │                              │                  │
+│                  │     │  6. WS push ────────────────►│  7. Получает     │
+│                  │     │     (если Bob online)        │     encrypted    │
+│                  │     │     ИЛИ                      │     payload      │
+│                  │     │     Kafka → Go → Push (FCM/  │                  │
+│                  │     │     APNs) если offline        │  8. Double       │
+│                  │     │                              │     Ratchet      │
+│                  │     │                              │     step()       │
+│                  │     │                              │     → msg_key    │
+│                  │     │                              │                  │
+│                  │     │                              │  9. AES-256-GCM  │
+│                  │     │                              │     decrypt(     │
+│                  │     │                              │       ciphertext,│
+│                  │     │                              │       msg_key,   │
+│                  │     │                              │       nonce      │
+│                  │     │                              │     )            │
+│                  │     │                              │     → "Привет,   │
+│                  │     │                              │        Bob!"     │
+└──────────────────┘     │                              └──────────────────┘
+                         │
+                    ScyllaDB: хранит только
+                    {chat_id, msg_id, sender_id,
+                     encrypted_content, timestamp}
+                    Приватные ключи НИКОГДА
+                    не покидают устройство.
+```
+
+**Ключевые моменты:**
+- Шифрование происходит **на устройстве отправителя** (шаг 3) до передачи по сети
+- Расшифровка происходит **на устройстве получателя** (шаг 9) после получения
+- Сервер (шаг 5) оперирует только encrypted blob — zero-knowledge
+- Web-клиент использует Web Crypto API (с fallback на libsodium.js)
+- Мобильные клиенты используют libsignal-protocol через KMP Shared Module
 
 ### 4.4 Zero-Knowledge
 - Сервер хранит ТОЛЬКО зашифрованные сообщения

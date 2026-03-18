@@ -59,6 +59,17 @@
   --avatar-blue:        #007AFF;
   --avatar-purple:      #AF52DE;
   --avatar-gray:        #8E8E93;
+
+  /* Header */
+  --header-bg:          rgba(0,0,0,0.85);
+  --header-blur:        blur(20px) saturate(180%);
+
+  /* Secret Chat */
+  --bg-incoming-secret: #1E1E22;
+  --secret-border:      3px solid var(--accent-green);
+
+  /* Selection */
+  --selection-color:    rgba(0, 122, 255, 0.12);  /* #007AFF20 */
 }
 ```
 
@@ -97,8 +108,10 @@
 
 ```css
 /* Базовые переходы */
---transition-default: 300ms ease;
---transition-fast:    150ms ease;
+:root {
+  --transition-default: 300ms ease;
+  --transition-fast:    150ms ease;
+}
 
 /* Keyframes */
 @keyframes typingDots {
@@ -135,6 +148,21 @@
 @keyframes encryptFlash {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.3; }
+}
+
+@keyframes letterScatter {
+  0%   { letter-spacing: 0; opacity: 1; }
+  100% { letter-spacing: 20px; opacity: 0; }
+}
+
+@keyframes particleFly {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(var(--target-x)); opacity: 0; }
+}
+
+@keyframes circleCountdown {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: var(--circle-length); }
 }
 ```
 
@@ -214,13 +242,14 @@
                                      (collapsible)
 ```
 
-**Горячие клавиши:**
-- `Enter` = отправить
-- `Shift+Enter` = перенос строки
-- `Esc` = закрыть info / отмена
-- `Ctrl+K` = поиск по чатам
-- `Ctrl+N` = новый чат
-- Правый клик на сообщении → контекстное меню
+**Desktop Sidebar — интерактивные состояния:**
+- Hover: `background: #1C1C1E`
+- Active selection: `background: var(--selection-color)`
+- Resize: `cursor: col-resize` на разделителе (0.5px #38383A), `min-width: 280px`, `max-width: 500px`
+
+**Drag & Drop:**
+- Drop Zone: `border: 2px dashed #007AFF`, `background: rgba(0,122,255,0.1)`
+- Активируется при `dragenter` на область чата
 
 ---
 
@@ -308,6 +337,146 @@ interface CallScreenProps {
 }
 ```
 
+### 4.5 ChatListItem
+
+```typescript
+interface ChatListItemProps {
+  chat: Chat;
+  isActive: boolean;
+  onSelect: (chatId: string) => void;
+  onSwipeLeft: (chatId: string) => void;
+}
+```
+
+**Описание:**
+- Аватар 50px + имя (17px semibold) + дата + шеврон + превью (15px серый, max 2 строки)
+- Синяя точка непрочитанных сообщений
+- Иконка 🔒 для секретных чатов
+
+### 4.6 TapbackOverlay
+
+```typescript
+interface TapbackOverlayProps {
+  message: Message;
+  position: { x: number; y: number };
+  onReact: (emoji: TapbackEmoji) => void;
+  onClose: () => void;
+  onMenuAction: (action: 'reply' | 'copy' | 'forward' | 'delete') => void;
+}
+
+type TapbackEmoji = '❤️' | '👍' | '👎' | '😂' | '‼️' | '❓';
+```
+
+**Описание:**
+- Фон `backdrop-filter: blur(10px)` + сообщение `scale(1.05)`
+- Pill-панель с 6 реакциями (36px каждая)
+- Контекстное меню ниже панели реакций
+
+### 4.7 ContextMenu
+
+```typescript
+interface ContextMenuProps {
+  items: Array<{ icon: LucideIcon; label: string; action: string; danger?: boolean }>;
+  onAction: (action: string) => void;
+}
+```
+
+### 4.8 KeyExchangeAnimation
+
+```typescript
+interface KeyExchangeAnimationProps {
+  contactName: string;
+  onComplete: () => void;
+}
+```
+
+**Описание:**
+- Два замка по краям экрана, летящие CSS-частицы между ними
+- 4 этапа с прогресс-баром: X3DH → Double Ratchet → "Защищённое соединение установлено"
+- Каждый этап — 800ms
+
+### 4.9 VerificationModal
+
+```typescript
+interface VerificationModalProps {
+  myName: string;
+  myAvatar?: string;
+  theirName: string;
+  theirAvatar?: string;
+  emojiGrid: string[][];        // 4×4
+  hexFingerprint: string;
+  qrData: string;
+  isVerified: boolean;
+  onVerify: () => void;
+  onClose: () => void;
+}
+```
+
+### 4.10 SelfDestructTimer
+
+```typescript
+interface SelfDestructTimerProps {
+  duration: 5 | 15 | 30 | 60 | 300 | 3600 | 86400 | null;
+  onSelect: (seconds: number | null) => void;
+}
+```
+
+**Описание:**
+- iOS-picker снизу (bottom sheet)
+- Бейдж на иконке ⏱ при активном таймере
+- SVG circle countdown (`stroke-dashoffset`), fadeOut анимация при уничтожении сообщения
+
+### 4.11 VoiceMessage
+
+```typescript
+interface VoiceMessageProps {
+  duration: number;
+  waveformData: number[];       // 0-1 amplitude values
+  isPlaying: boolean;
+  progress: number;             // 0-1
+  onTogglePlay: () => void;
+}
+```
+
+**Описание:**
+- SVG-волна + кнопка ▶/⏸ + бегущий индикатор прогресса + отображение длительности "0:12"
+
+### 4.12 AttachmentPicker
+
+```typescript
+interface AttachmentPickerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelect: (type: 'camera' | 'photo' | 'document' | 'location') => void;
+}
+```
+
+**Описание:**
+- iOS Action Sheet снизу с `backdrop-filter: blur` фоном
+- 4 опции: 📷 Камера, 🖼 Фото и видео, 📄 Документ, 📍 Геолокация
+
+### 4.13 TypingIndicator
+
+```typescript
+interface TypingIndicatorProps {
+  userName: string;
+}
+```
+
+**Описание:**
+- Серый пузырь слева с тремя анимированными точками (`@keyframes typingDots`)
+
+### 4.14 SecretChatBanner
+
+```typescript
+interface SecretChatBannerProps {
+  contactName: string;
+}
+```
+
+**Описание:**
+- Серый rounded rect с текстом "🔒 Сообщения в этом чате защищены сквозным шифрованием..."
+
 ---
 
 ## 5. Zustand Stores
@@ -319,7 +488,7 @@ interface ChatStore {
   chats: Chat[];
   activeChatId: string | null;
   searchQuery: string;
-  filter: 'all' | 'unread' | 'groups' | 'secret';
+  filter: 'all' | 'unread' | 'groups' | 'secret' | 'archived';
 
   // Actions
   setActiveChat: (id: string | null) => void;
@@ -367,6 +536,60 @@ interface UIStore {
   toggleInfoPanel: () => void;
   setTapbackMessage: (msg: Message | null) => void;
   setTheme: (theme: 'dark' | 'light' | 'system') => void;
+}
+```
+
+### 5.4 callStore
+
+```typescript
+interface CallStore {
+  activeCall: CallState | null;
+  callDuration: number;
+  isMicMuted: boolean;
+  isCameraOn: boolean;
+  isSpeakerOn: boolean;
+  startCall: (contactId: string, type: 'audio' | 'video') => void;
+  endCall: () => void;
+  toggleMic: () => void;
+  toggleCamera: () => void;
+  toggleSpeaker: () => void;
+  acceptCall: () => void;
+  rejectCall: () => void;
+}
+
+interface CallState {
+  id: string;
+  contactId: string;
+  contactName: string;
+  type: 'audio' | 'video';
+  status: 'ringing' | 'connecting' | 'active' | 'ended';
+  direction: 'incoming' | 'outgoing';
+  startedAt?: string;
+}
+```
+
+### 5.5 secretChatStore
+
+```typescript
+interface SecretChatStore {
+  sessions: Record<string, EncryptionSession>;
+  createSession: (chatId: string, contactId: string) => Promise<void>;
+  verifySession: (chatId: string) => void;
+  destroySession: (chatId: string) => void;
+  regenerateKeys: (chatId: string) => Promise<void>;
+  setSelfDestruct: (chatId: string, seconds: number | null) => void;
+}
+
+interface EncryptionSession {
+  chatId: string;
+  sharedSecretHash: string;
+  ratchetIndex: number;
+  isVerified: boolean;
+  verifiedAt?: string;
+  emojiFingerprint: string[][];
+  hexFingerprint: string;
+  selfDestructDuration: number | null;
+  createdAt: string;
 }
 ```
 
@@ -444,6 +667,26 @@ interface Attachment {
   latitude?: number;
   longitude?: number;
 }
+
+interface Contact extends User {
+  nickname?: string;
+  isBlocked: boolean;
+}
+
+type TapbackEmoji = '❤️' | '👍' | '👎' | '😂' | '‼️' | '❓';
+
+interface GroupMember {
+  user: User;
+  role: 'admin' | 'member';
+  joinedAt: string;
+}
+
+interface KeyPair {
+  publicKey: string;
+  privateKey: string;
+  algorithm: 'Curve25519';
+  created: string;
+}
 ```
 
 ---
@@ -466,8 +709,16 @@ interface Attachment {
 ## 8. Звуки (Web Audio API)
 
 ```typescript
+let audioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
 function playNotificationSound() {
-  const ctx = new AudioContext();
+  const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
@@ -481,5 +732,53 @@ function playNotificationSound() {
   osc.start();
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
   osc.stop(ctx.currentTime + 0.1);
+}
+```
+
+### 8.1 MediaRecorder API
+
+```typescript
+interface VoiceRecorderState {
+  isRecording: boolean;
+  duration: number;
+  waveformData: number[];
+}
+
+// MediaRecorder API для записи голосовых
+// navigator.mediaDevices.getUserMedia({ audio: true })
+// → MediaRecorder с mimeType 'audio/webm;codecs=opus'
+// → AnalyserNode для визуализации волны в реальном времени
+// → Blob → upload через pre-signed URL
+```
+
+---
+
+## 9. Горячие клавиши (Desktop)
+
+| Комбинация | Действие | Scope |
+|-----------|----------|-------|
+| Enter | Отправить сообщение | Поле ввода |
+| Shift+Enter | Перенос строки | Поле ввода |
+| Esc | Закрыть модалку / отменить reply / закрыть info | Глобальный (приоритет: модалка > reply > info) |
+| Ctrl+K / Cmd+K | Поиск по чатам | Глобальный |
+| Ctrl+N / Cmd+N | Новый чат | Глобальный |
+| ArrowUp | Редактировать последнее сообщение | Пустое поле ввода |
+| Tab | Навигация между элементами | Глобальный (Accessibility) |
+
+---
+
+## 10. Хранение и медиа-запросы
+
+**IndexedDB:**
+- Зашифрованный кэш сообщений и ключей (через localForage + AES wrapper)
+
+**Медиа-запросы:**
+```css
+@media (prefers-color-scheme: light) {
+  /* Автоматическое переключение на светлую тему */
+}
+
+@supports (backdrop-filter: blur(20px)) {
+  /* Проверка поддержки frosted glass эффекта */
 }
 ```

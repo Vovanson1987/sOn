@@ -15,7 +15,7 @@ CREATE TABLE users (
     last_seen_at    TIMESTAMPTZ DEFAULT NOW(),
     is_online       BOOLEAN DEFAULT FALSE,
     -- Privacy settings
-    show_online     VARCHAR(20) DEFAULT 'everyone',     -- everyone | contacts | nobody
+    show_online     VARCHAR(20) DEFAULT 'everyone' CHECK (show_online IN ('everyone', 'contacts', 'nobody')),
     read_receipts   BOOLEAN DEFAULT TRUE,
     -- Security
     password_hash   TEXT NOT NULL,                       -- Argon2id
@@ -27,9 +27,8 @@ CREATE TABLE users (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_phone ON users(phone);
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_is_online ON users(is_online);
+-- UNIQUE на phone и username уже создаёт индексы автоматически.
+-- idx_users_is_online не нужен: online-статус хранится в Redis (presence).
 ```
 
 ### 1.2 one_time_prekeys (для X3DH)
@@ -63,6 +62,7 @@ CREATE TABLE contacts (
 );
 
 CREATE INDEX idx_contacts_user ON contacts(user_id);
+CREATE INDEX idx_contacts_contact ON contacts(contact_id);
 ```
 
 ### 1.4 chats
@@ -77,7 +77,7 @@ CREATE TABLE chats (
     name            VARCHAR(200),
     avatar_url      TEXT,
     description     TEXT,
-    created_by      UUID REFERENCES users(id),
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
     -- Secret chat fields
     is_verified     BOOLEAN DEFAULT FALSE,
     self_destruct   INTEGER,                 -- секунды (NULL = выкл)
@@ -135,10 +135,9 @@ CREATE TABLE secret_chat_sessions (
     hex_fingerprint     TEXT,               -- Cached hex string
     -- Timestamps
     created_at          TIMESTAMPTZ DEFAULT NOW(),
-    expires_at          TIMESTAMPTZ
+    expires_at          TIMESTAMPTZ,
+    UNIQUE(chat_id)     -- Один секретный чат = одна сессия; UNIQUE создаёт индекс
 );
-
-CREATE INDEX idx_secret_sessions_chat ON secret_chat_sessions(chat_id);
 ```
 
 ### 1.7 devices
@@ -156,6 +155,7 @@ CREATE TABLE devices (
 );
 
 CREATE INDEX idx_devices_user ON devices(user_id);
+CREATE UNIQUE INDEX idx_devices_push_token ON devices(push_token) WHERE push_token IS NOT NULL;
 ```
 
 ### 1.8 attachments (metadata only)
@@ -188,6 +188,31 @@ CREATE TABLE attachments (
 
 CREATE INDEX idx_attachments_chat ON attachments(chat_id);
 CREATE INDEX idx_attachments_message ON attachments(message_id);
+CREATE INDEX idx_attachments_uploader ON attachments(uploader_id);
+```
+
+### 1.9 call_sessions
+
+```sql
+CREATE TYPE call_type AS ENUM ('audio', 'video');
+CREATE TYPE call_status AS ENUM ('ringing', 'active', 'ended', 'missed', 'rejected');
+
+CREATE TABLE call_sessions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id         UUID NOT NULL REFERENCES chats(id),
+    caller_id       UUID NOT NULL REFERENCES users(id),
+    callee_id       UUID NOT NULL REFERENCES users(id),
+    type            call_type NOT NULL,
+    status          call_status NOT NULL DEFAULT 'ringing',
+    started_at      TIMESTAMPTZ,
+    ended_at        TIMESTAMPTZ,
+    duration        INTEGER DEFAULT 0,
+    end_reason      VARCHAR(50),
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_calls_caller ON call_sessions(caller_id, created_at DESC);
+CREATE INDEX idx_calls_callee ON call_sessions(callee_id, created_at DESC);
 ```
 
 ---
@@ -215,8 +240,9 @@ CREATE TABLE messenger.messages (
     -- Self-destruct
     self_destruct_at TIMESTAMP,             -- When to delete (NULL = permanent)
     is_destroyed    BOOLEAN,
-    -- Reactions
-    reactions       MAP<TEXT, FROZEN<SET<UUID>>>,  -- emoji → set of user_ids
+    -- Forward
+    forwarded_from_chat_id    UUID,
+    forwarded_from_message_id TIMEUUID,
     -- Metadata
     has_attachment  BOOLEAN,
     is_edited       BOOLEAN,
@@ -242,6 +268,33 @@ CREATE MATERIALIZED VIEW messenger.messages_by_user AS
       AND message_id IS NOT NULL
     PRIMARY KEY (sender_id, message_id, chat_id)
     WITH CLUSTERING ORDER BY (message_id DESC);
+```
+
+### 2.3 message_reactions
+
+Вынесена из MAP-поля messages для атомарных обновлений без read-before-write.
+
+```cql
+CREATE TABLE messenger.message_reactions (
+    chat_id     UUID,
+    message_id  TIMEUUID,
+    user_id     UUID,
+    emoji       TEXT,
+    created_at  TIMESTAMP,
+    PRIMARY KEY ((chat_id, message_id), user_id)
+);
+```
+
+### 2.4 read_receipts (групповые чаты)
+
+```cql
+CREATE TABLE messenger.read_receipts (
+    chat_id     UUID,
+    message_id  TIMEUUID,
+    user_id     UUID,
+    read_at     TIMESTAMP,
+    PRIMARY KEY ((chat_id, message_id), user_id)
+);
 ```
 
 ---
@@ -274,6 +327,9 @@ ratelimit:{user_id}:login     → counter
 ratelimit:{user_id}:messages  → counter
                                 TTL: 60 seconds, max: 60
 
+ratelimit:{ip}:register      → counter
+                                TTL: 3600 seconds (1 hour), max: 3
+
 # Unread counts cache
 unread:{user_id}:{chat_id}   → count
                                 TTL: none (invalidated on read)
@@ -282,6 +338,30 @@ unread:{user_id}:{chat_id}   → count
 prekeys:{user_id}             → JSON{identity_key, signed_prekey, one_time_prekeys[]}
                                 TTL: 1 hour
 ```
+
+### 3.2 Pub/Sub каналы
+
+```
+channel:chat:{chat_id}       — Сообщения, typing, reactions внутри конкретного чата.
+                                Подписчики: все подключённые участники чата.
+
+channel:user:{user_id}       — Персональные уведомления (новый чат, входящий звонок,
+                                force-logout, обновление профиля).
+                                Подписчик: все активные WebSocket-соединения пользователя.
+```
+
+### 3.3 Reconciliation (согласование дублей)
+
+| Поле (PostgreSQL)              | Кеш (Redis)                     | Стратегия                                    |
+|-------------------------------|----------------------------------|----------------------------------------------|
+| `users.is_online`             | `presence:{user_id}`             | Redis — source of truth; PostgreSQL пишется   |
+|                               |                                  | при disconnect / heartbeat timeout.           |
+| `chat_members.unread_count`   | `unread:{user_id}:{chat_id}`     | Redis — горячий кеш; PostgreSQL обновляется   |
+|                               |                                  | асинхронно через фоновый worker каждые 30 с.  |
+
+> **Правило:** При расхождении значений UI читает Redis; PostgreSQL используется
+> для cold-start и аналитики. Периодический cron-job (раз в 10 мин) синхронизирует
+> Redis → PostgreSQL.
 
 ---
 
@@ -315,13 +395,35 @@ messenger-media/
 - Все файлы доступны ТОЛЬКО через pre-signed URLs (срок: 1 час)
 - Загрузка: pre-signed PUT URL с ограничением по размеру (50MB)
 - Скачивание: pre-signed GET URL
-- Аватары: публичный read-only доступ (CDN)
+- **Аватары:**
+  - `show_online = 'everyone'` → публичный read-only доступ (CDN)
+  - `show_online = 'contacts' | 'nobody'` → pre-signed GET URL (срок: 1 час),
+    выдаётся только авторизованным пользователям / контактам
+
+### 4.3 Lifecycle Policy
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "expire-temp-uploads",
+      "Prefix": "temp/",
+      "Status": "Enabled",
+      "Expiration": { "Days": 1 }
+    }
+  ]
+}
+```
+
+> MinIO автоматически удаляет объекты в `temp/` через 24 часа.
 
 ---
 
 ## 5. Миграции
 
-### Порядок миграций
+### PostgreSQL-миграции
+
+Индексы определены внутри каждой миграции таблицы (отдельный файл 009 удалён).
 
 ```
 001_create_users.sql
@@ -332,8 +434,20 @@ messenger-media/
 006_create_secret_chat_sessions.sql
 007_create_devices.sql
 008_create_attachments.sql
-009_create_indexes.sql
-010_seed_data.sql              # Тестовые данные для dev
+009_create_call_sessions.sql
+```
+
+### ScyllaDB-миграции
+
+```
+010_create_scylla_keyspace.cql
+011_create_scylla_tables.cql       # messages, message_reactions, read_receipts, MV
+```
+
+### Dev-скрипты (не миграции)
+
+```
+scripts/seed_dev.sql               # Тестовые данные для dev-окружения
 ```
 
 ---
@@ -345,8 +459,13 @@ users 1──N one_time_prekeys
 users 1──N contacts
 users 1──N devices
 users 1──N chat_members
+users 1──N call_sessions (as caller)
+users 1──N call_sessions (as callee)
 chats 1──N chat_members
 chats 1──1 secret_chat_sessions
 chats 1──N attachments
-chats 1──N messages (ScyllaDB)
+chats 1──N call_sessions
+chats 1──N messages              (ScyllaDB)
+chats 1──N message_reactions     (ScyllaDB)
+chats 1──N read_receipts         (ScyllaDB)
 ```
