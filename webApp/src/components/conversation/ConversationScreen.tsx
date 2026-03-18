@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronLeft, Phone, Video } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Phone, Video } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -17,7 +17,10 @@ interface ConversationScreenProps {
 
 /** Группировка сообщений с разделителями дат */
 function groupMessages(messages: Message[]) {
-  const groups: Array<{ type: 'date'; date: string } | { type: 'message'; message: Message; isFirstInGroup: boolean; isLastInGroup: boolean }> = [];
+  const groups: Array<
+    | { type: 'date'; date: string }
+    | { type: 'message'; message: Message; isFirstInGroup: boolean; isLastInGroup: boolean }
+  > = [];
 
   let lastDate = '';
   let lastSenderId = '';
@@ -36,7 +39,11 @@ function groupMessages(messages: Message[]) {
 
     // Группировка последовательных от одного отправителя
     const isFirst = msg.senderId !== lastSenderId || msg.type === 'system';
-    const isLast = !nextMsg || nextMsg.senderId !== msg.senderId || new Date(nextMsg.createdAt).toDateString() !== msgDate || nextMsg.type === 'system';
+    const isLast =
+      !nextMsg ||
+      nextMsg.senderId !== msg.senderId ||
+      new Date(nextMsg.createdAt).toDateString() !== msgDate ||
+      nextMsg.type === 'system';
 
     groups.push({
       type: 'message',
@@ -51,7 +58,7 @@ function groupMessages(messages: Message[]) {
   return groups;
 }
 
-/** Экран переписки в стиле iOS Messages */
+/** Экран переписки в стиле iMessage (Mac) */
 export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const getMessages = useMessageStore((s) => s.getMessages);
@@ -60,10 +67,10 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const messages = getMessages(chat.id);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
-  // Имя и аватар собеседника
   const other = chat.members.find((m) => m.id !== 'user-me');
   const chatName = chat.name ?? other?.displayName ?? 'Неизвестный';
   const isGroup = chat.type === 'group';
+  const chatSubtitle = chat.type === 'secret' ? 'Секретный чат' : 'iMessage';
 
   // Автоскролл к последнему сообщению
   useEffect(() => {
@@ -87,42 +94,60 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
 
   return (
     <div className="flex flex-col h-full bg-black">
-      {/* Шапка */}
-      <FrostedGlassBar className="flex items-center justify-between px-3 py-2">
+      {/* Шапка — стиль iMessage Mac */}
+      <FrostedGlassBar className="flex items-center px-3 py-2">
+        {/* Кнопка назад */}
         <button
           onClick={onBack}
-          className="flex items-center gap-0"
+          className="flex-shrink-0"
           style={{ color: '#007AFF' }}
           aria-label="Назад к списку чатов"
         >
-          <ChevronLeft size={28} />
+          <ChevronLeft size={26} />
         </button>
 
-        <div className="flex flex-col items-center flex-1 min-w-0">
-          <Avatar size={35} name={chatName} src={other?.avatarUrl} isOnline={other?.isOnline} />
-          <span className="text-[11px] font-semibold text-white mt-[2px] truncate max-w-[200px]">
-            {chatName}
-          </span>
-          <span className="text-[9px]" style={{ color: '#8E8E93' }}>
-            {chat.type === 'secret' ? 'Секретный чат' : 'Текстовое сообщение'}
+        {/* Центр: Новое сообщение (иконка) */}
+        <div className="flex-shrink-0 ml-1">
+          {/* Пустое место — в оригинале тут иконка нового сообщения */}
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Аватар + имя по центру */}
+        <div className="flex flex-col items-center absolute left-1/2 -translate-x-1/2">
+          <Avatar size={35} name={chatName} src={other?.avatarUrl} />
+          <button className="flex items-center gap-[2px] mt-[2px]">
+            <span className="text-[12px] font-semibold text-white">{chatName}</span>
+            <ChevronRight size={12} color="#8E8E93" />
+          </button>
+          <span className="text-[10px]" style={{ color: '#8E8E93' }}>
+            {chatSubtitle}
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Иконки звонков справа */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           <button aria-label="Видеозвонок">
-            <Video size={22} color="#8E8E93" />
+            <Video size={20} color="#8E8E93" />
           </button>
           <button aria-label="Аудиозвонок">
-            <Phone size={20} color="#8E8E93" />
+            <Phone size={18} color="#8E8E93" />
           </button>
         </div>
       </FrostedGlassBar>
 
       {/* Область сообщений */}
       <div
-        className="flex-1 overflow-y-auto py-2"
+        className="flex-1 overflow-y-auto"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
+        {/* Верхний отступ */}
+        <div className="h-2" />
+
         {grouped.map((item, i) => {
           if (item.type === 'date') {
             return <DateSeparator key={`date-${i}`} date={item.date} />;
@@ -143,7 +168,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
               />
               {/* Статус доставки под последним исходящим */}
               {isOwn && isLastOwn && message.type !== 'system' && (
-                <div className="flex justify-end px-4 mt-[2px]">
+                <div className="flex justify-end pr-4 mt-[2px]">
                   <DeliveryStatus status={message.status} />
                 </div>
               )}
@@ -151,6 +176,9 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           );
         })}
         <div ref={messagesEndRef} />
+
+        {/* Нижний отступ */}
+        <div className="h-2" />
       </div>
 
       {/* Панель ввода */}
