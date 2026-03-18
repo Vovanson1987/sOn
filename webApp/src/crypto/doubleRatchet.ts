@@ -1,30 +1,41 @@
 /**
- * Имитация Double Ratchet Algorithm.
- * Каждое сообщение использует уникальный ключ.
+ * Double Ratchet Algorithm через libsodium.js.
+ * Реальный HMAC (BLAKE2b) для KDF — не mock.
+ *
+ * Симметричный рэтчет:
+ * message_key = HMAC(chain_key, 0x01)
+ * next_chain_key = HMAC(chain_key, 0x02)
  */
 
+import sodium from 'libsodium-wrappers';
+import { ensureSodium } from './keyPair';
+
 export interface RatchetState {
-  chainKey: string;
-  messageKey: string;
-  nextChainKey: string;
+  chainKey: Uint8Array;
+  messageKey: Uint8Array;
+  nextChainKey: Uint8Array;
   ratchetIndex: number;
 }
 
-/** Простой хеш-mock (в продакшене: HMAC-SHA256) */
-function hashMock(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+/** HMAC через BLAKE2b (libsodium crypto_generichash с ключом) */
+function hmac(key: Uint8Array, data: Uint8Array): Uint8Array {
+  return sodium.crypto_generichash(32, data, key);
 }
 
-/** Один шаг рэтчета — генерация ключа сообщения и обновление цепочки */
-export function ratchetStep(chainKey: string): RatchetState {
+/** Один шаг симметричного рэтчета — генерация ключа сообщения и обновление цепочки */
+export async function ratchetStep(chainKey: Uint8Array, index: number = 0): Promise<RatchetState> {
+  await ensureSodium();
+
+  // MK = HMAC(CK, 0x01) — ключ для шифрования сообщения
+  const messageKey = hmac(chainKey, new Uint8Array([0x01]));
+
+  // CK_new = HMAC(CK, 0x02) — следующий ключ цепочки
+  const nextChainKey = hmac(chainKey, new Uint8Array([0x02]));
+
   return {
     chainKey,
-    messageKey: btoa(hashMock(chainKey + ':msg')),
-    nextChainKey: btoa(hashMock(chainKey + ':chain')),
-    ratchetIndex: Date.now(),
+    messageKey,
+    nextChainKey,
+    ratchetIndex: index + 1,
   };
 }

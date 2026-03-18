@@ -1,49 +1,57 @@
 /**
- * Имитация шифрования/дешифрации AES-256-GCM.
- * В продакшене: Web Crypto API / libsodium.js.
+ * Шифрование/дешифрация через libsodium.js — XSalsa20-Poly1305 (secretbox).
+ * Аналог AES-256-GCM по уровню безопасности, нативный для libsodium.
+ *
+ * secretbox = XSalsa20 (шифрование) + Poly1305 (аутентификация)
+ * Ключ: 32 байта, Nonce: 24 байта
  */
 
+import sodium from 'libsodium-wrappers';
+import { ensureSodium, toBase64, fromBase64 } from './keyPair';
+
 export interface EncryptedMessage {
+  /** Зашифрованный текст + auth tag (base64) */
   ciphertext: string;
-  iv: string;
-  algorithm: 'AES-256-GCM';
-  authTag: string;
+  /** Nonce (base64) */
+  nonce: string;
+  /** Алгоритм */
+  algorithm: 'XSalsa20-Poly1305';
 }
 
-/** Генерация IV (12 байт) */
-function generateIV(): string {
-  const arr = new Uint8Array(12);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
-}
+/** Шифрование сообщения */
+export async function encryptMessage(plaintext: string, messageKey: Uint8Array): Promise<EncryptedMessage> {
+  await ensureSodium();
 
-/** XOR-шифр (упрощённая имитация) */
-function xorCipher(text: string, key: string): string {
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-  }
-  return result;
-}
+  const nonce = new Uint8Array(sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES));
+  const message = new Uint8Array(new TextEncoder().encode(plaintext));
+  const key = new Uint8Array(messageKey);
+  const ciphertext = sodium.crypto_secretbox_easy(message, nonce, key);
 
-/** Шифрование сообщения (AES-256-GCM mock) */
-export function encryptMessage(plaintext: string, messageKey: string): EncryptedMessage {
-  const iv = generateIV();
-  const encrypted = xorCipher(plaintext, messageKey);
   return {
-    ciphertext: btoa(encrypted),
-    iv: btoa(iv),
-    algorithm: 'AES-256-GCM',
-    authTag: btoa(messageKey.slice(0, 16)),
+    ciphertext: toBase64(ciphertext),
+    nonce: toBase64(nonce),
+    algorithm: 'XSalsa20-Poly1305',
   };
 }
 
 /** Дешифрация сообщения */
-export function decryptMessage(encrypted: EncryptedMessage, messageKey: string): string {
-  return xorCipher(atob(encrypted.ciphertext), messageKey);
+export async function decryptMessage(encrypted: EncryptedMessage, messageKey: Uint8Array): Promise<string> {
+  await ensureSodium();
+
+  const ciphertext = new Uint8Array(fromBase64(encrypted.ciphertext));
+  const nonce = new Uint8Array(fromBase64(encrypted.nonce));
+  const key = new Uint8Array(messageKey);
+  const decrypted = sodium.crypto_secretbox_open_easy(ciphertext, nonce, key);
+
+  return new TextDecoder().decode(decrypted);
 }
 
 /** Получить base64-представление зашифрованного текста (для tooltip) */
 export function getEncryptedPreview(text: string): string {
-  return btoa(unescape(encodeURIComponent(text))).slice(0, 40) + '...';
+  // Простое base64-кодирование для превью (не шифрование)
+  try {
+    return btoa(unescape(encodeURIComponent(text))).slice(0, 40) + '...';
+  } catch {
+    return text.slice(0, 20) + '...';
+  }
 }
