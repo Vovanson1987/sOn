@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
-import { Plus, Mic, ArrowUp, Smile } from 'lucide-react';
+import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
 
 interface InputBarProps {
   onSend: (text: string) => void;
@@ -92,7 +92,7 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
           className="flex items-center justify-center flex-shrink-0 mb-[3px]"
           aria-label="Голосовое сообщение"
         >
-          <Mic size={20} color="#8E8E93" />
+          <AudioLines size={20} color="#8E8E93" />
         </button>
       )}
 
