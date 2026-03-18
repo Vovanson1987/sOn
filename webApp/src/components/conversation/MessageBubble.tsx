@@ -75,8 +75,8 @@ export const MessageBubble = memo(function MessageBubble({
     <div
       className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}
       style={{
-        paddingLeft: isOwn ? '80px' : '16px',
-        paddingRight: isOwn ? '16px' : '80px',
+        paddingLeft: isOwn ? '20%' : '16px',
+        paddingRight: isOwn ? '20px' : '20%',
         marginTop: isFirstInGroup ? '6px' : '1px',
       }}
     >
