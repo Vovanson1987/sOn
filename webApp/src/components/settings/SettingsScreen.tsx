@@ -1,9 +1,6 @@
 import { ChevronRight, User, Palette, Bell, Shield, HardDrive, Lock, Info } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 
-interface SettingsScreenProps {
-  onClose?: () => void;
-}
 
 interface SettingRow {
   icon: React.ReactNode;
@@ -40,12 +37,12 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 /** Экран настроек в стиле iOS */
-export function SettingsScreen({ onClose }: SettingsScreenProps) {
+export function SettingsScreen() {
   return (
     <div className="flex flex-col h-full bg-black overflow-y-auto">
       {/* Профиль */}
       <div className="flex flex-col items-center py-6">
-        <Avatar size={80} name="Владимир" />
+        <Avatar size={120} name="Владимир" />
         <h2 className="text-[20px] font-semibold text-white mt-3">Владимир</h2>
         <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>+7 (999) 123-45-67</p>
       </div>

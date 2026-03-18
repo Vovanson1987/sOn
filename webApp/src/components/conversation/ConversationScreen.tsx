@@ -114,17 +114,13 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const regenerateKeys = useSecretChatStore((s) => s.regenerateKeys);
   const endSession = useSecretChatStore((s) => s.endSession);
 
-  const [showKeyExchange, setShowKeyExchange] = useState(false);
+  // Начальное значение: показать анимацию обмена ключами при первом открытии секретного чата
+  const [showKeyExchange, setShowKeyExchange] = useState<boolean>(
+    () => !!(isSecret && !secretSession),
+  );
   const [showVerification, setShowVerification] = useState(false);
   const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
   const [showSelfDestructPicker, setShowSelfDestructPicker] = useState(false);
-
-  // Инициализация секретной сессии при первом открытии
-  useEffect(() => {
-    if (isSecret && !secretSession) {
-      setShowKeyExchange(true);
-    }
-  }, [isSecret, secretSession]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

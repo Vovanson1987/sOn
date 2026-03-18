@@ -28,7 +28,7 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 /** Сохранить сообщения в кэш */
-export async function cacheMessages(chatId: string, messages: unknown[]): Promise<void> {
+export async function cacheMessages(_chatId: string, messages: unknown[]): Promise<void> {
   const db = await openDB();
   const tx = db.transaction('messages', 'readwrite');
   const store = tx.objectStore('messages');

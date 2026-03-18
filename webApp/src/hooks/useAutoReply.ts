@@ -72,5 +72,6 @@ export function useAutoReply(chat: Chat) {
       clearTimeout(typingTimer);
       clearTimeout(replyTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, chat.id, otherName, otherId, addMessage, setTyping, clearTyping]);
 }

@@ -22,19 +22,21 @@ export function CallScreen() {
 
   const [elapsed, setElapsed] = useState(0);
 
+  // Статус и время начала звонка для зависимостей эффекта
+  const callStatus = call?.status;
+  const callStartedAt = call?.startedAt;
+
   // Таймер звонка
   useEffect(() => {
-    if (!call || call.status !== 'active' || !call.startedAt) return;
+    if (callStatus !== 'active' || !callStartedAt) return;
     const interval = setInterval(() => {
-      setElapsed(Date.now() - call.startedAt!);
+      setElapsed(Date.now() - callStartedAt);
     }, 1000);
     return () => clearInterval(interval);
-  }, [call?.status, call?.startedAt]);
+  }, [callStatus, callStartedAt]);
 
-  // Сброс таймера при новом звонке
-  useEffect(() => {
-    if (!call) setElapsed(0);
-  }, [call]);
+  // Сброс таймера при завершении звонка
+  const elapsedValue = (!callStatus || callStatus === 'ended') ? 0 : elapsed;
 
   const handleEnd = useCallback(() => endCall(), [endCall]);
   const handleAccept = useCallback(() => acceptCall(), [acceptCall]);
@@ -87,7 +89,7 @@ export function CallScreen() {
             : isRinging
               ? 'Вызов...'
               : call.status === 'active'
-                ? formatDuration(elapsed)
+                ? formatDuration(elapsedValue)
                 : 'Завершён'}
         </p>
       </div>

@@ -22,8 +22,6 @@ export default function App() {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const chats = useChatStore((s) => s.chats);
   const setActiveChat = useChatStore((s) => s.setActiveChat);
-  const searchQuery = useChatStore((s) => s.searchQuery);
-  const setSearchQuery = useChatStore((s) => s.setSearchQuery);
   const activeCall = useCallStore((s) => s.activeCall);
 
   const activeChat = chats.find((c) => c.id === activeChatId);

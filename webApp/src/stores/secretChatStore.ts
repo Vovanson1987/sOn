@@ -111,7 +111,8 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
   endSession: (chatId) => {
     set((s) => {
-      const { [chatId]: _, ...rest } = s.sessions;
+      const { [chatId]: _removed, ...rest } = s.sessions;
+      void _removed; // Явное использование для удалённой сессии
       return { sessions: rest };
     });
   },
