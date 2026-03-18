@@ -1,12 +1,17 @@
-import { useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronRight, Phone, Video, Smile } from 'lucide-react';
+import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
+import { ChevronRight, Phone, Video } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
 import { DateSeparator } from './DateSeparator';
 import { DeliveryStatus } from './DeliveryStatus';
 import { InputBar } from './InputBar';
+import { ReplyQuote } from './ReplyQuote';
+import { TypingIndicator } from './TypingIndicator';
+import { TapbackOverlay } from '@components/reactions/TapbackOverlay';
+import type { TapbackEmoji } from '@components/reactions/TapbackOverlay';
 import { useMessageStore } from '@stores/messageStore';
+import { useAutoReply } from '@hooks/useAutoReply';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
 
@@ -68,10 +73,11 @@ function formatHeaderDate(dateStr: string): string {
 /** Экран переписки в стиле iMessage Mac */
 export function ConversationScreen({ chat }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const getMessages = useMessageStore((s) => s.getMessages);
+  const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
-
-  const messages = getMessages(chat.id);
+  const addReaction = useMessageStore((s) => s.addReaction);
+  const deleteMessageFn = useMessageStore((s) => s.deleteMessage);
+  const typingUsers = useMessageStore((s) => s.typingUsers);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   const other = chat.members.find((m) => m.id !== 'user-me');
@@ -79,14 +85,24 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const isGroup = chat.type === 'group';
   const chatSubtype = chat.type === 'secret' ? 'Секретный чат' : 'iMessage';
 
-  // Дата последнего сообщения для шапки
   const lastMessageDate = messages.length > 0
     ? formatHeaderDate(messages[messages.length - 1].createdAt)
     : '';
 
+  const isTyping = (typingUsers[chat.id] ?? []).length > 0;
+
+  // Автоответы
+  useAutoReply(chat);
+
+  // Состояние Tapback оверлея
+  const [tapbackMessage, setTapbackMessage] = useState<Message | null>(null);
+
+  // Состояние reply
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, isTyping]);
 
   const lastOwnMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -98,52 +114,72 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   }, [messages]);
 
   const handleSend = useCallback(
-    (text: string) => sendMessage(chat.id, text),
+    (text: string) => {
+      sendMessage(chat.id, text);
+      setReplyTo(null);
+    },
     [chat.id, sendMessage],
   );
 
+  const handleReact = useCallback(
+    (emoji: TapbackEmoji) => {
+      if (tapbackMessage) {
+        addReaction(chat.id, tapbackMessage.id, emoji, 'user-me');
+        setTapbackMessage(null);
+      }
+    },
+    [chat.id, tapbackMessage, addReaction],
+  );
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, msg: Message) => {
+      e.preventDefault();
+      if (msg.type !== 'system' && !msg.isDestroyed) {
+        setTapbackMessage(msg);
+      }
+    },
+    [],
+  );
+
+  const handleCopy = useCallback(() => {
+    if (tapbackMessage) {
+      navigator.clipboard.writeText(tapbackMessage.content);
+      setTapbackMessage(null);
+    }
+  }, [tapbackMessage]);
+
+  const handleDelete = useCallback(() => {
+    if (tapbackMessage) {
+      deleteMessageFn(chat.id, tapbackMessage.id);
+      setTapbackMessage(null);
+    }
+  }, [chat.id, tapbackMessage, deleteMessageFn]);
+
   return (
     <div className="flex flex-col h-full bg-black">
-      {/* Шапка — стиль iMessage Mac */}
+      {/* Шапка */}
       <FrostedGlassBar className="flex items-center px-4 py-2 relative min-h-[60px]">
-        {/* Левая часть — пустая на десктопе */}
         <div className="w-[60px]" />
-
-        {/* Центр: аватар + имя + подпись */}
         <div className="flex-1 flex flex-col items-center">
           <Avatar size={35} name={chatName} src={other?.avatarUrl} />
           <button className="flex items-center gap-[1px] mt-[2px]">
             <span className="text-[13px] font-semibold text-white">{chatName}</span>
             <ChevronRight size={12} color="#8E8E93" />
           </button>
-          <span className="text-[10px]" style={{ color: '#8E8E93' }}>
-            {chatSubtype}
-          </span>
+          <span className="text-[10px]" style={{ color: '#8E8E93' }}>{chatSubtype}</span>
           {lastMessageDate && (
-            <span className="text-[10px]" style={{ color: '#8E8E93' }}>
-              {lastMessageDate}
-            </span>
+            <span className="text-[10px]" style={{ color: '#8E8E93' }}>{lastMessageDate}</span>
           )}
         </div>
-
-        {/* Правая часть: иконки */}
         <div className="flex items-center gap-3 w-[60px] justify-end">
-          <button aria-label="Видеозвонок">
-            <Video size={20} color="#8E8E93" />
-          </button>
-          <button aria-label="Аудиозвонок">
-            <Phone size={18} color="#8E8E93" />
-          </button>
+          <button aria-label="Видеозвонок"><Video size={20} color="#8E8E93" /></button>
+          <button aria-label="Аудиозвонок"><Phone size={18} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
 
       {/* Область сообщений */}
-      <div
-        className="flex-1 overflow-y-auto"
-        style={{ WebkitOverflowScrolling: 'touch' }}
-      >
+      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="h-3" />
-
         {grouped.map((item, i) => {
           if (item.type === 'date') {
             return <DateSeparator key={`date-${i}`} date={item.date} />;
@@ -153,7 +189,10 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
           const isLastOwn = lastOwnMessage?.id === message.id;
 
           return (
-            <div key={message.id}>
+            <div
+              key={message.id}
+              onContextMenu={(e) => handleContextMenu(e, message)}
+            >
               <MessageBubble
                 message={message}
                 isOwn={isOwn}
@@ -170,15 +209,41 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
             </div>
           );
         })}
+
+        {/* Индикатор "печатает..." */}
+        {isTyping && <TypingIndicator />}
+
         <div ref={messagesEndRef} />
         <div className="h-3" />
       </div>
+
+      {/* Цитата при ответе */}
+      {replyTo && (
+        <ReplyQuote
+          senderName={replyTo.senderName}
+          preview={replyTo.content.slice(0, 100)}
+          onCancel={() => setReplyTo(null)}
+        />
+      )}
 
       {/* Панель ввода */}
       <InputBar
         onSend={handleSend}
         placeholder={chat.type === 'secret' ? 'Секретное сообщение...' : 'iMessage'}
       />
+
+      {/* Tapback оверлей */}
+      {tapbackMessage && (
+        <TapbackOverlay
+          message={tapbackMessage}
+          isOwn={tapbackMessage.senderId === 'user-me'}
+          onReact={handleReact}
+          onReply={() => { setReplyTo(tapbackMessage); setTapbackMessage(null); }}
+          onCopy={handleCopy}
+          onDelete={handleDelete}
+          onClose={() => setTapbackMessage(null)}
+        />
+      )}
     </div>
   );
 }
