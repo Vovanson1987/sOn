@@ -6,8 +6,12 @@ const { WebSocketServer } = require('ws');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
+const multer = require('multer');
 const { pool, initDB } = require('./db');
+const { ensureBucket, uploadFile, getDownloadUrl, getUploadUrl } = require('./storage');
 require('dotenv').config();
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const app = express();
 const server = http.createServer(app);
@@ -249,6 +253,56 @@ async function broadcastToChat(chatId, data, excludeUserId = null) {
   }
 }
 
+// ==================== ФАЙЛЫ ====================
+
+/** POST /api/media/upload — загрузка файла */
+app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Файл не прикреплён' });
+
+    const folder = req.body.folder || 'attachments';
+    const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, folder);
+
+    // Сохранить запись в БД
+    await pool.query(
+      `INSERT INTO attachments (id, message_id, uploader_id, file_name, file_size, mime_type, url, object_name)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)`,
+      [req.body.message_id || null, req.user.id, req.file.originalname, result.size, result.mimeType, result.url, result.objectName]
+    );
+
+    res.status(201).json(result);
+  } catch (err) {
+    console.error('Ошибка загрузки:', err);
+    res.status(500).json({ error: 'Ошибка загрузки файла' });
+  }
+});
+
+/** POST /api/media/download — pre-signed URL для скачивания */
+app.post('/api/media/download', authMiddleware, async (req, res) => {
+  try {
+    const objectName = req.body.object_name;
+    const url = await getDownloadUrl(objectName);
+    res.json({ url });
+  } catch (err) {
+    console.error('Ошибка получения URL:', err);
+    res.status(404).json({ error: 'Файл не найден' });
+  }
+});
+
+/** POST /api/media/upload-url — получить pre-signed URL для прямой загрузки */
+app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
+  try {
+    const { fileName, folder = 'attachments' } = req.body;
+    const ext = fileName?.split('.').pop() || 'bin';
+    const objectName = `${folder}/${require('uuid').v4()}.${ext}`;
+    const url = await getUploadUrl(objectName);
+    res.json({ url, objectName });
+  } catch (err) {
+    console.error('Ошибка pre-signed URL:', err);
+    res.status(500).json({ error: 'Ошибка генерации URL' });
+  }
+});
+
 // ==================== HEALTH ====================
 
 app.get('/health', (_, res) => res.json({ status: 'ok', service: 'son-api', uptime: process.uptime() }));
@@ -257,6 +311,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', service: 'son-api', upti
 
 async function start() {
   await initDB();
+  await ensureBucket().catch((err) => console.warn('⚠️ MinIO недоступен:', err.message));
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 sOn API сервер запущен на http://localhost:${PORT}`);
     console.log(`🔌 WebSocket на ws://localhost:${PORT}/ws`);
