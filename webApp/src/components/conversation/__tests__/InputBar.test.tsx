@@ -5,7 +5,7 @@ import { InputBar } from '../InputBar';
 describe('InputBar', () => {
   it('отображает placeholder', () => {
     render(<InputBar onSend={() => {}} />);
-    expect(screen.getByPlaceholderText('Текстовое сообщение...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('iMessage')).toBeInTheDocument();
   });
 
   it('кастомный placeholder для секретных чатов', () => {
@@ -71,5 +71,10 @@ describe('InputBar', () => {
   it('кнопка вложений доступна', () => {
     render(<InputBar onSend={() => {}} />);
     expect(screen.getByLabelText('Вложения')).toBeInTheDocument();
+  });
+
+  it('кнопка эмодзи доступна', () => {
+    render(<InputBar onSend={() => {}} />);
+    expect(screen.getByLabelText('Эмодзи')).toBeInTheDocument();
   });
 });

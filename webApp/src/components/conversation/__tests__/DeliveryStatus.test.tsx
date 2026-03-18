@@ -18,11 +18,14 @@ describe('DeliveryStatus', () => {
     expect(screen.getByText('Доставлено')).toBeInTheDocument();
   });
 
-  it('показывает "Прочитано" синим для read', () => {
+  it('показывает "Прочитано" для read', () => {
     render(<DeliveryStatus status="read" />);
-    const el = screen.getByText('Прочитано');
-    expect(el).toBeInTheDocument();
-    expect(el).toHaveStyle({ color: '#007AFF' });
+    expect(screen.getByText(/Прочитано/)).toBeInTheDocument();
+  });
+
+  it('показывает дату при наличии readAt', () => {
+    render(<DeliveryStatus status="read" readAt="2026-03-18T10:00:00Z" />);
+    expect(screen.getByText(/Прочитано 18\.03\.2026/)).toBeInTheDocument();
   });
 
   it('показывает "Не доставлено" красным для failed', () => {

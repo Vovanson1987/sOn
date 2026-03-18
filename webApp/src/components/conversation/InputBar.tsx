@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
-import { Plus, Mic, ArrowUp } from 'lucide-react';
+import { Plus, Mic, ArrowUp, Smile } from 'lucide-react';
 
 interface InputBarProps {
   onSend: (text: string) => void;
   placeholder?: string;
 }
 
-/** Панель ввода сообщения в стиле iOS Messages */
-export function InputBar({ onSend, placeholder = 'Текстовое сообщение...' }: InputBarProps) {
+/** Панель ввода сообщения в стиле iMessage Mac */
+export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -35,7 +35,6 @@ export function InputBar({ onSend, placeholder = 'Текстовое сообщ�
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    // Максимум 5 строк (~20px на строку)
     el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
   }, []);
 
@@ -46,23 +45,23 @@ export function InputBar({ onSend, placeholder = 'Текстовое сообщ�
       className="flex items-end gap-2 px-3 py-2 border-t"
       style={{
         borderColor: '#38383A',
-        backgroundColor: '#000',
+        background: '#000',
         paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
       }}
     >
       {/* Кнопка вложений */}
       <button
-        className="w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0 mb-[2px]"
-        style={{ backgroundColor: '#636366' }}
+        className="w-[26px] h-[26px] rounded-full flex items-center justify-center flex-shrink-0 mb-[3px]"
+        style={{ background: '#636366' }}
         aria-label="Вложения"
       >
-        <Plus size={18} color="white" />
+        <Plus size={16} color="white" />
       </button>
 
       {/* Поле ввода */}
       <div
         className="flex-1 flex items-end rounded-[18px] px-3 py-[6px]"
-        style={{ backgroundColor: '#1C1C1E', border: '0.5px solid #38383A' }}
+        style={{ background: '#1C1C1E', border: '0.5px solid #38383A' }}
       >
         <textarea
           ref={textareaRef}
@@ -73,29 +72,37 @@ export function InputBar({ onSend, placeholder = 'Текстовое сообщ�
           placeholder={placeholder}
           rows={1}
           aria-label="Написать сообщение"
-          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#8E8E93] outline-none resize-none leading-[1.3]"
+          className="flex-1 bg-transparent text-[15px] text-white placeholder-[#8E8E93] outline-none resize-none leading-[1.35]"
           style={{ maxHeight: '100px' }}
         />
       </div>
 
-      {/* Кнопка отправки / микрофон */}
+      {/* Аудио-волны / отправка */}
       {hasText ? (
         <button
           onClick={handleSend}
-          className="w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0 mb-[2px]"
-          style={{ backgroundColor: '#007AFF' }}
+          className="w-[26px] h-[26px] rounded-full flex items-center justify-center flex-shrink-0 mb-[3px]"
+          style={{ background: '#007AFF' }}
           aria-label="Отправить"
         >
-          <ArrowUp size={18} color="white" strokeWidth={3} />
+          <ArrowUp size={16} color="white" strokeWidth={3} />
         </button>
       ) : (
         <button
-          className="w-[30px] h-[30px] flex items-center justify-center flex-shrink-0 mb-[2px]"
+          className="flex items-center justify-center flex-shrink-0 mb-[3px]"
           aria-label="Голосовое сообщение"
         >
-          <Mic size={22} color="#8E8E93" />
+          <Mic size={20} color="#8E8E93" />
         </button>
       )}
+
+      {/* Эмодзи */}
+      <button
+        className="flex items-center justify-center flex-shrink-0 mb-[3px]"
+        aria-label="Эмодзи"
+      >
+        <Smile size={20} color="#8E8E93" />
+      </button>
     </footer>
   );
 }
