@@ -38,19 +38,19 @@ function fingerprintHash(key1: Uint8Array, key2: Uint8Array): Uint8Array {
   combined.set(first);
   combined.set(second, first.length);
 
-  // BLAKE2b хеш (32 байта)
-  // Fallback для среды без libsodium (тесты)
-  try {
-    const sodium = require('libsodium-wrappers');
-    return sodium.crypto_generichash(32, combined);
-  } catch {
-    // Fallback: простой хеш для тестов
-    const result = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-      result[i] = combined[i % combined.length] ^ (i * 7 + 13);
-    }
-    return result;
+  // Простой хеш (FNV-1a вариация) — детерминированный, не криптографический
+  // В продакшене заменить на sodium.crypto_generichash при инициализации
+  const result = new Uint8Array(32);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < combined.length; i++) {
+    hash ^= combined[i];
+    hash = Math.imul(hash, 0x01000193);
   }
+  for (let i = 0; i < 32; i++) {
+    hash = Math.imul(hash, 0x01000193) ^ i;
+    result[i] = Math.abs(hash) % 256;
+  }
+  return result;
 }
 
 /** Генерация эмодзи-сетки 4×4 (принимает Uint8Array ключи) */

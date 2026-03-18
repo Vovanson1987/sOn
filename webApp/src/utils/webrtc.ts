@@ -3,7 +3,7 @@
  * Использует RTCPeerConnection + STUN/TURN серверы.
  */
 
-import { sendWS, onWS } from '@/api/client';
+import { sendWS } from '@/api/client';
 
 /** Конфигурация ICE серверов */
 const ICE_CONFIG: RTCConfiguration = {

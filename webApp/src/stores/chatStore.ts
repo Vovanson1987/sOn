@@ -61,7 +61,7 @@ interface ChatStore {
   addChat: (chat: Chat) => void;
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+export const useChatStore = create<ChatStore>((set, _get) => ({
   chats: mockChats, // Моки как fallback пока нет чатов с сервера
   activeChatId: null,
   searchQuery: '',
