@@ -58,8 +58,19 @@ export function ChatList() {
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {filteredChats.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-[13px]" style={{ color: '#8E8E93' }}>
-            Нет чатов
+          <div className="flex flex-col items-center justify-center h-40 gap-3">
+            <p className="text-[14px]" style={{ color: '#8E8E93' }}>
+              {searchQuery ? 'Ничего не найдено' : 'Нет чатов'}
+            </p>
+            {!searchQuery && (
+              <button
+                onClick={() => setShowNewChat(true)}
+                className="px-4 py-[8px] rounded-[10px] text-[14px] font-medium text-white"
+                style={{ background: '#007AFF' }}
+              >
+                Начать чат
+              </button>
+            )}
           </div>
         ) : (
           filteredChats.map((chat) => (

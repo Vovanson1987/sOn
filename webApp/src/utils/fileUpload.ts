@@ -4,7 +4,8 @@
 
 import { getToken } from '@/api/client';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+/** URL API — относительный путь, nginx проксирует на бэкенд */
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 /** Результат загрузки файла */
 export interface UploadResult {

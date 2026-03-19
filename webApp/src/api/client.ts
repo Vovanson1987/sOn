@@ -1,7 +1,8 @@
 /** API клиент для подключения к реальному бэкенду */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4000/ws';
+/** URL API — относительный путь, nginx проксирует на бэкенд */
+const API_URL = import.meta.env.VITE_API_URL || '';
+const WS_URL = import.meta.env.VITE_WS_URL || `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/ws`;
 
 /** Получить JWT токен из localStorage */
 export function getToken(): string | null {

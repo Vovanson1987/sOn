@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Chat } from '@/types/chat';
-import { mockChats } from '@mocks/contacts';
+// Моки отключены — используем только реальные данные с сервера
 import * as api from '@/api/client';
 
 type ChatFilter = 'all' | 'unread' | 'groups' | 'secret' | 'archived';
@@ -62,7 +62,7 @@ interface ChatStore {
 }
 
 export const useChatStore = create<ChatStore>((set, _get) => ({
-  chats: mockChats, // Моки как fallback пока нет чатов с сервера
+  chats: [], // Реальные чаты загружаются с сервера
   activeChatId: null,
   searchQuery: '',
   filter: 'all',
@@ -88,15 +88,12 @@ export const useChatStore = create<ChatStore>((set, _get) => ({
     try {
       const data = await api.getChats();
       const apiChats = (data.chats as Array<Record<string, unknown>>).map(mapApiChat);
-      // Если есть чаты с сервера — используем их, иначе оставляем моки
-      if (apiChats.length > 0) {
-        set({ chats: apiChats, isOnline: true });
-      } else {
-        set({ isOnline: true });
-      }
+      // Используем только реальные чаты с сервера (моки отключены)
+      set({ chats: apiChats, isOnline: true });
     } catch (err) {
-      console.warn('Не удалось загрузить чаты с сервера, используем моки:', err);
-      set({ isOnline: false });
+      console.warn('Не удалось загрузить чаты с сервера:', err);
+      // При ошибке — пустой список, не моки
+      set({ chats: [], isOnline: false });
     } finally {
       set({ isLoading: false });
     }

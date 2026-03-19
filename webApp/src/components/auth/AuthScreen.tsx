@@ -14,7 +14,8 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  /** URL API — относительный путь, nginx проксирует на бэкенд */
+  const API_URL = import.meta.env.VITE_API_URL || '';
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();

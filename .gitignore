@@ -4,3 +4,4 @@ node_modules/
 dist/
 .vite/
 *.log
+docs/ngrok_recovery_codes.txt
