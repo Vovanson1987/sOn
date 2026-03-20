@@ -26,7 +26,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   }
   if (status === 'sent') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <Check size={12} aria-hidden="true" />
         Отправлено
       </span>
@@ -34,7 +34,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   }
   if (status === 'delivered') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <CheckCheck size={12} aria-hidden="true" />
         Доставлено
       </span>
@@ -43,7 +43,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   if (status === 'read') {
     const dateStr = readAt ? ` ${formatReadDate(readAt)}` : '';
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#007AFF' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#007AFF' }} role="status" aria-live="polite">
         <CheckCheck size={12} aria-hidden="true" />
         Прочитано{dateStr}
       </span>
@@ -51,7 +51,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   }
   if (status === 'failed') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#FF453A' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#FF453A' }} role="status" aria-live="polite">
         <AlertCircle size={12} aria-hidden="true" />
         Не доставлено
         {onRetry && (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore, lazy, Suspense } from 'react';
 import { ChatList } from '@components/chat-list/ChatList';
 import { TabBar, type TabId } from '@components/layout/TabBar';
 
@@ -14,13 +14,35 @@ import { useAuthStore } from '@stores/authStore';
 import { connectWS, disconnectWS, onWS } from '@/api/client';
 import { handleSignaling } from '@/utils/webrtc';
 
-/** Хук для определения ширины окна */
+/** Хук для отслеживания онлайн/офлайн статуса */
+function useOnlineStatus() {
+  return useSyncExternalStore(
+    (cb) => {
+      window.addEventListener('online', cb);
+      window.addEventListener('offline', cb);
+      return () => {
+        window.removeEventListener('online', cb);
+        window.removeEventListener('offline', cb);
+      };
+    },
+    () => navigator.onLine,
+  );
+}
+
+/** Хук для определения ширины окна (с debounce) */
 function useWindowWidth() {
   const [width, setWidth] = useState(window.innerWidth);
   useEffect(() => {
-    const handler = () => setWidth(window.innerWidth);
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const handler = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => setWidth(window.innerWidth), 150);
+    };
     window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', handler);
+    };
   }, []);
   return width;
 }
@@ -40,6 +62,7 @@ export default function App() {
 
   const width = useWindowWidth();
   const isMobile = width < 768;
+  const isOnline = useOnlineStatus();
 
   const [activeTab, setActiveTab] = useState<TabId>('chats');
   const unreadChats = chats.filter((c) => c.unreadCount > 0).length;
@@ -109,7 +132,7 @@ export default function App() {
   // Экран авторизации (если не залогинен)
   if (!isAuthenticated) {
     return (
-      <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
+      <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" role="status"><span className="sr-only">Загрузка...</span></div>}>
         <AuthScreen onAuth={handleAuth} />
       </Suspense>
     );
@@ -120,6 +143,11 @@ export default function App() {
     return (
       <div className="flex flex-col h-full w-full bg-black">
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-black focus:text-white">Перейти к контенту</a>
+        {!isOnline && (
+          <div role="alert" className="w-full text-center text-[13px] font-semibold text-white py-1" style={{ background: '#FF453A' }}>
+            Нет соединения
+          </div>
+        )}
         {/* Экран звонка поверх всего */}
         <Suspense fallback={null}>
           {activeCall && <CallScreen />}
@@ -159,13 +187,19 @@ export default function App() {
 
   // Desktop/Tablet: двухколоночный layout
   return (
-    <div className="flex h-full w-full bg-black">
+    <div className="flex flex-col h-full w-full bg-black">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-black focus:text-white">Перейти к контенту</a>
+      {!isOnline && (
+        <div role="alert" className="w-full text-center text-[13px] font-semibold text-white py-1" style={{ background: '#FF453A' }}>
+          Нет соединения
+        </div>
+      )}
       {/* Экран звонка поверх всего */}
       <Suspense fallback={null}>
         {activeCall && <CallScreen />}
       </Suspense>
 
+      <div className="flex flex-1 overflow-hidden">
       {/* Sidebar — список чатов */}
       <div className="w-[340px] flex-shrink-0 h-full">
         <ChatList />
@@ -173,7 +207,7 @@ export default function App() {
 
       {/* Область чата */}
       <main className="flex-1 h-full" id="main-content">
-        <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
+        <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" role="status"><span className="sr-only">Загрузка...</span></div>}>
         {activeChat ? (
           <ConversationScreen chat={activeChat} onBack={handleBack} />
         ) : (
@@ -185,6 +219,7 @@ export default function App() {
         )}
         </Suspense>
       </main>
+      </div>
     </div>
   );
 }

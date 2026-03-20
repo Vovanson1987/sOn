@@ -83,7 +83,7 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage' }: Inp
           placeholder={placeholder}
           rows={1}
           aria-label="Написать сообщение"
-          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#ABABAF] outline-none resize-none leading-[1.3]"
+          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#ABABAF] outline-none resize-none leading-[1.3] focus:ring-1 focus:ring-[#007AFF] focus:rounded-[4px]"
           style={{ maxHeight: '100px' }}
         />
       </div>

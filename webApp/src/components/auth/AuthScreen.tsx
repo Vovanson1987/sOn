@@ -73,7 +73,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           >
             <Lock size={32} color="white" />
           </div>
-          <h1 className="text-[28px] font-bold text-white">sOn</h1>
+          <h1 className="text-[34px] font-bold text-white">sOn</h1>
           <p className="text-[14px] mt-1" style={{ color: '#ABABAF' }}>
             Защищённый мессенджер
           </p>

@@ -43,8 +43,8 @@ export function useAutoReply(chat: Chat) {
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg || lastMsg.senderId !== myUserId || lastMsg.type === 'system') return;
 
-    // Не отвечать в секретных чатах с самоуничтожением и для спама
-    if (chat.id === 'chat-900') return;
+    // Не отвечать в секретных чатах с активным таймером самоуничтожения
+    if (chat.type === 'secret' && chat.selfDestruct) return;
 
     const replyDelay = 1000 + Math.random() * 2000; // 1-3 сек
     const typingDuration = 1000 + Math.random() * 1000; // 1-2 сек

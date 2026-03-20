@@ -73,7 +73,7 @@ export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: 
         <div style={{ height: '6px', background: '#000' }} />
         <button
           onClick={onClose}
-          className="w-full py-[14px] text-center text-[16px] font-semibold"
+          className="w-full py-[14px] text-center text-[16px] font-semibold transition-colors duration-150 hover:bg-[#2C2C2E]"
           style={{ background: '#1C1C1E', color: '#007AFF' }}
         >
           Отмена

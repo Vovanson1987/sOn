@@ -35,7 +35,7 @@ export function VerificationModal({
     <div
       ref={focusTrapRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.8)' }}
+      style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
       role="dialog"
       aria-modal="true"
       aria-label="Верификация шифрования"
@@ -46,7 +46,7 @@ export function VerificationModal({
       >
         {/* Заголовок + закрыть */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[18px] font-semibold text-white">Верификация шифрования</h2>
+          <h2 className="text-[17px] font-semibold text-white">Верификация шифрования</h2>
           <button onClick={onClose} aria-label="Закрыть" className="min-w-[44px] min-h-[44px] flex items-center justify-center">
             <X size={20} color="#8E8E93" />
           </button>
@@ -83,7 +83,7 @@ export function VerificationModal({
         >
           <p
             className="text-[12px] text-center break-all leading-[1.6]"
-            style={{ color: '#ABABAF', fontFamily: 'monospace' }}
+            style={{ color: '#ABABAF', fontFamily: 'var(--font-family-mono)' }}
           >
             {hexFingerprint}
           </p>

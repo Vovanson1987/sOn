@@ -193,7 +193,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   }, [chat.id, tapbackMessage, deleteMessageFn]);
 
   return (
-    <div className="flex flex-col h-full bg-black">
+    <div className="flex flex-col h-full bg-black animate-slideInRight" style={{ animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}>
       {/* Анимация обмена ключами */}
       {showKeyExchange && isSecret && (
         <KeyExchangeAnimation
@@ -245,6 +245,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
 
       {/* Шапка */}
       <FrostedGlassBar
+        as="header"
         className="flex items-center px-2 relative"
         style={{
           paddingTop: 'max(8px, env(safe-area-inset-top))',
@@ -283,7 +284,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
               </button>
             </>
           )}
-          <button className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
+          <button onClick={() => alert('Видеозвонки скоро будут доступны')} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
 

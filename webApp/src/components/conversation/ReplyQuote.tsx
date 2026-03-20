@@ -27,11 +27,12 @@ export function ReplyQuote({ senderName, preview, onCancel }: ReplyQuoteProps) {
 
       <button
         onClick={onCancel}
-        className="flex-shrink-0 w-[24px] h-[24px] rounded-full flex items-center justify-center"
-        style={{ background: '#38383A' }}
+        className="flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
         aria-label="Отменить ответ"
       >
-        <X size={14} color="#8E8E93" />
+        <span className="w-[24px] h-[24px] rounded-full flex items-center justify-center" style={{ background: '#38383A' }}>
+          <X size={14} color="#8E8E93" />
+        </span>
       </button>
     </div>
   );

@@ -90,7 +90,7 @@ export function ChatList() {
             {!searchQuery && (
               <button
                 onClick={() => setShowNewChat(true)}
-                className="px-4 py-[8px] rounded-[10px] text-[14px] font-medium text-white"
+                className="px-4 min-h-[44px] rounded-[10px] text-[14px] font-medium text-white"
                 style={{ background: '#007AFF' }}
               >
                 Начать чат

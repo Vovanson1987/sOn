@@ -44,7 +44,7 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
         background: isActive ? '#007AFF' : 'transparent',
       }}
       aria-label={`Чат с ${name}${chat.unreadCount > 0 ? `, ${chat.unreadCount} непрочитанных` : ''}`}
-      aria-current={isActive ? 'true' : undefined}
+      aria-current={isActive ? 'page' : undefined}
     >
       <Avatar size={50} name={avatar.name} src={avatar.src} isOnline={avatar.isOnline} groupMembers={avatar.groupMembers} />
 

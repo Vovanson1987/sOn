@@ -58,6 +58,11 @@ export function KeyExchangeAnimation({ contactName, onComplete }: KeyExchangeAni
           Подключение к <span className="font-semibold">{contactName}</span>
         </p>
 
+        {/* Прогресс */}
+        <p className="text-[13px] mb-4" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
+          {Math.min(Math.round((currentStep / STEPS.length) * 100), 100)}%
+        </p>
+
         {/* Этапы */}
         <div className="w-full space-y-3">
           {STEPS.map((step, i) => (
