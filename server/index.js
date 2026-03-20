@@ -15,16 +15,18 @@ require('dotenv').config();
 
 // ==================== Валидация окружения ====================
 
-const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL'];
-for (const key of REQUIRED_ENV) {
-  if (!process.env[key]) {
-    console.error(`❌ Переменная окружения ${key} обязательна`);
+if (process.env.NODE_ENV !== 'test') {
+  const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL'];
+  for (const key of REQUIRED_ENV) {
+    if (!process.env[key]) {
+      console.error(`❌ Переменная окружения ${key} обязательна`);
+      process.exit(1);
+    }
+  }
+  if (process.env.JWT_SECRET.length < 32) {
+    console.error('❌ JWT_SECRET должен быть минимум 32 символа');
     process.exit(1);
   }
-}
-if (process.env.JWT_SECRET.length < 32) {
-  console.error('❌ JWT_SECRET должен быть минимум 32 символа');
-  process.exit(1);
 }
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -687,4 +689,9 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-start();
+// Запуск только при прямом вызове (не при импорте для тестов)
+if (require.main === module) {
+  start();
+}
+
+module.exports = { app, server, wss, pool };

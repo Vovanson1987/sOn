@@ -1,0 +1,20 @@
+{
+  "name": "sOn Messenger",
+  "short_name": "sOn",
+  "description": "Защищённый семейный мессенджер с end-to-end шифрованием",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#007AFF",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["social", "communication"],
+  "lang": "ru"
+}

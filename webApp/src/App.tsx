@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
 import { ChatList } from '@components/chat-list/ChatList';
-import { ConversationScreen } from '@components/conversation/ConversationScreen';
-import { CallScreen } from '@components/calls/CallScreen';
-import { SettingsScreen } from '@components/settings/SettingsScreen';
-import { AuthScreen } from '@components/auth/AuthScreen';
 import { TabBar, type TabId } from '@components/layout/TabBar';
+
+// Lazy-загрузка тяжёлых компонентов (code splitting)
+const ConversationScreen = lazy(() => import('@components/conversation/ConversationScreen').then(m => ({ default: m.ConversationScreen })));
+const CallScreen = lazy(() => import('@components/calls/CallScreen').then(m => ({ default: m.CallScreen })));
+const SettingsScreen = lazy(() => import('@components/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
+const AuthScreen = lazy(() => import('@components/auth/AuthScreen').then(m => ({ default: m.AuthScreen })));
 import { useChatStore } from '@stores/chatStore';
 import { useMessageStore } from '@stores/messageStore';
 import { useCallStore } from '@stores/callStore';
@@ -106,7 +108,11 @@ export default function App() {
 
   // Экран авторизации (если не залогинен)
   if (!isAuthenticated) {
-    return <AuthScreen onAuth={handleAuth} />;
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
+        <AuthScreen onAuth={handleAuth} />
+      </Suspense>
+    );
   }
 
   // Мобильная версия: полноэкранные режимы
@@ -114,14 +120,18 @@ export default function App() {
     return (
       <div className="flex flex-col h-full w-full bg-black">
         {/* Экран звонка поверх всего */}
-        {activeCall && <CallScreen />}
+        <Suspense fallback={null}>
+          {activeCall && <CallScreen />}
+        </Suspense>
 
         <div className="flex-1 overflow-hidden">
           {activeTab === 'chats' && !activeChat && <ChatList />}
-          {activeTab === 'chats' && activeChat && (
-            <ConversationScreen chat={activeChat} onBack={handleBack} />
-          )}
-          {activeTab === 'settings' && <SettingsScreen />}
+          <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
+            {activeTab === 'chats' && activeChat && (
+              <ConversationScreen chat={activeChat} onBack={handleBack} />
+            )}
+            {activeTab === 'settings' && <SettingsScreen />}
+          </Suspense>
           {activeTab === 'calls' && (
             <div className="flex items-center justify-center h-full">
               <p className="text-[15px]" style={{ color: '#8E8E93' }}>Журнал звонков</p>
@@ -150,7 +160,9 @@ export default function App() {
   return (
     <div className="flex h-full w-full bg-black">
       {/* Экран звонка поверх всего */}
-      {activeCall && <CallScreen />}
+      <Suspense fallback={null}>
+        {activeCall && <CallScreen />}
+      </Suspense>
 
       {/* Sidebar — список чатов */}
       <div className="w-[340px] flex-shrink-0 h-full">
@@ -159,6 +171,7 @@ export default function App() {
 
       {/* Область чата */}
       <main className="flex-1 h-full">
+        <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
         {activeChat ? (
           <ConversationScreen chat={activeChat} onBack={handleBack} />
         ) : (
@@ -168,6 +181,7 @@ export default function App() {
             </p>
           </div>
         )}
+        </Suspense>
       </main>
     </div>
   );

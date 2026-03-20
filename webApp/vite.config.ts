@@ -16,4 +16,16 @@ export default defineConfig({
       '@mocks': resolve(__dirname, 'src/mocks'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Выделяем тяжёлые зависимости в отдельные чанки
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-crypto': ['libsodium-wrappers'],
+          'vendor-zustand': ['zustand'],
+        },
+      },
+    },
+  },
 })
