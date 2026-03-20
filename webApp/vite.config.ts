@@ -16,6 +16,16 @@ export default defineConfig({
       '@mocks': resolve(__dirname, 'src/mocks'),
     },
   },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+      '/health': 'http://localhost:8080',
+    },
+  },
   build: {
     rollupOptions: {
       output: {
