@@ -85,7 +85,7 @@ export const Avatar = memo(function Avatar({ size, src, name, isOnline, groupMem
       {isOnline && (
         <span
           className="absolute bottom-0 right-0 rounded-full border-2 border-black"
-          style={{ width: size * 0.22, height: size * 0.22, background: '#34C759' }}
+          style={{ width: size * 0.22, height: size * 0.22, background: '#30D158' }}
           aria-label="Онлайн"
         />
       )}

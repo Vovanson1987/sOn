@@ -119,7 +119,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           />
 
           {error && (
-            <p className="text-[13px] text-center" style={{ color: '#FF3B30' }}>{error}</p>
+            <p className="text-[13px] text-center" style={{ color: '#FF453A' }}>{error}</p>
           )}
 
           <button

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface ImageViewerProps {
@@ -9,6 +9,13 @@ interface ImageViewerProps {
 
 /** Полноэкранный просмотр изображения с затемнением */
 export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    return () => previousFocusRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);

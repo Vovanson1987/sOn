@@ -34,6 +34,13 @@ describe('CallScreen', () => {
     expect(screen.getByText('Входящий видеозвонок...')).toBeInTheDocument();
   });
 
+  it('имеет aria-modal="true"', () => {
+    useCallStore.getState().startCall('chat-1', 'Алексей', false);
+    const { container } = render(<CallScreen />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
   it('кнопка "Завершить звонок" завершает звонок', () => {
     useCallStore.getState().startCall('chat-1', 'Алексей', false);
     render(<CallScreen />);

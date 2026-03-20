@@ -122,6 +122,19 @@ describe('NewChatModal', () => {
     expect(mockOnClose).not.toHaveBeenCalled();
   });
 
+  it('имеет role="dialog" и aria-modal="true"', () => {
+    const { container } = render(<NewChatModal onClose={mockOnClose} onChatCreated={mockOnChatCreated} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('закрывается по Escape', () => {
+    render(<NewChatModal onClose={mockOnClose} onChatCreated={mockOnChatCreated} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
   it('показывает "Поиск..." во время загрузки', async () => {
     let resolveSearch: (v: unknown) => void;
     mockSearchUsers.mockReturnValue(new Promise((r) => { resolveSearch = r; }));

@@ -47,6 +47,19 @@ describe('VerificationModal', () => {
     fireEvent.click(screen.getByText('✓ Подтвердить верификацию'));
     expect(onVerify).toHaveBeenCalled();
   });
+
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<VerificationModal {...defaultProps} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<VerificationModal {...defaultProps} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
 });
 
 describe('SelfDestructPicker', () => {
@@ -78,6 +91,19 @@ describe('SelfDestructPicker', () => {
     render(<SelfDestructPicker isOpen currentValue={30} onSelect={() => {}} onClose={() => {}} />);
     const checkmarks = screen.getAllByText('✓');
     expect(checkmarks.length).toBe(1);
+  });
+
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<SelfDestructPicker isOpen currentValue={null} onSelect={() => {}} onClose={() => {}} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<SelfDestructPicker isOpen currentValue={null} onSelect={() => {}} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
   });
 });
 
@@ -114,7 +140,7 @@ describe('EncryptionInfo', () => {
 
   it('кнопка "Завершить секретный чат" красная', () => {
     render(<EncryptionInfo {...defaultProps} />);
-    expect(screen.getByText('Завершить секретный чат')).toHaveStyle({ color: '#FF3B30' });
+    expect(screen.getByText('Завершить секретный чат')).toHaveStyle({ color: '#FF453A' });
   });
 
   it('вызывает onRegenerateKeys', () => {
@@ -122,5 +148,18 @@ describe('EncryptionInfo', () => {
     render(<EncryptionInfo {...defaultProps} onRegenerateKeys={fn} />);
     fireEvent.click(screen.getByText('Пересоздать ключи'));
     expect(fn).toHaveBeenCalled();
+  });
+
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<EncryptionInfo {...defaultProps} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<EncryptionInfo {...defaultProps} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
   });
 });

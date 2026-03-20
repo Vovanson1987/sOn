@@ -22,6 +22,19 @@ describe('ImageViewer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<ImageViewer src="https://example.com/photo.jpg" alt="Тест" onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<ImageViewer src="https://example.com/photo.jpg" alt="Тест" onClose={() => {}} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
   it('вызывает onClose при клике на фон', () => {
     const onClose = vi.fn();
     const { container } = render(<ImageViewer src="https://example.com/photo.jpg" alt="Тест" onClose={onClose} />);

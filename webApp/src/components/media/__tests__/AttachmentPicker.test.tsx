@@ -30,6 +30,19 @@ describe('AttachmentPicker', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<AttachmentPicker isOpen onClose={() => {}} onSelect={() => {}} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<AttachmentPicker isOpen onClose={onClose} onSelect={() => {}} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('кнопка "Отмена" синего цвета', () => {
     render(<AttachmentPicker isOpen onClose={() => {}} onSelect={() => {}} />);
     expect(screen.getByText('Отмена')).toHaveStyle({ color: '#007AFF' });

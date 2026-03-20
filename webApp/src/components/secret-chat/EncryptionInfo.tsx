@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Shield, Key, RefreshCw, Trash2 } from 'lucide-react';
 
 interface EncryptionInfoProps {
@@ -24,12 +25,29 @@ export function EncryptionInfo({
   onEndSecretChat,
   onClose,
 }: EncryptionInfoProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
+    return () => previousFocusRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.8)' }}
       onClick={onClose}
       role="dialog"
+      aria-modal="true"
       aria-label="Информация о шифровании"
     >
       <div
@@ -38,7 +56,7 @@ export function EncryptionInfo({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-4">
-          <Shield size={20} color="#34C759" />
+          <Shield size={20} color="#30D158" />
           <h2 className="text-[17px] font-semibold text-white">Шифрование</h2>
         </div>
 
@@ -66,7 +84,7 @@ export function EncryptionInfo({
           <div style={{ height: '0.5px', background: '#38383A' }} />
           <div className="flex justify-between">
             <span className="text-[13px]" style={{ color: '#8E8E93' }}>Верификация</span>
-            <span className="text-[13px]" style={{ color: isVerified ? '#34C759' : '#FF9500' }}>
+            <span className="text-[13px]" style={{ color: isVerified ? '#30D158' : '#FF9500' }}>
               {isVerified ? '✓ Подтверждено' : '⚠ Не верифицировано'}
             </span>
           </div>
@@ -99,8 +117,8 @@ export function EncryptionInfo({
             className="w-full flex items-center gap-3 px-4 py-[10px] rounded-[10px]"
             style={{ background: '#2C2C2E' }}
           >
-            <Trash2 size={18} color="#FF3B30" />
-            <span className="text-[15px]" style={{ color: '#FF3B30' }}>Завершить секретный чат</span>
+            <Trash2 size={18} color="#FF453A" />
+            <span className="text-[15px]" style={{ color: '#FF453A' }}>Завершить секретный чат</span>
           </button>
         </div>
       </div>

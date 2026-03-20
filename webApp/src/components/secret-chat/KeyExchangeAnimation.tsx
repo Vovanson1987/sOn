@@ -31,25 +31,26 @@ export function KeyExchangeAnimation({ contactName, onComplete }: KeyExchangeAni
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.9)' }}
       role="dialog"
+      aria-modal="true"
       aria-label="Установка защищённого соединения"
     >
       <div className="flex flex-col items-center max-w-[400px] px-8">
         {/* Два замка */}
         <div className="flex items-center gap-8 mb-8">
-          <Lock size={40} color="#34C759" />
+          <Lock size={40} color="#30D158" />
           <div className="flex gap-1">
             {[0, 1, 2, 3, 4].map((i) => (
               <div
                 key={i}
                 className="w-[6px] h-[6px] rounded-full"
                 style={{
-                  background: '#34C759',
+                  background: '#30D158',
                   animation: `typingDots 1.2s ease-in-out ${i * 0.15}s infinite`,
                 }}
               />
             ))}
           </div>
-          <Lock size={40} color="#34C759" />
+          <Lock size={40} color="#30D158" />
         </div>
 
         {/* Имя контакта */}
@@ -69,11 +70,11 @@ export function KeyExchangeAnimation({ contactName, onComplete }: KeyExchangeAni
               }}
             >
               {i < currentStep ? (
-                <Check size={18} color="#34C759" />
+                <Check size={18} color="#30D158" />
               ) : i === currentStep ? (
                 <div
                   className="w-[18px] h-[18px] rounded-full border-2 border-t-transparent animate-spin"
-                  style={{ borderColor: '#34C759', borderTopColor: 'transparent' }}
+                  style={{ borderColor: '#30D158', borderTopColor: 'transparent' }}
                 />
               ) : (
                 <div className="w-[18px] h-[18px]" />

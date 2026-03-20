@@ -1,8 +1,8 @@
 const APPLE_AVATAR_COLORS = [
-  '#FF3B30', // Red
+  '#FF453A', // Red
   '#FF9500', // Orange
   '#FFCC00', // Yellow
-  '#34C759', // Green
+  '#30D158', // Green
   '#007AFF', // Blue
   '#AF52DE', // Purple
   '#8E8E93', // Gray

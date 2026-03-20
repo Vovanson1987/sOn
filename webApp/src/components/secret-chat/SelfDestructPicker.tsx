@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 interface SelfDestructPickerProps {
   isOpen: boolean;
   currentValue: number | null;
@@ -18,13 +20,32 @@ const OPTIONS = [
 
 /** Picker таймера самоуничтожения (iOS-стиль снизу) */
 export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: SelfDestructPickerProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
+    return () => previousFocusRef.current?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-40"
       onClick={onClose}
       role="dialog"
+      aria-modal="true"
       aria-label="Таймер самоуничтожения"
     >
       <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />

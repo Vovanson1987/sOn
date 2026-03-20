@@ -69,19 +69,19 @@ export function SettingsScreen() {
       <SectionHeader title="Уведомления" />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
-          icon={<Bell size={20} color="#FF3B30" />}
+          icon={<Bell size={20} color="#FF453A" />}
           label="Уведомления"
           value="Включены"
         />
         <Divider />
         <SettingsRow
-          icon={<Bell size={20} color="#FF3B30" />}
+          icon={<Bell size={20} color="#FF453A" />}
           label="Звук"
           value="По умолчанию"
         />
         <Divider />
         <SettingsRow
-          icon={<Bell size={20} color="#FF3B30" />}
+          icon={<Bell size={20} color="#FF453A" />}
           label="Предпросмотр"
           value="Всегда"
         />
@@ -90,19 +90,19 @@ export function SettingsScreen() {
       <SectionHeader title="Конфиденциальность" />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
-          icon={<Shield size={20} color="#34C759" />}
+          icon={<Shield size={20} color="#30D158" />}
           label="Онлайн-статус"
           value="Все"
         />
         <Divider />
         <SettingsRow
-          icon={<Shield size={20} color="#34C759" />}
+          icon={<Shield size={20} color="#30D158" />}
           label="Отчёты о прочтении"
           value="Включены"
         />
         <Divider />
         <SettingsRow
-          icon={<Lock size={20} color="#34C759" />}
+          icon={<Lock size={20} color="#30D158" />}
           label="Блокировка приложения"
           value="Выкл"
         />
@@ -117,7 +117,7 @@ export function SettingsScreen() {
         />
         <Divider />
         <SettingsRow
-          icon={<Lock size={20} color="#34C759" />}
+          icon={<Lock size={20} color="#30D158" />}
           label="Шифрование"
           value="Signal Protocol"
         />

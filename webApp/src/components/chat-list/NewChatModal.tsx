@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { X, Search } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import * as api from '@/api/client';
@@ -23,6 +23,18 @@ export function NewChatModal({ onClose, onChatCreated }: NewChatModalProps) {
   const [results, setResults] = useState<UserResult[]>([]);
   const [searching, setSearching] = useState(false);
   const createChat = useChatStore((s) => s.createChat);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    return () => previousFocusRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleSearch = useCallback(async (q: string) => {
     setQuery(q);
@@ -51,6 +63,9 @@ export function NewChatModal({ onClose, onChatCreated }: NewChatModalProps) {
       className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]"
       style={{ background: 'rgba(0,0,0,0.7)' }}
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Новый чат"
     >
       <div
         className="w-full max-w-[400px] mx-4 rounded-[16px] overflow-hidden"
@@ -101,7 +116,7 @@ export function NewChatModal({ onClose, onChatCreated }: NewChatModalProps) {
                 {user.is_online && (
                   <div
                     className="absolute bottom-0 right-0 w-[10px] h-[10px] rounded-full"
-                    style={{ background: '#34C759', border: '2px solid #1C1C1E' }}
+                    style={{ background: '#30D158', border: '2px solid #1C1C1E' }}
                   />
                 )}
               </div>

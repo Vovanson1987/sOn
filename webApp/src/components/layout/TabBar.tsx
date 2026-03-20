@@ -49,7 +49,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
               {badge > 0 && (
                 <div
                   className="absolute -top-[4px] -right-[8px] min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-[4px]"
-                  style={{ background: '#FF3B30' }}
+                  style={{ background: '#FF453A' }}
                 >
                   <span className="text-[11px] font-bold text-white">{badge > 99 ? '99+' : badge}</span>
                 </div>

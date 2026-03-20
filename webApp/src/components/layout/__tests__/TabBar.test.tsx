@@ -35,7 +35,7 @@ describe('TabBar', () => {
 
   it('не показывает бейдж при 0', () => {
     const { container } = render(<TabBar activeTab="chats" onTabChange={() => {}} unreadChats={0} />);
-    expect(container.querySelector('[style*="background: #FF3B30"]')).toBeNull();
+    expect(container.querySelector('[style*="background: #FF453A"]')).toBeNull();
   });
 
   it('активная вкладка имеет aria-selected', () => {

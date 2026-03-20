@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 
@@ -21,11 +22,28 @@ export function VerificationModal({
   onVerify,
   onClose,
 }: VerificationModalProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
+    return () => previousFocusRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.8)' }}
       role="dialog"
+      aria-modal="true"
       aria-label="Верификация шифрования"
     >
       <div
@@ -86,7 +104,7 @@ export function VerificationModal({
         {isVerified ? (
           <div
             className="w-full py-[12px] rounded-[10px] text-center text-[16px] font-semibold"
-            style={{ background: '#2C2C2E', color: '#34C759' }}
+            style={{ background: '#2C2C2E', color: '#30D158' }}
           >
             ✓ Верификация подтверждена
           </div>
@@ -94,7 +112,7 @@ export function VerificationModal({
           <button
             onClick={onVerify}
             className="w-full py-[12px] rounded-[10px] text-center text-[16px] font-semibold text-white"
-            style={{ background: '#34C759' }}
+            style={{ background: '#30D158' }}
           >
             ✓ Подтвердить верификацию
           </button>

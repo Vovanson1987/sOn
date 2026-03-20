@@ -55,6 +55,7 @@ export function CallScreen() {
         WebkitBackdropFilter: 'blur(40px)',
       }}
       role="dialog"
+      aria-modal="true"
       aria-label={`${call.isVideo ? 'Видеозвонок' : 'Аудиозвонок'} — ${call.contactName}`}
     >
       {/* Верхняя часть: аватар + имя */}
@@ -119,7 +120,7 @@ export function CallScreen() {
             <button
               onClick={toggleMic}
               className="w-[56px] h-[56px] rounded-full flex items-center justify-center"
-              style={{ background: call.isMicMuted ? '#FF3B30' : 'rgba(255,255,255,0.15)' }}
+              style={{ background: call.isMicMuted ? '#FF453A' : 'rgba(255,255,255,0.15)' }}
               aria-label={call.isMicMuted ? 'Включить микрофон' : 'Выключить микрофон'}
             >
               {call.isMicMuted ? <MicOff size={24} color="white" /> : <Mic size={24} color="white" />}
@@ -130,7 +131,7 @@ export function CallScreen() {
               <button
                 onClick={toggleCamera}
                 className="w-[56px] h-[56px] rounded-full flex items-center justify-center"
-                style={{ background: !call.isCameraOn ? '#FF3B30' : 'rgba(255,255,255,0.15)' }}
+                style={{ background: !call.isCameraOn ? '#FF453A' : 'rgba(255,255,255,0.15)' }}
                 aria-label={call.isCameraOn ? 'Выключить камеру' : 'Включить камеру'}
               >
                 {call.isCameraOn ? <Video size={24} color="white" /> : <VideoOff size={24} color="white" />}
@@ -156,30 +157,30 @@ export function CallScreen() {
               <button
                 onClick={handleEnd}
                 className="w-[64px] h-[64px] rounded-full flex items-center justify-center"
-                style={{ background: '#FF3B30' }}
+                style={{ background: '#FF453A' }}
                 aria-label="Отклонить"
               >
                 <PhoneOff size={28} color="white" />
               </button>
-              <span className="text-[12px]" style={{ color: '#FF3B30' }}>Отклонить</span>
+              <span className="text-[12px]" style={{ color: '#FF453A' }}>Отклонить</span>
             </div>
             <div className="flex flex-col items-center gap-2">
               <button
                 onClick={handleAccept}
                 className="w-[64px] h-[64px] rounded-full flex items-center justify-center"
-                style={{ background: '#34C759' }}
+                style={{ background: '#30D158' }}
                 aria-label="Принять"
               >
                 <Phone size={28} color="white" />
               </button>
-              <span className="text-[12px]" style={{ color: '#34C759' }}>Принять</span>
+              <span className="text-[12px]" style={{ color: '#30D158' }}>Принять</span>
             </div>
           </div>
         ) : (
           <button
             onClick={handleEnd}
             className="w-[64px] h-[64px] rounded-full flex items-center justify-center"
-            style={{ background: '#FF3B30' }}
+            style={{ background: '#FF453A' }}
             aria-label="Завершить звонок"
           >
             <PhoneOff size={28} color="white" />

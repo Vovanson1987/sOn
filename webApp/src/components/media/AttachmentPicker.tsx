@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Camera, Image, FileText, MapPin } from 'lucide-react';
 
 interface AttachmentPickerProps {
@@ -10,18 +11,37 @@ const ITEMS = [
   { type: 'camera' as const, icon: Camera, label: 'Камера', color: '#FF9500' },
   { type: 'photo' as const, icon: Image, label: 'Фото и видео', color: '#007AFF' },
   { type: 'document' as const, icon: FileText, label: 'Документ', color: '#8E8E93' },
-  { type: 'location' as const, icon: MapPin, label: 'Геолокация', color: '#34C759' },
+  { type: 'location' as const, icon: MapPin, label: 'Геолокация', color: '#30D158' },
 ];
 
 /** iOS Action Sheet для выбора типа вложения */
 export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPickerProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
+    return () => previousFocusRef.current?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-40"
       onClick={onClose}
       role="dialog"
+      aria-modal="true"
       aria-label="Выбор вложения"
     >
       {/* Затемнение */}
