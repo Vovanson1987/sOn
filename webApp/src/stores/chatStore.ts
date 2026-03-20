@@ -61,7 +61,9 @@ interface ChatStore {
   setActiveChat: (id: string | null) => void;
   setSearchQuery: (q: string) => void;
   setFilter: (f: ChatFilter) => void;
-  deleteChat: (id: string) => void;
+  deleteChat: (id: string) => Promise<void>;
+  /** Удалить чат локально (для WS event) */
+  removeChatLocal: (id: string) => void;
   markAsRead: (chatId: string) => void;
   /** Загрузить чаты с сервера */
   fetchChats: () => Promise<void>;
@@ -71,7 +73,7 @@ interface ChatStore {
   addChat: (chat: Chat) => void;
 }
 
-export const useChatStore = create<ChatStore>((set, _get) => ({
+export const useChatStore = create<ChatStore>((set, get) => ({
   chats: [], // Реальные чаты загружаются с сервера
   activeChatId: null,
   searchQuery: '',
@@ -83,7 +85,25 @@ export const useChatStore = create<ChatStore>((set, _get) => ({
   setSearchQuery: (q) => set({ searchQuery: q }),
   setFilter: (f) => set({ filter: f }),
 
-  deleteChat: (id) => set((s) => ({ chats: s.chats.filter((c) => c.id !== id) })),
+  deleteChat: async (id) => {
+    // Optimistic delete
+    set((s) => ({
+      chats: s.chats.filter((c) => c.id !== id),
+      activeChatId: s.activeChatId === id ? null : s.activeChatId,
+    }));
+    try {
+      await api.deleteChat(id);
+    } catch (err) {
+      console.error('Ошибка удаления чата:', err);
+      // При ошибке — перезагрузить чаты
+      get().fetchChats();
+    }
+  },
+
+  removeChatLocal: (id) => set((s) => ({
+    chats: s.chats.filter((c) => c.id !== id),
+    activeChatId: s.activeChatId === id ? null : s.activeChatId,
+  })),
 
   markAsRead: (chatId) =>
     set((s) => ({

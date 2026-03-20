@@ -83,6 +83,39 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
     fetchMessages(chat.id);
   }, [chat.id, fetchMessages]);
 
+  // ME-19: Self-destruct таймеры — уничтожить сообщения после истечения
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const msg of messages) {
+      if (msg.selfDestructAt && !msg.isDestroyed) {
+        const remaining = new Date(msg.selfDestructAt).getTime() - Date.now();
+        if (remaining <= 0) {
+          // Уже истекло — пометить как уничтоженное
+          useMessageStore.setState((s) => ({
+            messages: {
+              ...s.messages,
+              [chat.id]: s.messages[chat.id]?.map((m) =>
+                m.id === msg.id ? { ...m, isDestroyed: true, content: '' } : m
+              ) ?? [],
+            },
+          }));
+        } else {
+          timers.push(setTimeout(() => {
+            useMessageStore.setState((s) => ({
+              messages: {
+                ...s.messages,
+                [chat.id]: s.messages[chat.id]?.map((m) =>
+                  m.id === msg.id ? { ...m, isDestroyed: true, content: '' } : m
+                ) ?? [],
+              },
+            }));
+          }, remaining));
+        }
+      }
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [messages, chat.id]);
+
   const authUserId = useAuthStore((s) => s.user?.id);
   const myDisplayName = useAuthStore((s) => s.user?.display_name) || 'Вы';
   const myUserId = authUserId || 'user-me';
@@ -371,6 +404,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       <InputBar
         onSend={handleSend}
         placeholder={chat.type === 'secret' ? 'Секретное сообщение...' : 'iMessage'}
+        chatId={chat.id}
       />
 
       {/* Tapback оверлей */}

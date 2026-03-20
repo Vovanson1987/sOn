@@ -14,6 +14,13 @@ vi.mock('@/crypto/keyStore', () => ({
   saveKeyPair: vi.fn(() => Promise.resolve()),
   saveSharedSecret: vi.fn(() => Promise.resolve()),
   deleteKeys: vi.fn(() => Promise.resolve()),
+  saveSessionMeta: vi.fn(() => Promise.resolve()),
+  loadSessionMeta: vi.fn(() => Promise.resolve(null)),
+  loadAllSessionChatIds: vi.fn(() => Promise.resolve([])),
+  loadKeyPair: vi.fn(() => Promise.resolve(null)),
+  loadSharedSecret: vi.fn(() => Promise.resolve(null)),
+  loadRatchetState: vi.fn(() => Promise.resolve(null)),
+  saveRatchetState: vi.fn(() => Promise.resolve()),
 }));
 
 describe('secretChatStore', () => {

@@ -74,6 +74,15 @@ export default function App() {
   const fetchChats = useChatStore((s) => s.fetchChats);
   const addMessage = useMessageStore((s) => s.addMessage);
 
+  // HI-11: Восстановить E2EE сессии при авторизации
+  useEffect(() => {
+    if (isAuthenticated) {
+      import('@stores/secretChatStore').then(({ useSecretChatStore }) => {
+        useSecretChatStore.getState().restoreSessions();
+      });
+    }
+  }, [isAuthenticated]);
+
   // Подключить WebSocket и загрузить чаты при авторизации
   useEffect(() => {
     if (isAuthenticated) {
@@ -99,6 +108,50 @@ export default function App() {
             isDestroyed: false,
             createdAt: m.created_at,
           });
+        }
+
+        // Удаление чатов от других пользователей
+        if (msg.type === 'chat_deleted') {
+          const chatId = msg.chat_id as string;
+          if (chatId) {
+            useChatStore.getState().removeChatLocal(chatId);
+          }
+        }
+
+        // CR-07: Удаление сообщений от других пользователей
+        if (msg.type === 'message_deleted') {
+          const messageId = msg.message_id as string;
+          const chatId = msg.chat_id as string;
+          if (messageId) {
+            if (chatId) {
+              useMessageStore.getState().removeMessageLocal(chatId, messageId);
+            } else {
+              // Fallback: поискать сообщение во всех чатах
+              const state = useMessageStore.getState();
+              for (const cId of Object.keys(state.messages)) {
+                if (state.messages[cId]?.some(m => m.id === messageId)) {
+                  state.removeMessageLocal(cId, messageId);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // ME-15: Typing events от других пользователей
+        if (msg.type === 'typing') {
+          const chatId = msg.chat_id as string;
+          const userName = msg.display_name as string;
+          if (chatId && userName) {
+            useMessageStore.getState().setTyping(chatId, userName);
+          }
+        }
+        if (msg.type === 'stop_typing') {
+          const chatId = msg.chat_id as string;
+          const userName = msg.display_name as string;
+          if (chatId && userName) {
+            useMessageStore.getState().clearTyping(chatId, userName);
+          }
         }
 
         // WebRTC signaling события

@@ -11,7 +11,11 @@ import {
 } from '@/crypto/doubleRatchet';
 import { encryptMessage, decryptMessage, type EncryptedMessage } from '@/crypto/encrypt';
 import { generateEmojiFingerprint, generateHexFingerprint } from '@/crypto/fingerprint';
-import { saveKeyPair, saveSharedSecret, deleteKeys } from '@/crypto/keyStore';
+import {
+  saveKeyPair, saveSharedSecret, deleteKeys,
+  saveSessionMeta, loadSessionMeta, loadAllSessionChatIds,
+  loadKeyPair, loadSharedSecret, loadRatchetState, saveRatchetState,
+} from '@/crypto/keyStore';
 import * as api from '@/api/client';
 
 export interface SecretSession {
@@ -50,6 +54,8 @@ interface SecretChatStore {
   setSelfDestruct: (chatId: string, seconds: number | null) => void;
   /** Завершить секретный чат */
   endSession: (chatId: string) => void;
+  /** HI-11: Восстановить сессии из IndexedDB при загрузке */
+  restoreSessions: () => Promise<void>;
 }
 
 /** Количество OPK для генерации */
@@ -163,6 +169,17 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       };
 
       set((s) => ({ sessions: { ...s.sessions, [chatId]: session } }));
+
+      // HI-11: Persist session metadata + ratchet state
+      await saveSessionMeta(chatId, {
+        chatId, peerId,
+        isVerified: false,
+        selfDestructTimer: null,
+        sessionDate: session.sessionDate,
+        emojiGrid, hexFingerprint,
+      }).catch(() => {});
+      await saveRatchetState(chatId, session.ratchetState as unknown as Record<string, unknown>).catch(() => {});
+
       return session;
     } catch (error) {
       console.error('[secretChatStore] initSession failed:', error);
@@ -190,6 +207,9 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       },
     }));
 
+    // HI-11: Persist updated ratchet state
+    saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch(() => {});
+
     return { encrypted, header };
   },
 
@@ -212,6 +232,9 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
         },
       }));
 
+      // HI-11: Persist updated ratchet state
+      saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch(() => {});
+
       return plaintext;
     } catch {
       return null;
@@ -224,6 +247,18 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       if (!session) return s;
       return { sessions: { ...s.sessions, [chatId]: { ...session, isVerified: true } } };
     });
+    // HI-11: Persist verification status
+    const session = get().sessions[chatId];
+    if (session) {
+      saveSessionMeta(chatId, {
+        chatId, peerId: session.peerId,
+        isVerified: true,
+        selfDestructTimer: session.selfDestructTimer,
+        sessionDate: session.sessionDate,
+        emojiGrid: session.emojiGrid,
+        hexFingerprint: session.hexFingerprint,
+      }).catch(() => {});
+    }
   },
 
   setSelfDestruct: (chatId, seconds) => {
@@ -232,6 +267,18 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       if (!session) return s;
       return { sessions: { ...s.sessions, [chatId]: { ...session, selfDestructTimer: seconds } } };
     });
+    // HI-11: Persist self-destruct timer
+    const session = get().sessions[chatId];
+    if (session) {
+      saveSessionMeta(chatId, {
+        chatId, peerId: session.peerId,
+        isVerified: session.isVerified,
+        selfDestructTimer: seconds,
+        sessionDate: session.sessionDate,
+        emojiGrid: session.emojiGrid,
+        hexFingerprint: session.hexFingerprint,
+      }).catch(() => {});
+    }
   },
 
   endSession: (chatId) => {
@@ -241,5 +288,47 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       void _removed;
       return { sessions: rest };
     });
+  },
+
+  restoreSessions: async () => {
+    try {
+      const chatIds = await loadAllSessionChatIds();
+      const sessions: Record<string, SecretSession> = {};
+
+      for (const chatId of chatIds) {
+        try {
+          const meta = await loadSessionMeta(chatId);
+          if (!meta) continue;
+
+          const identityKey = await loadKeyPair(chatId);
+          const sharedSecret = await loadSharedSecret(chatId);
+          const ratchetState = await loadRatchetState(chatId);
+
+          if (!identityKey || !sharedSecret || !ratchetState) continue;
+
+          sessions[chatId] = {
+            chatId,
+            peerId: meta.peerId as string,
+            myIdentityKey: identityKey,
+            mySigningKey: get().mySigningKey || { publicKey: new Uint8Array(32), privateKey: new Uint8Array(64) },
+            x3dhResult: { sharedSecret, ephemeralPublicKey: new Uint8Array(32) },
+            ratchetState: ratchetState as unknown as DoubleRatchetState,
+            isVerified: meta.isVerified as boolean || false,
+            selfDestructTimer: meta.selfDestructTimer as number | null,
+            sessionDate: meta.sessionDate as string,
+            emojiGrid: meta.emojiGrid as string[][],
+            hexFingerprint: meta.hexFingerprint as string,
+          };
+        } catch {
+          // Пропускаем повреждённые сессии
+        }
+      }
+
+      if (Object.keys(sessions).length > 0) {
+        set((s) => ({ sessions: { ...s.sessions, ...sessions } }));
+      }
+    } catch (err) {
+      console.error('[secretChatStore] restoreSessions failed:', err);
+    }
   },
 }));

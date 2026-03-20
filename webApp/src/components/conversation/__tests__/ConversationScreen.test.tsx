@@ -70,6 +70,8 @@ Element.prototype.scrollIntoView = vi.fn();
 vi.mock('@/api/client', () => ({
   getMessages: vi.fn(),
   sendMessage: vi.fn(),
+  deleteMessage: vi.fn(),
+  sendWS: vi.fn(),
 }));
 
 const directChat: Chat = {

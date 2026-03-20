@@ -43,6 +43,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     res = await fetch(`${API_URL}${path}`, {
       ...options,
       signal: controller.signal,
+      credentials: 'include', // HI-18: Send httpOnly cookies
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -105,16 +106,34 @@ export async function createChat(type: string, memberIds: string[], name?: strin
   });
 }
 
+/** Удалить чат */
+export async function deleteChat(chatId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}`, {
+    method: 'DELETE',
+  });
+}
+
 // ==================== MESSAGES ====================
 
 export async function getMessages(chatId: string) {
   return request<{ messages: unknown[] }>(`/api/chats/${chatId}/messages`);
 }
 
-export async function sendMessage(chatId: string, content: string, type = 'text') {
+export async function sendMessage(chatId: string, content: string, type = 'text', selfDestructSeconds?: number) {
   return request<unknown>(`/api/chats/${chatId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content, type }),
+    body: JSON.stringify({
+      content,
+      type,
+      ...(selfDestructSeconds ? { self_destruct_seconds: selfDestructSeconds } : {}),
+    }),
+  });
+}
+
+/** CR-07: Удалить сообщение через API */
+export async function deleteMessage(chatId: string, messageId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/messages/${messageId}`, {
+    method: 'DELETE',
   });
 }
 

@@ -285,6 +285,48 @@ export async function loadRatchetState(chatId: string): Promise<Record<string, u
   });
 }
 
+/** HI-11: Сохранить метаданные секретной сессии */
+export async function saveSessionMeta(chatId: string, meta: Record<string, unknown>): Promise<void> {
+  const db = await openDB();
+  const serialized = new TextEncoder().encode(JSON.stringify(meta));
+  const encrypted = await encryptData(serialized);
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  tx.objectStore(STORE_NAME).put({ id: `sm:${chatId}`, data: encrypted });
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** HI-11: Загрузить метаданные секретной сессии */
+export async function loadSessionMeta(chatId: string): Promise<Record<string, unknown> | null> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const req = tx.objectStore(STORE_NAME).get(`sm:${chatId}`);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = async () => {
+      const record = req.result;
+      if (!record) { resolve(null); return; }
+      try {
+        const data = await decryptData(record.data);
+        resolve(JSON.parse(new TextDecoder().decode(data)));
+      } catch { resolve(null); }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** HI-11: Загрузить все chatId для которых есть сохранённые сессии */
+export async function loadAllSessionChatIds(): Promise<string[]> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const store = tx.objectStore(STORE_NAME);
+  const records = await getAllRecords(store);
+  return records
+    .filter((r) => typeof r.id === 'string' && (r.id as string).startsWith('sm:'))
+    .map((r) => (r.id as string).slice(3));
+}
+
 /** Удалить все ключи для чата */
 export async function deleteKeys(chatId: string): Promise<void> {
   const db = await openDB();
@@ -293,6 +335,7 @@ export async function deleteKeys(chatId: string): Promise<void> {
   store.delete(`kp:${chatId}`);
   store.delete(`ss:${chatId}`);
   store.delete(`dr:${chatId}`);
+  store.delete(`sm:${chatId}`);
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

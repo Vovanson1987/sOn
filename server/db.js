@@ -93,6 +93,7 @@ async function initDB() {
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS description TEXT;
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS avatar_url TEXT;
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS self_destruct_at TIMESTAMPTZ;
     EXCEPTION WHEN OTHERS THEN NULL;
     END $$;
 

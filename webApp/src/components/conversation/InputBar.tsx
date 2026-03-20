@@ -1,28 +1,48 @@
-import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
+import { sendWS } from '@/api/client';
 
 interface InputBarProps {
   onSend: (text: string) => void;
   onAttachment?: (type: 'camera' | 'photo' | 'document' | 'location') => void;
   placeholder?: string;
+  chatId?: string;
 }
 
 /** Панель ввода сообщения в стиле iMessage Mac */
-export function InputBar({ onSend, onAttachment, placeholder = 'iMessage' }: InputBarProps) {
+export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatId }: InputBarProps) {
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const isTypingRef = useRef(false);
+
+  // ME-16: Очистить таймер typing при размонтировании
+  useEffect(() => {
+    return () => {
+      if (isTypingRef.current && chatId) {
+        sendWS({ type: 'stop_typing', chat_id: chatId });
+      }
+      clearTimeout(typingTimeoutRef.current);
+    };
+  }, [chatId]);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    // ME-16: Остановить typing при отправке
+    if (isTypingRef.current && chatId) {
+      sendWS({ type: 'stop_typing', chat_id: chatId });
+      isTypingRef.current = false;
+      clearTimeout(typingTimeoutRef.current);
+    }
     onSend(trimmed);
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [text, onSend]);
+  }, [text, onSend, chatId]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -77,7 +97,25 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage' }: Inp
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // ME-16: Отправить typing event
+            if (chatId && e.target.value.trim()) {
+              if (!isTypingRef.current) {
+                sendWS({ type: 'typing', chat_id: chatId });
+                isTypingRef.current = true;
+              }
+              clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = setTimeout(() => {
+                sendWS({ type: 'stop_typing', chat_id: chatId });
+                isTypingRef.current = false;
+              }, 3000);
+            } else if (chatId && isTypingRef.current) {
+              sendWS({ type: 'stop_typing', chat_id: chatId });
+              isTypingRef.current = false;
+              clearTimeout(typingTimeoutRef.current);
+            }
+          }}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           placeholder={placeholder}

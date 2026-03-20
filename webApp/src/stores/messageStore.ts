@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Message } from '@/types/message';
 import * as api from '@/api/client';
 import { useAuthStore } from './authStore';
+import { useSecretChatStore } from './secretChatStore';
 
 interface MessageStore {
   messages: Record<string, Message[]>;
@@ -18,8 +19,10 @@ interface MessageStore {
   sendMessage: (chatId: string, content: string, replyTo?: { id: string; senderName: string; preview: string }) => Promise<void>;
   /** Добавить входящее сообщение (от WebSocket) */
   addMessage: (chatId: string, message: Message) => void;
-  /** Удалить сообщение */
-  deleteMessage: (chatId: string, messageId: string) => void;
+  /** Удалить сообщение (через API + локально) */
+  deleteMessage: (chatId: string, messageId: string) => Promise<void>;
+  /** Удалить сообщение локально (для WS event) */
+  removeMessageLocal: (chatId: string, messageId: string) => void;
   /** Добавить реакцию */
   addReaction: (chatId: string, messageId: string, emoji: string, userId: string) => void;
   /** Установить "печатает..." */
@@ -40,6 +43,7 @@ function mapApiMessage(raw: Record<string, unknown>): Message {
     status: (raw.status as Message['status']) || 'sent',
     reactions: {},
     isDestroyed: false,
+    selfDestructAt: raw.self_destruct_at as string | undefined,
     createdAt: raw.created_at as string,
   };
 }
@@ -102,9 +106,13 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       },
     }));
 
+    // ME-19: Получить self-destruct timer для секретных чатов
+    const secretSession = useSecretChatStore.getState().getSession(chatId);
+    const selfDestructSeconds = secretSession?.selfDestructTimer ?? undefined;
+
     // Отправить на сервер
     try {
-      const serverMsg = await api.sendMessage(chatId, content) as Record<string, unknown>;
+      const serverMsg = await api.sendMessage(chatId, content, 'text', selfDestructSeconds) as Record<string, unknown>;
       // Заменить временное сообщение на серверное
       set((s) => ({
         messages: {
@@ -141,7 +149,23 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
     });
   },
 
-  deleteMessage: (chatId, messageId) => {
+  deleteMessage: async (chatId, messageId) => {
+    // Optimistic: удалить локально сразу
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatId]: (s.messages[chatId] ?? []).filter((m) => m.id !== messageId),
+      },
+    }));
+    // CR-07: Отправить на сервер
+    try {
+      await api.deleteMessage(chatId, messageId);
+    } catch (err) {
+      console.error('Ошибка удаления сообщения:', err);
+    }
+  },
+
+  removeMessageLocal: (chatId, messageId) => {
     set((s) => ({
       messages: {
         ...s.messages,
@@ -174,6 +198,10 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         [chatId]: [...new Set([...(s.typingUsers[chatId] ?? []), userName])],
       },
     }));
+    // ME-15: Автоматически очистить typing через 5 сек (если stop_typing не пришёл)
+    setTimeout(() => {
+      get().clearTyping(chatId, userName);
+    }, 5000);
   },
 
   clearTyping: (chatId, userName) => {

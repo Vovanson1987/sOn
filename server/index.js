@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { WebSocketServer } = require('ws');
@@ -62,6 +63,9 @@ app.use(cors({
   credentials: true,
 }));
 
+// HI-18: Cookie parser для httpOnly JWT
+app.use(cookieParser());
+
 // Rate limiting на аутентификацию — защита от brute-force
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
@@ -85,7 +89,8 @@ app.use(express.json());
 // ==================== Middleware ====================
 
 function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  // HI-18: Проверять cookie ИЛИ Authorization header
+  const token = req.cookies?.['son-token'] || req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Нет токена' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -111,6 +116,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, display_name: user.display_name }, JWT_SECRET, { expiresIn: '7d' });
+    // HI-18: Установить httpOnly cookie
+    res.cookie('son-token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
     res.status(201).json({ token, user });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email уже зарегистрирован' });
@@ -132,11 +145,25 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     const token = jwt.sign({ id: user.id, email: user.email, display_name: user.display_name }, JWT_SECRET, { expiresIn: '7d' });
     await pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
+    // HI-18: Установить httpOnly cookie
+    res.cookie('son-token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
     res.json({ token, user: { id: user.id, email: user.email, display_name: user.display_name, avatar_url: user.avatar_url } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
+});
+
+/** POST /api/auth/logout — очистить httpOnly cookie */
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('son-token', { path: '/' });
+  res.json({ ok: true });
 });
 
 /** GET /api/users/me */
@@ -255,15 +282,20 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 
 /** POST /api/chats/:chatId/messages */
 app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
-  const { content, type = 'text', reply_to } = req.body;
+  const { content, type = 'text', reply_to, self_destruct_seconds } = req.body;
   const chatId = req.params.chatId;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // ME-19: Self-destruct timer
+    const selfDestructAt = self_destruct_seconds
+      ? new Date(Date.now() + self_destruct_seconds * 1000).toISOString()
+      : null;
+
     const result = await client.query(
-      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [chatId, req.user.id, content, type, reply_to || null]
+      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to, self_destruct_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [chatId, req.user.id, content, type, reply_to || null, selfDestructAt]
     );
     const msg = result.rows[0];
     msg.sender_name = req.user.display_name;
@@ -300,6 +332,30 @@ app.post('/api/chats/:chatId/read', authMiddleware, chatMemberCheck, async (req,
   res.json({ ok: true });
 });
 
+/** DELETE /api/chats/:chatId — удалить чат */
+app.delete('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res) => {
+  const { chatId } = req.params;
+  const userId = req.user.id;
+
+  // Проверить права: group — только создатель, direct/secret — любой участник
+  const chatResult = await pool.query('SELECT type, created_by FROM chats WHERE id = $1', [chatId]);
+  if (chatResult.rows.length === 0) {
+    return res.status(404).json({ error: 'Чат не найден' });
+  }
+  const chat = chatResult.rows[0];
+  if (chat.type === 'group' && chat.created_by !== userId) {
+    return res.status(403).json({ error: 'Только создатель может удалить группу' });
+  }
+
+  // Уведомить участников ДО удаления (нужны chat_members)
+  broadcastToChat(chatId, { type: 'chat_deleted', chat_id: chatId }, userId);
+
+  // CASCADE удалит: chat_members, messages, attachments
+  await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+
+  res.json({ ok: true });
+});
+
 /** DELETE /api/chats/:chatId/messages/:id — удалить своё сообщение */
 app.delete('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, async (req, res) => {
   const result = await pool.query(
@@ -309,7 +365,7 @@ app.delete('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, a
   if (result.rows.length === 0) {
     return res.status(403).json({ error: 'Нельзя удалить чужое сообщение или сообщение не найдено' });
   }
-  broadcastToChat(req.params.chatId, { type: 'message_deleted', message_id: req.params.id });
+  broadcastToChat(req.params.chatId, { type: 'message_deleted', chat_id: req.params.chatId, message_id: req.params.id });
   res.status(204).send();
 });
 
