@@ -25,7 +25,7 @@ export async function initMasterKeyFromPassword(password: string): Promise<void>
   await ensureSodium();
 
   // Получить или создать соль (соль можно хранить открыто)
-  let saltBase64 = localStorage.getItem(SALT_KEY);
+  const saltBase64 = localStorage.getItem(SALT_KEY);
   let salt: Uint8Array;
   if (saltBase64) {
     salt = fromBase64(saltBase64);

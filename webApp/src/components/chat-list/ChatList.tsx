@@ -8,12 +8,6 @@ import { NewChatModal } from './NewChatModal';
 import type { Chat } from '@/types/chat';
 
 /** LO-16: Виртуализированная строка чата для react-window */
-interface ChatRowProps {
-  chats: Chat[];
-  activeChatId: string | null;
-  onSelect: (chatId: string) => void;
-}
-
 function ChatRow({ index, style, ariaAttributes, chats, activeChatId, onSelect }: {
   index: number;
   style: CSSProperties;

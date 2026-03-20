@@ -77,12 +77,11 @@ interface MessageRowProps {
   isGroup: boolean;
   onContextMenu: (e: React.MouseEvent, msg: Message) => void;
   setRowHeight: (index: number, height: number) => void;
-  isTyping: boolean;
 }
 
 function MessageRow({
   index, style, ariaAttributes,
-  grouped, myUserId, lastOwnMessageId, chatType, isGroup, onContextMenu, setRowHeight, isTyping,
+  grouped, myUserId, lastOwnMessageId, chatType, isGroup, onContextMenu, setRowHeight,
 }: {
   index: number;
   style: CSSProperties;
@@ -258,14 +257,14 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
     if (isNearBottomRef.current && listRef.current && totalRows > 0) {
       listRef.current.scrollToRow({ index: totalRows - 1, align: 'end', behavior: 'smooth' });
     }
-  }, [totalRows]);
+  }, [totalRows, listRef]);
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current?.element;
     if (el) {
       isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
     }
-  }, []);
+  }, [listRef]);
 
   const lastOwnMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -296,7 +295,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
         setTapbackMessage(null);
       }
     },
-    [chat.id, tapbackMessage, addReaction],
+    [chat.id, tapbackMessage, addReaction, myUserId],
   );
 
   const handleContextMenu = useCallback(
@@ -461,7 +460,6 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
               isGroup,
               onContextMenu: handleContextMenu,
               setRowHeight: dynamicRowHeight.setRowHeight,
-              isTyping,
             }}
             style={{ height: msgContainerHeight, overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as CSSProperties}
             onScroll={handleListScroll}
@@ -470,7 +468,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           /* Fallback: обычный рендеринг (для тестов / SSR) */
           <div style={{ overflowY: 'auto', height: '100%', WebkitOverflowScrolling: 'touch' } as CSSProperties}>
             <div className="h-3" />
-            {grouped.map((item, i) => {
+            {grouped.map((item) => {
               if (item.type === 'date') {
                 return <DateSeparator key={`date-${item.date}`} date={item.date} />;
               }

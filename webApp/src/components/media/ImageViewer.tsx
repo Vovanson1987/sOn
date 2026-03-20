@@ -76,8 +76,8 @@ export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
           transition: 'transform 0.2s ease',
           cursor: scale > 1 ? 'zoom-out' : 'zoom-in',
         }}
-        onClick={(e) => { e.stopPropagation(); scale > 1 ? resetZoom() : zoomIn(); }}
-        onDoubleClick={(e) => { e.stopPropagation(); scale > 1 ? resetZoom() : zoomIn(); }}
+        onClick={(e) => { e.stopPropagation(); if (scale > 1) { resetZoom(); } else { zoomIn(); } }}
+        onDoubleClick={(e) => { e.stopPropagation(); if (scale > 1) { resetZoom(); } else { zoomIn(); } }}
       />
     </div>
   );
