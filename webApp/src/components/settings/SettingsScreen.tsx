@@ -1,6 +1,7 @@
-import { ChevronRight, User, Palette, Bell, Shield, HardDrive, Lock, Info } from 'lucide-react';
+import { ChevronRight, User, Palette, Bell, Shield, HardDrive, Lock, Info, LogOut } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import { useAuthStore } from '@stores/authStore';
+import { disconnectWS } from '@/api/client';
 
 
 interface SettingRow {
@@ -40,8 +41,14 @@ function SectionHeader({ title }: { title: string }) {
 /** Экран настроек в стиле iOS */
 export function SettingsScreen() {
   const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const displayName = user?.display_name || 'Пользователь';
   const email = user?.email || '';
+
+  const handleLogout = () => {
+    disconnectWS();
+    logout();
+  };
 
   return (
     <div className="flex flex-col h-full bg-black overflow-y-auto">
@@ -124,12 +131,24 @@ export function SettingsScreen() {
       </div>
 
       <SectionHeader title="О приложении" />
-      <div className="rounded-[10px] mx-4 overflow-hidden mb-8" style={{ background: '#1C1C1E' }}>
+      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<Info size={20} color="#8E8E93" />}
           label="Версия"
           value="1.0.0 (Sprint 6)"
         />
+      </div>
+
+      {/* Кнопка выхода */}
+      <div className="mx-4 mt-6 mb-8">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 py-[12px] rounded-[10px] text-[16px] font-semibold"
+          style={{ background: '#1C1C1E', color: '#FF453A' }}
+        >
+          <LogOut size={18} color="#FF453A" />
+          Выйти
+        </button>
       </div>
     </div>
   );

@@ -1,12 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { SettingsScreen } from '../SettingsScreen';
+
+const mockLogout = vi.fn();
 
 vi.mock('@stores/authStore', () => ({
   useAuthStore: vi.fn((selector) => {
-    const state = { user: { id: 'u1', email: 'test@test.com', display_name: 'Тестов', avatar_url: null } };
+    const state = {
+      user: { id: 'u1', email: 'test@test.com', display_name: 'Тестов', avatar_url: null },
+      logout: mockLogout,
+    };
     return selector(state);
   }),
+}));
+
+vi.mock('@/api/client', () => ({
+  disconnectWS: vi.fn(),
 }));
 
 describe('SettingsScreen', () => {
@@ -52,5 +61,16 @@ describe('SettingsScreen', () => {
   it('отображает шифрование Signal Protocol', () => {
     render(<SettingsScreen />);
     expect(screen.getByText('Signal Protocol')).toBeInTheDocument();
+  });
+
+  it('отображает кнопку "Выйти"', () => {
+    render(<SettingsScreen />);
+    expect(screen.getByText('Выйти')).toBeInTheDocument();
+  });
+
+  it('вызывает logout при клике на "Выйти"', () => {
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByText('Выйти'));
+    expect(mockLogout).toHaveBeenCalled();
   });
 });

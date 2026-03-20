@@ -289,6 +289,17 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       {/* Область сообщений */}
       <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="h-3" />
+
+        {/* Пустое состояние */}
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2 px-8">
+            <p className="text-[17px] font-semibold text-white">Нет сообщений</p>
+            <p className="text-[14px] text-center" style={{ color: '#8E8E93' }}>
+              {isSecret ? 'Начните защищённый разговор' : 'Отправьте первое сообщение'}
+            </p>
+          </div>
+        )}
+
         {grouped.map((item, i) => {
           if (item.type === 'date') {
             return <DateSeparator key={`date-${i}`} date={item.date} />;
