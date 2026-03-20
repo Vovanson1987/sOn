@@ -23,7 +23,10 @@ async function initDB() {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       type VARCHAR(20) NOT NULL DEFAULT 'direct',
       name VARCHAR(200),
+      description TEXT,
+      avatar_url TEXT,
       created_by UUID REFERENCES users(id),
+      last_message_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -63,9 +66,20 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- Добавить новые колонки (безопасно, если уже существуют)
+    DO $$ BEGIN
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS description TEXT;
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END $$;
+
     CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_chat ON chat_members(chat_id);
     CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chats_last_message ON chats(last_message_at);
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   `);
   console.log('✅ Таблицы БД инициализированы');
 }

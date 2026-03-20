@@ -1,5 +1,5 @@
 defmodule SonGatewayWeb.AuthController do
-  @moduledoc "Контроллер аутентификации: регистрация, вход, refresh"
+  @moduledoc "Контроллер аутентификации: регистрация, вход, refresh, logout"
   use Phoenix.Controller, formats: [:json]
 
   alias SonGateway.Accounts
@@ -7,8 +7,8 @@ defmodule SonGatewayWeb.AuthController do
 
   action_fallback SonGatewayWeb.FallbackController
 
-  ## POST /api/auth/register
-  def register(conn, %{"phone" => _phone, "display_name" => _name, "password" => _pass} = params) do
+  ## POST /api/auth/register (поддержка email и phone)
+  def register(conn, %{"display_name" => _name, "password" => _pass} = params) do
     case Accounts.register_user(params) do
       {:ok, user} ->
         {:ok, token, _claims} = Guardian.encode_and_sign(user)
@@ -17,12 +17,7 @@ defmodule SonGatewayWeb.AuthController do
         |> put_status(:created)
         |> json(%{
           token: token,
-          user: %{
-            id: user.id,
-            phone: user.phone,
-            display_name: user.display_name,
-            username: user.username
-          }
+          user: user_json(user)
         })
 
       {:error, changeset} ->
@@ -32,28 +27,32 @@ defmodule SonGatewayWeb.AuthController do
     end
   end
 
-  ## POST /api/auth/login
-  def login(conn, %{"phone" => phone, "password" => password}) do
-    case Accounts.authenticate(phone, password) do
-      {:ok, user} ->
-        {:ok, token, _claims} = Guardian.encode_and_sign(user)
+  ## POST /api/auth/login (поддержка email и phone)
+  def login(conn, %{"password" => password} = params) do
+    # Принимаем email или phone
+    identifier = params["email"] || params["phone"]
 
-        conn
-        |> json(%{
-          token: token,
-          user: %{
-            id: user.id,
-            phone: user.phone,
-            display_name: user.display_name,
-            username: user.username,
-            avatar_url: user.avatar_url
-          }
-        })
+    unless identifier do
+      conn
+      |> put_status(:bad_request)
+      |> json(%{error: "Укажите email или phone"})
+    else
+      case Accounts.authenticate(identifier, password) do
+        {:ok, user} ->
+          {:ok, token, _claims} = Guardian.encode_and_sign(user)
+          Accounts.set_online(user.id, true)
 
-      {:error, _reason} ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{error: "unauthorized", message: "Неверный телефон или пароль"})
+          conn
+          |> json(%{
+            token: token,
+            user: user_json(user)
+          })
+
+        {:error, _reason} ->
+          conn
+          |> put_status(:unauthorized)
+          |> json(%{error: "Неверный email или пароль"})
+      end
     end
   end
 
@@ -68,15 +67,18 @@ defmodule SonGatewayWeb.AuthController do
       {:error, _reason} ->
         conn
         |> put_status(:unauthorized)
-        |> json(%{error: "unauthorized", message: "Невалидный токен"})
+        |> json(%{error: "Невалидный токен"})
     end
   end
 
   ## POST /api/auth/logout
   def logout(conn, _params) do
     token = Guardian.Plug.current_token(conn)
-    Guardian.revoke(token)
-    send_resp(conn, :no_content, "")
+
+    case Guardian.revoke(token) do
+      {:ok, _} -> send_resp(conn, :no_content, "")
+      {:error, _} -> send_resp(conn, :no_content, "")
+    end
   end
 
   ## GET /api/auth/sessions
@@ -87,6 +89,17 @@ defmodule SonGatewayWeb.AuthController do
   ## DELETE /api/auth/sessions/:device_id
   def revoke_session(conn, %{"device_id" => _device_id}) do
     send_resp(conn, :no_content, "")
+  end
+
+  defp user_json(user) do
+    %{
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      display_name: user.display_name,
+      username: user.username,
+      avatar_url: user.avatar_url
+    }
   end
 
   defp format_errors(changeset) do

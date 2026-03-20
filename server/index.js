@@ -165,7 +165,7 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id
     WHERE cm.user_id = $1
-    ORDER BY c.created_at DESC
+    ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
   `, [req.user.id]);
   res.json({ chats: result.rows });
 });
@@ -209,30 +209,89 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
 
 // ==================== MESSAGES ====================
 
-/** GET /api/chats/:chatId/messages */
+/** GET /api/chats/:chatId/messages?before=ISO&limit=50 — с пагинацией */
 app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
-  const result = await pool.query(
-    `SELECT m.*, u.display_name as sender_name FROM messages m
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const before = req.query.before; // ISO timestamp для курсорной пагинации
+
+  let query, params;
+  if (before) {
+    query = `SELECT m.*, u.display_name as sender_name FROM messages m
      JOIN users u ON u.id = m.sender_id
-     WHERE m.chat_id = $1 ORDER BY m.created_at ASC LIMIT 100`,
-    [req.params.chatId]
-  );
-  res.json({ messages: result.rows });
+     WHERE m.chat_id = $1 AND m.created_at < $2
+     ORDER BY m.created_at DESC LIMIT $3`;
+    params = [req.params.chatId, before, limit];
+  } else {
+    query = `SELECT m.*, u.display_name as sender_name FROM messages m
+     JOIN users u ON u.id = m.sender_id
+     WHERE m.chat_id = $1
+     ORDER BY m.created_at DESC LIMIT $2`;
+    params = [req.params.chatId, limit];
+  }
+
+  const result = await pool.query(query, params);
+  // Вернуть в хронологическом порядке (ASC)
+  res.json({ messages: result.rows.reverse(), has_more: result.rows.length === limit });
 });
 
 /** POST /api/chats/:chatId/messages */
 app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
-  const { content, type = 'text' } = req.body;
-  const result = await pool.query(
-    'INSERT INTO messages (chat_id, sender_id, content, type) VALUES ($1, $2, $3, $4) RETURNING *',
-    [req.params.chatId, req.user.id, content, type]
-  );
-  const msg = result.rows[0];
-  msg.sender_name = req.user.display_name;
+  const { content, type = 'text', reply_to } = req.body;
+  const chatId = req.params.chatId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  // Отправить через WebSocket всем участникам чата
-  broadcastToChat(req.params.chatId, { type: 'new_message', message: msg });
-  res.status(201).json(msg);
+    const result = await client.query(
+      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [chatId, req.user.id, content, type, reply_to || null]
+    );
+    const msg = result.rows[0];
+    msg.sender_name = req.user.display_name;
+
+    // Обновить last_message_at в чате
+    await client.query('UPDATE chats SET last_message_at = $1 WHERE id = $2', [msg.created_at, chatId]);
+
+    // Увеличить unread_count для всех участников кроме отправителя
+    await client.query(
+      'UPDATE chat_members SET unread_count = unread_count + 1 WHERE chat_id = $1 AND user_id != $2',
+      [chatId, req.user.id]
+    );
+
+    await client.query('COMMIT');
+
+    // Отправить через WebSocket всем участникам чата
+    broadcastToChat(chatId, { type: 'new_message', message: msg });
+    res.status(201).json(msg);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Ошибка отправки сообщения:', err);
+    res.status(500).json({ error: 'Ошибка отправки сообщения' });
+  } finally {
+    client.release();
+  }
+});
+
+/** POST /api/chats/:chatId/read — сбросить счётчик непрочитанных */
+app.post('/api/chats/:chatId/read', authMiddleware, chatMemberCheck, async (req, res) => {
+  await pool.query(
+    'UPDATE chat_members SET unread_count = 0 WHERE chat_id = $1 AND user_id = $2',
+    [req.params.chatId, req.user.id]
+  );
+  res.json({ ok: true });
+});
+
+/** DELETE /api/chats/:chatId/messages/:id — удалить своё сообщение */
+app.delete('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, async (req, res) => {
+  const result = await pool.query(
+    'DELETE FROM messages WHERE id = $1 AND sender_id = $2 RETURNING id',
+    [req.params.id, req.user.id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(403).json({ error: 'Нельзя удалить чужое сообщение или сообщение не найдено' });
+  }
+  broadcastToChat(req.params.chatId, { type: 'message_deleted', message_id: req.params.id });
+  res.status(204).send();
 });
 
 // ==================== WEBSOCKET ====================

@@ -13,10 +13,10 @@ defmodule SonGateway.Accounts do
     |> Repo.insert()
   end
 
-  ## Аутентификация
+  ## Аутентификация (поддержка email и phone)
 
-  def authenticate(phone, password) do
-    user = Repo.get_by(User, phone: phone)
+  def authenticate(identifier, password) do
+    user = find_user_by_identifier(identifier)
 
     case user do
       nil -> {:error, :not_found}
@@ -29,10 +29,19 @@ defmodule SonGateway.Accounts do
     end
   end
 
+  defp find_user_by_identifier(identifier) do
+    if String.contains?(identifier, "@") do
+      Repo.get_by(User, email: identifier)
+    else
+      Repo.get_by(User, phone: identifier)
+    end
+  end
+
   ## Профиль
 
   def get_user(id), do: Repo.get(User, id)
 
+  def get_user_by_email(email), do: Repo.get_by(User, email: email)
   def get_user_by_phone(phone), do: Repo.get_by(User, phone: phone)
 
   def update_profile(user, attrs) do

@@ -7,6 +7,7 @@ defmodule SonGateway.Accounts.User do
   @foreign_key_type :binary_id
 
   schema "users" do
+    field :email, :string
     field :phone, :string
     field :username, :string
     field :display_name, :string
@@ -22,14 +23,29 @@ defmodule SonGateway.Accounts.User do
 
   def registration_changeset(user, attrs) do
     user
-    |> cast(attrs, [:phone, :username, :display_name, :password])
-    |> validate_required([:phone, :display_name, :password])
-    |> validate_length(:phone, min: 10, max: 15)
-    |> validate_length(:password, min: 8, max: 72)
+    |> cast(attrs, [:email, :phone, :username, :display_name, :password])
+    |> validate_required([:display_name, :password])
+    |> validate_email_or_phone()
+    |> validate_length(:password, min: 6, max: 72)
     |> validate_length(:display_name, min: 1, max: 100)
+    |> unique_constraint(:email)
     |> unique_constraint(:phone)
     |> unique_constraint(:username)
     |> hash_password()
+  end
+
+  defp validate_email_or_phone(changeset) do
+    email = get_change(changeset, :email)
+    phone = get_change(changeset, :phone)
+
+    cond do
+      email && email != "" ->
+        changeset |> validate_format(:email, ~r/@/)
+      phone && phone != "" ->
+        changeset |> validate_length(:phone, min: 10, max: 15)
+      true ->
+        add_error(changeset, :email, "email или телефон обязателен")
+    end
   end
 
   def profile_changeset(user, attrs) do
