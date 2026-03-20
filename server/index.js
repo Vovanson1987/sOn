@@ -13,12 +13,29 @@ const { pool, initDB } = require('./db');
 const { ensureBucket, uploadFile, getDownloadUrl, getUploadUrl } = require('./storage');
 require('dotenv').config();
 
+// ==================== Валидация окружения ====================
+
+const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL'];
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    console.error(`❌ Переменная окружения ${key} обязательна`);
+    process.exit(1);
+  }
+}
+if (process.env.JWT_SECRET.length < 32) {
+  console.error('❌ JWT_SECRET должен быть минимум 32 символа');
+  process.exit(1);
+}
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// Trust proxy — для корректного определения IP за nginx
+app.set('trust proxy', 1);
 
 // ==================== Безопасность ====================
 
@@ -301,33 +318,18 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 /** Хранение подключений: userId → Set<ws> */
 const connections = new Map();
 
-wss.on('connection', (ws, req) => {
-  // Поддержка двух способов аутентификации:
-  // 1. Через первое сообщение (безопасный способ — рекомендуемый)
-  // 2. Через query-параметр (обратная совместимость)
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const urlToken = url.searchParams.get('token');
-
+wss.on('connection', (ws) => {
+  // Аутентификация только через первое сообщение (безопасный способ)
+  // Токен в URL удалён — попадает в логи и историю
   let user = null;
   let authenticated = false;
 
-  // Попытка auth через query (обратная совместимость)
-  if (urlToken) {
-    try {
-      user = jwt.verify(urlToken, JWT_SECRET);
-      authenticated = true;
-      registerConnection(ws, user);
-    } catch {
-      // Токен невалиден — ждём auth через первое сообщение
-    }
-  }
-
   // Таймаут аутентификации: 10 секунд на отправку auth-сообщения
-  const authTimeout = !authenticated ? setTimeout(() => {
+  const authTimeout = setTimeout(() => {
     if (!authenticated) {
       ws.close(4001, 'Таймаут аутентификации');
     }
-  }, 10000) : null;
+  }, 10000);
 
   ws.on('message', (data) => {
     try {
@@ -628,7 +630,18 @@ app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
 
 // ==================== HEALTH ====================
 
-app.get('/health', (_, res) => res.json({ status: 'ok', service: 'son-api', uptime: process.uptime() }));
+/** Проверка здоровья с тестом зависимостей */
+app.get('/health', async (_, res) => {
+  const checks = { service: 'son-api', uptime: process.uptime() };
+  try {
+    await pool.query('SELECT 1');
+    checks.postgres = 'ok';
+  } catch {
+    checks.postgres = 'error';
+  }
+  const allOk = checks.postgres === 'ok';
+  res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', ...checks });
+});
 
 // ==================== START ====================
 
@@ -640,5 +653,38 @@ async function start() {
     console.log(`🔌 WebSocket на ws://localhost:${PORT}/ws`);
   });
 }
+
+// ==================== Graceful Shutdown ====================
+
+function shutdown(signal) {
+  console.log(`\n⏹️  ${signal} — завершение сервера...`);
+
+  // Перестать принимать новые подключения
+  server.close(() => {
+    console.log('✅ HTTP сервер остановлен');
+  });
+
+  // Закрыть все WebSocket соединения
+  wss.clients.forEach((ws) => {
+    ws.close(1001, 'Сервер перезапускается');
+  });
+
+  // Закрыть пул PostgreSQL
+  pool.end().then(() => {
+    console.log('✅ PostgreSQL пул закрыт');
+    process.exit(0);
+  }).catch(() => {
+    process.exit(1);
+  });
+
+  // Таймаут на случай зависания
+  setTimeout(() => {
+    console.error('⚠️ Принудительное завершение через 10 секунд');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 start();
