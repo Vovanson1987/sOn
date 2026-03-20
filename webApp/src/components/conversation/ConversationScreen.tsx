@@ -1,4 +1,5 @@
-import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
+import { useEffect, useRef, useMemo, useCallback, useState, type CSSProperties, type ReactElement } from 'react';
+import { List, useDynamicRowHeight, useListRef } from 'react-window';
 import { ChevronLeft, Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
@@ -67,9 +68,89 @@ function groupMessages(messages: Message[]) {
   return groups;
 }
 
+/** LO-16: Виртуализированная строка сообщения для react-window */
+interface MessageRowProps {
+  grouped: ReturnType<typeof groupMessages>;
+  myUserId: string;
+  lastOwnMessageId: string | null;
+  chatType: string;
+  isGroup: boolean;
+  onContextMenu: (e: React.MouseEvent, msg: Message) => void;
+  setRowHeight: (index: number, height: number) => void;
+  isTyping: boolean;
+}
+
+function MessageRow({
+  index, style, ariaAttributes,
+  grouped, myUserId, lastOwnMessageId, chatType, isGroup, onContextMenu, setRowHeight, isTyping,
+}: {
+  index: number;
+  style: CSSProperties;
+  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+} & MessageRowProps): ReactElement | null {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef(0);
+
+  useEffect(() => {
+    if (contentRef.current) {
+      const h = contentRef.current.offsetHeight;
+      if (h > 0 && h !== lastHeightRef.current) {
+        lastHeightRef.current = h;
+        setRowHeight(index, h);
+      }
+    }
+  });
+
+  // Typing indicator (виртуальная строка после всех сообщений)
+  if (index >= grouped.length) {
+    return (
+      <div style={style} {...ariaAttributes}>
+        <div ref={contentRef}><TypingIndicator /></div>
+      </div>
+    );
+  }
+
+  const item = grouped[index];
+  if (!item) return null;
+
+  if (item.type === 'date') {
+    return (
+      <div style={style} {...ariaAttributes}>
+        <div ref={contentRef}><DateSeparator date={item.date} /></div>
+      </div>
+    );
+  }
+
+  const { message, isFirstInGroup, isLastInGroup } = item;
+  const isOwn = message.senderId === myUserId;
+  const isLastOwn = lastOwnMessageId === message.id;
+
+  return (
+    <div style={style} {...ariaAttributes}>
+      <div ref={contentRef} onContextMenu={(e) => onContextMenu(e, message)}>
+        <MessageBubble
+          message={message}
+          isOwn={isOwn}
+          isFirstInGroup={isFirstInGroup}
+          isLastInGroup={isLastInGroup}
+          chatType={chatType}
+          showSenderName={isGroup}
+        />
+        {isOwn && isLastOwn && message.type !== 'system' && (
+          <div className="flex justify-end mt-[2px]" style={{ paddingRight: '18px' }}>
+            <DeliveryStatus status={message.status} readAt={message.readAt} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Экран переписки в стиле iMessage Mac */
 export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // LO-16: Виртуализация сообщений
+  const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: 60, key: chat.id });
+  const listRef = useListRef();
   const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
   const fetchMessages = useMessageStore((s) => s.fetchMessages);
@@ -158,16 +239,33 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
   const [showSelfDestructPicker, setShowSelfDestructPicker] = useState(false);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // LO-16: Контейнер + автоскролл для виртуализированного списка
+  const msgContainerRef = useRef<HTMLDivElement>(null);
+  const [msgContainerHeight, setMsgContainerHeight] = useState(0);
+  const isNearBottomRef = useRef(true);
+
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
-    // Скроллить вниз только если пользователь уже внизу (с запасом 150px)
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = msgContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setMsgContainerHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const totalRows = grouped.length + (isTyping ? 1 : 0);
+
+  useEffect(() => {
+    if (isNearBottomRef.current && listRef.current && totalRows > 0) {
+      listRef.current.scrollToRow({ index: totalRows - 1, align: 'end', behavior: 'smooth' });
     }
-  }, [messages.length, isTyping]);
+  }, [totalRows]);
+
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current?.element;
+    if (el) {
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    }
+  }, []);
 
   const lastOwnMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -336,59 +434,71 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
 
       {/* Область сообщений */}
       <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto"
+        ref={msgContainerRef}
+        className="flex-1 overflow-hidden"
         role="log"
         aria-label={`Переписка с ${chatName}`}
-        style={{ WebkitOverflowScrolling: 'touch' }}
       >
-        <div className="h-3" />
-
-        {/* Пустое состояние */}
-        {messages.length === 0 && (
+        {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 px-8">
             <p className="text-[17px] font-semibold text-white">Нет сообщений</p>
             <p className="text-[14px] text-center" style={{ color: '#ABABAF' }}>
               {isSecret ? 'Начните защищённый разговор' : 'Отправьте первое сообщение'}
             </p>
           </div>
-        )}
-
-        {grouped.map((item, i) => {
-          if (item.type === 'date') {
-            return <DateSeparator key={`date-${item.date}`} date={item.date} />;
-          }
-          const { message, isFirstInGroup, isLastInGroup } = item;
-          const isOwn = message.senderId === myUserId;
-          const isLastOwn = lastOwnMessage?.id === message.id;
-
-          return (
-            <div
-              key={message.id}
-              onContextMenu={(e) => handleContextMenu(e, message)}
-            >
-              <MessageBubble
-                message={message}
-                isOwn={isOwn}
-                isFirstInGroup={isFirstInGroup}
-                isLastInGroup={isLastInGroup}
-                chatType={chat.type}
-                showSenderName={isGroup}
-              />
-              {isOwn && isLastOwn && message.type !== 'system' && (
-                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '18px' }}>
-                  <DeliveryStatus status={message.status} readAt={message.readAt} />
+        ) : msgContainerHeight > 0 ? (
+          /* LO-16: Виртуализированный список сообщений */
+          <List
+            listRef={listRef}
+            rowComponent={MessageRow}
+            rowCount={totalRows}
+            rowHeight={dynamicRowHeight}
+            rowProps={{
+              grouped,
+              myUserId,
+              lastOwnMessageId: lastOwnMessage?.id ?? null,
+              chatType: chat.type,
+              isGroup,
+              onContextMenu: handleContextMenu,
+              setRowHeight: dynamicRowHeight.setRowHeight,
+              isTyping,
+            }}
+            style={{ height: msgContainerHeight, overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as CSSProperties}
+            onScroll={handleListScroll}
+          />
+        ) : (
+          /* Fallback: обычный рендеринг (для тестов / SSR) */
+          <div style={{ overflowY: 'auto', height: '100%', WebkitOverflowScrolling: 'touch' } as CSSProperties}>
+            <div className="h-3" />
+            {grouped.map((item, i) => {
+              if (item.type === 'date') {
+                return <DateSeparator key={`date-${item.date}`} date={item.date} />;
+              }
+              const { message, isFirstInGroup, isLastInGroup } = item;
+              const isOwn = message.senderId === myUserId;
+              const isLastOwn = lastOwnMessage?.id === message.id;
+              return (
+                <div key={message.id} onContextMenu={(e) => handleContextMenu(e, message)}>
+                  <MessageBubble
+                    message={message}
+                    isOwn={isOwn}
+                    isFirstInGroup={isFirstInGroup}
+                    isLastInGroup={isLastInGroup}
+                    chatType={chat.type}
+                    showSenderName={isGroup}
+                  />
+                  {isOwn && isLastOwn && message.type !== 'system' && (
+                    <div className="flex justify-end mt-[2px]" style={{ paddingRight: '18px' }}>
+                      <DeliveryStatus status={message.status} readAt={message.readAt} />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Индикатор "печатает..." */}
-        {isTyping && <TypingIndicator />}
-
-        <div ref={messagesEndRef} />
-        <div className="h-3" />
+              );
+            })}
+            {isTyping && <TypingIndicator />}
+            <div className="h-3" />
+          </div>
+        )}
       </div>
 
       {/* Цитата при ответе */}
