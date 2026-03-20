@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties, type ReactElement } from 'react';
-import { List } from 'react-window';
+import { List, type RowComponentProps } from 'react-window';
 import { useChatStore } from '@stores/chatStore';
 import { SearchBar } from '@components/ui/SearchBar';
 import { ChatListHeader } from './ChatListHeader';
@@ -8,14 +8,13 @@ import { NewChatModal } from './NewChatModal';
 import type { Chat } from '@/types/chat';
 
 /** LO-16: Виртуализированная строка чата для react-window */
-function ChatRow({ index, style, ariaAttributes, chats, activeChatId, onSelect }: {
-  index: number;
-  style: CSSProperties;
-  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+interface ChatRowCustomProps {
   chats: Chat[];
   activeChatId: string | null;
   onSelect: (chatId: string) => void;
-}): ReactElement | null {
+}
+
+function ChatRow({ index, style, ariaAttributes, chats, activeChatId, onSelect }: RowComponentProps<ChatRowCustomProps>): ReactElement | null {
   const chat = chats[index];
   if (!chat) return null;
   return (

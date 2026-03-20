@@ -311,7 +311,7 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
             peerId: meta.peerId as string,
             myIdentityKey: identityKey,
             mySigningKey: get().mySigningKey || { publicKey: new Uint8Array(32), privateKey: new Uint8Array(64) },
-            x3dhResult: { sharedSecret, ephemeralPublicKey: new Uint8Array(32) },
+            x3dhResult: { sharedSecret, ephemeralPublicKey: new Uint8Array(32), protocol: 'X3DH', timestamp: Date.now() },
             ratchetState: ratchetState as unknown as DoubleRatchetState,
             isVerified: meta.isVerified as boolean || false,
             selfDestructTimer: meta.selfDestructTimer as number | null,

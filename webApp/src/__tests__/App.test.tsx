@@ -23,8 +23,10 @@ vi.mock('@stores/chatStore', () => {
     fetchChats: vi.fn(),
     removeChatLocal: vi.fn(),
   };
-  const useChatStore = vi.fn((selector: (s: typeof state) => unknown) => selector(state));
-  useChatStore.getState = () => state;
+  const useChatStore = Object.assign(
+    vi.fn((selector: (s: typeof state) => unknown) => selector(state)),
+    { getState: () => state },
+  );
   return { useChatStore };
 });
 
@@ -36,8 +38,10 @@ vi.mock('@stores/messageStore', () => {
     clearTyping: vi.fn(),
     messages: {},
   };
-  const useMessageStore = vi.fn((selector: (s: typeof state) => unknown) => selector(state));
-  useMessageStore.getState = () => state;
+  const useMessageStore = Object.assign(
+    vi.fn((selector: (s: typeof state) => unknown) => selector(state)),
+    { getState: () => state },
+  );
   return { useMessageStore };
 });
 

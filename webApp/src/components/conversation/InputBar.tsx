@@ -15,7 +15,7 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatI
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isTypingRef = useRef(false);
 
   // ME-16: Очистить таймер typing при размонтировании

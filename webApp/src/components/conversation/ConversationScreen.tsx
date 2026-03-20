@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback, useState, type CSSProperties, type ReactElement } from 'react';
-import { List, useDynamicRowHeight, useListRef } from 'react-window';
+import { List, useDynamicRowHeight, useListRef, type RowComponentProps } from 'react-window';
 import { ChevronLeft, Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
@@ -73,7 +73,7 @@ interface MessageRowProps {
   grouped: ReturnType<typeof groupMessages>;
   myUserId: string;
   lastOwnMessageId: string | null;
-  chatType: string;
+  chatType: import('@/types/chat').ChatType;
   isGroup: boolean;
   onContextMenu: (e: React.MouseEvent, msg: Message) => void;
   setRowHeight: (index: number, height: number) => void;
@@ -82,11 +82,7 @@ interface MessageRowProps {
 function MessageRow({
   index, style, ariaAttributes,
   grouped, myUserId, lastOwnMessageId, chatType, isGroup, onContextMenu, setRowHeight,
-}: {
-  index: number;
-  style: CSSProperties;
-  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
-} & MessageRowProps): ReactElement | null {
+}: RowComponentProps<MessageRowProps>): ReactElement | null {
   const contentRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef(0);
 
@@ -149,7 +145,7 @@ function MessageRow({
 export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   // LO-16: Виртуализация сообщений
   const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: 60, key: chat.id });
-  const listRef = useListRef();
+  const listRef = useListRef(null);
   const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
   const fetchMessages = useMessageStore((s) => s.fetchMessages);
