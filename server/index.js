@@ -55,8 +55,9 @@ app.use(cors({
   origin: (origin, callback) => {
     // Разрешить запросы без origin (мобильные приложения, curl, серверные запросы)
     if (!origin) return callback(null, true);
-    // Разрешить ngrok-домены
+    // Разрешить ngrok и cloudflare tunnel домены
     if (origin.endsWith('.ngrok-free.dev') || origin.endsWith('.ngrok.io')) return callback(null, true);
+    if (origin.endsWith('.trycloudflare.com')) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     callback(new Error('Заблокировано CORS'));
   },
@@ -311,8 +312,8 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
 
     await client.query('COMMIT');
 
-    // Отправить через WebSocket всем участникам чата
-    broadcastToChat(chatId, { type: 'new_message', message: msg });
+    // Отправить через WebSocket всем участникам чата (кроме отправителя — у него уже есть optimistic update)
+    broadcastToChat(chatId, { type: 'new_message', message: msg }, req.user.id);
     res.status(201).json(msg);
   } catch (err) {
     await client.query('ROLLBACK');

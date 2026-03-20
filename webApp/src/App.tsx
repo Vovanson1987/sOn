@@ -134,9 +134,12 @@ export default function App() {
       const unsub = onWS((data: unknown) => {
         const msg = data as Record<string, unknown>;
 
-        // Новое сообщение
+        // Новое сообщение (от других пользователей)
         if (msg.type === 'new_message') {
           const m = msg.message as Record<string, string>;
+          // Пропустить свои сообщения — они уже добавлены через optimistic update
+          const myId = useAuthStore.getState().user?.id;
+          if (m.sender_id === myId) return;
           addMessage(m.chat_id, {
             id: m.id,
             chatId: m.chat_id,
