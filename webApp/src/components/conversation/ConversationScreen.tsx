@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import { ChevronLeft, ChevronRight, Video, Shield, Timer } from 'lucide-react';
+import { ChevronLeft, Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -67,15 +67,6 @@ function groupMessages(messages: Message[]) {
   return groups;
 }
 
-/** Форматирование даты для шапки */
-function formatHeaderDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-  const months = ['янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}, ${time}`;
-}
-
 /** Экран переписки в стиле iMessage Mac */
 export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -99,10 +90,6 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const isGroup = chat.type === 'group';
   const isSecret = chat.type === 'secret';
   const chatSubtype = isSecret ? 'Секретный чат' : 'iMessage';
-
-  const lastMessageDate = messages.length > 0
-    ? formatHeaderDate(messages[messages.length - 1].createdAt)
-    : '';
 
   const isTyping = (typingUsers[chat.id] ?? []).length > 0;
 

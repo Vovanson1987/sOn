@@ -102,7 +102,7 @@ describe('secretChatStore', () => {
     const result = await useSecretChatStore.getState().decryptReceived(
       'nonexistent',
       { ciphertext: '', nonce: '', algorithm: 'XSalsa20-Poly1305' } as never,
-      { dhPublicKey: new Uint8Array(32), previousChainLength: 0, messageNumber: 0 },
+      { dhPublicKey: new Uint8Array(32), previousCount: 0, messageNumber: 0 },
     );
     expect(result).toBeNull();
   });

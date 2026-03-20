@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '@stores/chatStore';
 import { SearchBar } from '@components/ui/SearchBar';
 import { ChatListHeader } from './ChatListHeader';
@@ -7,18 +7,23 @@ import { NewChatModal } from './NewChatModal';
 
 export function ChatList() {
   const [showNewChat, setShowNewChat] = useState(false);
+  const [localSearch, setLocalSearch] = useState('');
   const chats = useChatStore((s) => s.chats);
   const searchQuery = useChatStore((s) => s.searchQuery);
   const filter = useChatStore((s) => s.filter);
   const setSearchQuery = useChatStore((s) => s.setSearchQuery);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const setActiveChat = useChatStore((s) => s.setActiveChat);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearchQuery(value), 200);
   }, [setSearchQuery]);
+
+  // Синхронизировать при внешних изменениях
+  useEffect(() => { setLocalSearch(searchQuery); }, [searchQuery]);
 
   // Фильтрация и поиск через useMemo (без функции в сторе)
   const filteredChats = useMemo(() => {
@@ -54,7 +59,7 @@ export function ChatList() {
     >
       <ChatListHeader onNewChat={() => setShowNewChat(true)} />
       <div className="px-2 pb-1">
-        <SearchBar value={searchQuery} onChange={handleSearchChange} placeholder="Поиск" />
+        <SearchBar value={localSearch} onChange={handleSearchChange} placeholder="Поиск" />
       </div>
 
       <div

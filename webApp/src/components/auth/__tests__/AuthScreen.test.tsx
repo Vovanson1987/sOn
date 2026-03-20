@@ -4,7 +4,7 @@ import { AuthScreen } from '../AuthScreen';
 
 // Мок fetch
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+(globalThis as Record<string, unknown>).fetch = mockFetch;
 
 describe('AuthScreen', () => {
   const mockOnAuth = vi.fn();
