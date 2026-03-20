@@ -18,7 +18,7 @@ import { EncryptionInfo } from '@components/secret-chat/EncryptionInfo';
 import { useMessageStore } from '@stores/messageStore';
 import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAuthStore } from '@stores/authStore';
-import { useAutoReply } from '@hooks/useAutoReply';
+import { useChatStore } from '@stores/chatStore';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
 
@@ -202,9 +202,13 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const chatSubtype = isSecret ? 'Секретный чат' : 'iMessage';
 
   const isTyping = (typingUsers[chat.id] ?? []).length > 0;
+  const markAsRead = useChatStore((s) => s.markAsRead);
 
-  // Автоответы
-  useAutoReply(chat);
+  // Сбросить счётчик непрочитанных при открытии чата
+  useEffect(() => {
+    markAsRead(chat.id);
+  }, [chat.id, markAsRead]);
+
 
   // Состояние Tapback оверлея
   const [tapbackMessage, setTapbackMessage] = useState<Message | null>(null);

@@ -131,6 +131,11 @@ export async function sendMessage(chatId: string, content: string, type = 'text'
   });
 }
 
+/** Сбросить счётчик непрочитанных */
+export async function markChatAsRead(chatId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/read`, { method: 'POST' });
+}
+
 /** CR-07: Удалить сообщение через API */
 export async function deleteMessage(chatId: string, messageId: string) {
   return request<{ ok: boolean }>(`/api/chats/${chatId}/messages/${messageId}`, {

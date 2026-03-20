@@ -105,10 +105,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     activeChatId: s.activeChatId === id ? null : s.activeChatId,
   })),
 
-  markAsRead: (chatId) =>
+  markAsRead: (chatId) => {
     set((s) => ({
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
-    })),
+    }));
+    // Сбросить на сервере тоже
+    api.markChatAsRead(chatId).catch(() => {});
+  },
 
   fetchChats: async () => {
     const token = api.getToken();
