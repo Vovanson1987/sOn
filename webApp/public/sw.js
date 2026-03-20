@@ -31,17 +31,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API запросы: Network First
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
+  // API запросы: Network Only (не кэшировать чувствительные данные)
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 

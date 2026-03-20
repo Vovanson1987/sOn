@@ -14,11 +14,18 @@ describe('Avatar', () => {
     expect(svg).toBeInTheDocument();
   });
 
-  it('renders image when src is provided', () => {
-    render(<Avatar size={50} name="Test" src="https://example.com/photo.jpg" />);
+  it('renders image when src is a relative path', () => {
+    render(<Avatar size={50} name="Test" src="/media/avatars/photo.jpg" />);
     const img = screen.getByAltText('Test');
     expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute('src', 'https://example.com/photo.jpg');
+    expect(img).toHaveAttribute('src', '/media/avatars/photo.jpg');
+  });
+
+  it('renders initials when src is an external URL (security)', () => {
+    render(<Avatar size={50} name="Test" src="https://evil.com/track.jpg" />);
+    // Внешний URL отклоняется — рендерятся инициалы
+    expect(screen.queryByAltText('Test')).not.toBeInTheDocument();
+    expect(screen.getByText('TE')).toBeInTheDocument();
   });
 
   it('shows online indicator when isOnline is true', () => {

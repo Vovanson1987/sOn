@@ -1,5 +1,6 @@
 import { ChevronRight, User, Palette, Bell, Shield, HardDrive, Lock, Info } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
+import { useAuthStore } from '@stores/authStore';
 
 
 interface SettingRow {
@@ -38,13 +39,17 @@ function SectionHeader({ title }: { title: string }) {
 
 /** Экран настроек в стиле iOS */
 export function SettingsScreen() {
+  const user = useAuthStore((s) => s.user);
+  const displayName = user?.display_name || 'Пользователь';
+  const email = user?.email || '';
+
   return (
     <div className="flex flex-col h-full bg-black overflow-y-auto">
       {/* Профиль */}
       <div className="flex flex-col items-center py-6">
-        <Avatar size={120} name="Владимир" />
-        <h2 className="text-[20px] font-semibold text-white mt-3">Владимир</h2>
-        <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>+7 (999) 123-45-67</p>
+        <Avatar size={120} name={displayName} src={user?.avatar_url} />
+        <h2 className="text-[20px] font-semibold text-white mt-3">{displayName}</h2>
+        <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>{email}</p>
       </div>
 
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>

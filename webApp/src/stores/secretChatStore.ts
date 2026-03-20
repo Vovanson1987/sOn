@@ -129,18 +129,7 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
         oneTimePreKeyId: raw.one_time_prekey_id,
       };
     } catch {
-      // Fallback: генерируем локально (для тестирования)
-      const theirIk = await generateKeyPair();
-      const theirSigning = await generateSigningKeyPair();
-      const theirSpk = await generateKeyPair();
-      const theirSpkSig = await signData(theirSpk.publicKey, theirSigning.privateKey);
-      preKeyBundle = {
-        identityKey: theirIk.publicKey,
-        signedPreKey: theirSpk.publicKey,
-        signedPreKeySignature: theirSpkSig,
-        signedPreKeyId: 1,
-        identitySigningKey: theirSigning.publicKey,
-      };
+      throw new Error('Невозможно установить защищённый канал — сервер недоступен');
     }
 
     // X3DH обмен ключами

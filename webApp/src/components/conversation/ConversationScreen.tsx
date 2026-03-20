@@ -207,7 +207,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
       {/* Верификация ключей */}
       {showVerification && secretSession && (
         <VerificationModal
-          myName="Владимир"
+          myName={useAuthStore((s) => s.user?.display_name) || 'Вы'}
           theirName={chatName}
           emojiGrid={secretSession.emojiGrid}
           hexFingerprint={secretSession.hexFingerprint}

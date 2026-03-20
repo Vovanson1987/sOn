@@ -251,13 +251,14 @@ function skipMessageKeys(state: DoubleRatchetState, until: number): DoubleRatche
   };
 }
 
-/** Побайтовое сравнение массивов */
+/** Constant-time сравнение массивов (защита от timing side-channel) */
 function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
+  let diff = 0;
   for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
+    diff |= a[i] ^ b[i];
   }
-  return true;
+  return diff === 0;
 }
 
 /** Обратная совместимость: простой шаг симметричного рэтчета */

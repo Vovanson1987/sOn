@@ -60,16 +60,8 @@ async function getMasterKey(): Promise<Uint8Array> {
 
   await ensureSodium();
 
-  // Миграция: если есть старый ключ в localStorage, использовать его
-  const legacyKey = localStorage.getItem(MK_KEY);
-  if (legacyKey) {
-    cachedMasterKey = fromBase64(legacyKey);
-    return cachedMasterKey;
-  }
-
-  // Fallback: генерируем случайный ключ (для автономной работы без пароля)
-  cachedMasterKey = sodium.crypto_secretbox_keygen();
-  return cachedMasterKey;
+  // Убран legacy-ключ из localStorage и fallback — секретные чаты требуют вызова initMasterKeyFromPassword
+  throw new Error('Мастер-ключ не инициализирован. Вызовите initMasterKeyFromPassword после логина.');
 }
 
 /** Миграция: перешифровать данные со старым ключом на новый Argon2 ключ */

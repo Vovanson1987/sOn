@@ -15,8 +15,14 @@ export interface UploadResult {
   mimeType: string;
 }
 
+/** Максимальный размер файла: 25 МБ (совпадает с nginx client_max_body_size) */
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
 /** Загрузить файл на сервер через multipart/form-data */
 export async function uploadFile(file: File, folder = 'attachments', messageId?: string): Promise<UploadResult> {
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(`Файл слишком большой (макс. ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} МБ)`);
+  }
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', folder);

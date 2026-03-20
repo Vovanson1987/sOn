@@ -1,16 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SettingsScreen } from '../SettingsScreen';
 
+vi.mock('@stores/authStore', () => ({
+  useAuthStore: vi.fn((selector) => {
+    const state = { user: { id: 'u1', email: 'test@test.com', display_name: 'Тестов', avatar_url: null } };
+    return selector(state);
+  }),
+}));
+
 describe('SettingsScreen', () => {
-  it('отображает имя пользователя', () => {
+  it('отображает имя пользователя из authStore', () => {
     render(<SettingsScreen />);
-    expect(screen.getByText('Владимир')).toBeInTheDocument();
+    expect(screen.getByText('Тестов')).toBeInTheDocument();
   });
 
-  it('отображает номер телефона', () => {
+  it('отображает email пользователя', () => {
     render(<SettingsScreen />);
-    expect(screen.getByText('+7 (999) 123-45-67')).toBeInTheDocument();
+    expect(screen.getByText('test@test.com')).toBeInTheDocument();
   });
 
   it('отображает секцию "Профиль"', () => {

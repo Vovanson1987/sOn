@@ -152,13 +152,15 @@ export function connectWS(): void {
 
   ws.onmessage = (event) => {
     try {
+      // Защита от DoS: ограничение размера WS-сообщения (1 МБ)
+      if (typeof event.data === 'string' && event.data.length > 1_000_000) return;
       const data = JSON.parse(event.data);
       if (data.type === 'auth_success') {
-        console.log('🟢 WebSocket аутентифицирован');
+        if (import.meta.env.DEV) console.log('WebSocket аутентифицирован');
         return;
       }
       if (data.type === 'error') {
-        console.error('WebSocket ошибка:', data.message);
+        if (import.meta.env.DEV) console.error('WebSocket ошибка:', data.message);
         return;
       }
       wsListeners.forEach((fn) => fn(data));
@@ -169,7 +171,7 @@ export function connectWS(): void {
 
   ws.onclose = () => {
     if (intentionalClose) return;
-    console.log('🔴 WebSocket отключён, переподключение через 3с...');
+    if (import.meta.env.DEV) console.log('WebSocket отключён, переподключение через 3с...');
     // Переподключение только если токен ещё есть (пользователь не вышел)
     if (getToken()) {
       setTimeout(connectWS, 3000);

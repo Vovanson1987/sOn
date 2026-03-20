@@ -106,9 +106,9 @@ describe('AuthScreen', () => {
     expect(screen.getByPlaceholderText('Пароль').getAttribute('type')).toBe('password');
   });
 
-  it('пароль имеет minLength=6', () => {
+  it('пароль имеет minLength=8', () => {
     render(<AuthScreen onAuth={mockOnAuth} />);
-    expect(screen.getByPlaceholderText('Пароль').getAttribute('minlength')).toBe('6');
+    expect(screen.getByPlaceholderText('Пароль').getAttribute('minlength')).toBe('8');
   });
 
   it('очищает ошибку при переключении режима', async () => {

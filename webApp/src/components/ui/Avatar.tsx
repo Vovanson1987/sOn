@@ -66,8 +66,8 @@ export const Avatar = memo(function Avatar({ size, src, name, isOnline, groupMem
 
   return (
     <div className="relative inline-flex" style={style} aria-label={`Аватар ${name}`}>
-      {src ? (
-        <img src={src} alt={name} className="rounded-full object-cover" style={style} />
+      {src && (src.startsWith('/') || src.startsWith('blob:') || src.startsWith('data:image/')) ? (
+        <img src={src} alt={name} className="rounded-full object-cover" style={style} referrerPolicy="no-referrer" />
       ) : name.match(/^\d+$/) || name === '900' ? (
         <SilhouetteAvatar size={size} />
       ) : (

@@ -13,12 +13,23 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockUntil, setLockUntil] = useState(0);
 
   /** URL API — относительный путь, nginx проксирует на бэкенд */
   const API_URL = import.meta.env.VITE_API_URL || '';
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
+
+    // Защита от brute-force: экспоненциальная задержка
+    const now = Date.now();
+    if (now < lockUntil) {
+      const sec = Math.ceil((lockUntil - now) / 1000);
+      setError(`Подождите ${sec} сек. перед повторной попыткой`);
+      return;
+    }
+
     setError('');
     setLoading(true);
 
@@ -37,13 +48,21 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка');
 
+      setFailedAttempts(0);
       onAuth(data.token, data.user);
     } catch (err) {
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      // Экспоненциальная задержка: 3→5с, 5→15с, 7→30с
+      if (newAttempts >= 3) {
+        const delay = Math.min(5000 * Math.pow(2, newAttempts - 3), 60000);
+        setLockUntil(Date.now() + delay);
+      }
       setError(err instanceof Error ? err.message : 'Ошибка подключения');
     } finally {
       setLoading(false);
     }
-  }, [isLogin, email, displayName, password, API_URL, onAuth]);
+  }, [isLogin, email, displayName, password, API_URL, onAuth, failedAttempts, lockUntil]);
 
   return (
     <div className="flex items-center justify-center h-full w-full bg-black">
@@ -93,7 +112,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль"
             required
-            minLength={6}
+            minLength={8}
             autoComplete={isLogin ? 'current-password' : 'new-password'}
             className="w-full px-4 py-[12px] rounded-[10px] text-[15px] text-white placeholder-[#636366] outline-none"
             style={{ background: '#1C1C1E', border: '0.5px solid #38383A' }}
