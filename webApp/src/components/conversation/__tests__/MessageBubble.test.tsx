@@ -33,15 +33,16 @@ describe('MessageBubble', () => {
     );
     const bubble = container.querySelector('[style*="background"]');
     const style = bubble?.getAttribute('style') ?? '';
-    expect(style.includes('#26252A') || style.includes('rgb(38, 37, 42)')).toBe(true);
+    expect(style.includes('#3A3A3C') || style.includes('rgb(58, 58, 60)')).toBe(true);
   });
 
-  it('зелёный градиент для секретных исходящих', () => {
+  it('зелёный фон для секретных исходящих', () => {
     const { container } = render(
       <MessageBubble message={ownMsg} isOwn isFirstInGroup isLastInGroup chatType="secret" />,
     );
     const bubble = container.querySelector('[style*="background"]');
-    expect(bubble?.getAttribute('style')).toContain('linear-gradient');
+    const style = bubble?.getAttribute('style') ?? '';
+    expect(style.includes('#30D158') || style.includes('rgb(48, 209, 88)')).toBe(true);
   });
 
   it('показывает системное сообщение по центру', () => {

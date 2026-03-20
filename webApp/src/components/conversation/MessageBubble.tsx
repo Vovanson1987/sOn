@@ -45,26 +45,26 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // Цвет фона пузыря (используем только background, без backgroundColor)
+  // Цвет фона пузыря
   let bg: string;
   if (isOwn) {
-    bg = isSecret ? 'linear-gradient(135deg, #34C759, #30D158)' : '#007AFF';
+    bg = isSecret ? '#30D158' : '#007AFF';
   } else {
-    bg = isSecret ? '#1E1E22' : '#26252A';
+    bg = isSecret ? '#1E1E22' : '#3A3A3C';
   }
 
-  // Скругления с группировкой (без хвостиков на десктопе)
+  // Скругления с группировкой (iOS HIG: 18px основные, 4px прилегающие)
   const ownRadius = {
     borderTopLeftRadius: '18px',
-    borderTopRightRadius: isFirstInGroup ? '18px' : '6px',
-    borderBottomRightRadius: isLastInGroup ? '18px' : '6px',
+    borderTopRightRadius: isFirstInGroup ? '18px' : '4px',
+    borderBottomRightRadius: isLastInGroup ? '18px' : '4px',
     borderBottomLeftRadius: '18px',
   };
   const otherRadius = {
-    borderTopLeftRadius: isFirstInGroup ? '18px' : '6px',
+    borderTopLeftRadius: isFirstInGroup ? '18px' : '4px',
     borderTopRightRadius: '18px',
     borderBottomRightRadius: '18px',
-    borderBottomLeftRadius: isLastInGroup ? '18px' : '6px',
+    borderBottomLeftRadius: isLastInGroup ? '18px' : '4px',
   };
   const radiusStyle = isOwn ? ownRadius : otherRadius;
 
@@ -77,7 +77,7 @@ export const MessageBubble = memo(function MessageBubble({
       style={{
         paddingLeft: isOwn ? '20%' : '20px',
         paddingRight: isOwn ? '24px' : '20%',
-        marginTop: isFirstInGroup ? '6px' : '1px',
+        marginTop: isFirstInGroup ? '12px' : '2px',
       }}
     >
       {/* Имя отправителя в групповых чатах */}

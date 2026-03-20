@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { Reply, Copy, Trash2 } from 'lucide-react';
 import type { Message } from '@/types/message';
 
 /** Допустимые Tapback-реакции (как в iMessage) */
@@ -25,6 +26,21 @@ export function TapbackOverlay({
   onDelete,
   onClose,
 }: TapbackOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    overlayRef.current?.querySelector<HTMLElement>('[role="toolbar"] button')?.focus();
+    return () => previousFocusRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget) onClose();
@@ -34,17 +50,28 @@ export function TapbackOverlay({
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        animation: 'fadeIn 0.2s ease forwards',
+      }}
       onClick={handleBackdropClick}
       role="dialog"
+      aria-modal="true"
       aria-label="Реакции и действия"
     >
       <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[80%]`}>
         {/* Панель реакций */}
         <div
-          className="flex items-center gap-1 px-3 py-2 rounded-full mb-2"
-          style={{ background: '#1C1C1E' }}
+          className="flex items-center gap-1 px-2 py-1 rounded-full mb-2"
+          style={{
+            background: '#1C1C1E',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            animation: 'springBounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+          }}
           role="toolbar"
           aria-label="Реакции"
         >
@@ -54,9 +81,10 @@ export function TapbackOverlay({
               <button
                 key={emoji}
                 onClick={() => onReact(emoji)}
-                className="w-[36px] h-[36px] flex items-center justify-center rounded-full text-[20px] transition-transform hover:scale-125"
+                className="w-[44px] h-[44px] flex items-center justify-center rounded-full text-[22px] transition-transform active:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#007AFF]"
                 style={{ background: isActive ? '#38383A' : 'transparent' }}
                 aria-label={`Реакция ${emoji}`}
+                aria-pressed={isActive}
               >
                 {emoji}
               </button>
@@ -68,11 +96,12 @@ export function TapbackOverlay({
         <div
           className="px-[12px] py-[8px] rounded-[18px] mb-2"
           style={{
-            background: isOwn ? '#007AFF' : '#26252A',
+            background: isOwn ? '#007AFF' : '#3A3A3C',
             transform: 'scale(1.05)',
+            transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
         >
-          <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap">
+          <p className="text-[17px] leading-[1.3] text-white whitespace-pre-wrap">
             {message.content}
           </p>
         </div>
@@ -80,34 +109,35 @@ export function TapbackOverlay({
         {/* Контекстное меню */}
         <div
           className="rounded-[12px] overflow-hidden min-w-[200px]"
-          style={{ background: '#1C1C1E' }}
+          style={{ background: '#1C1C1E', boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.08)' }}
           role="menu"
+          aria-label="Действия с сообщением"
         >
           <button
             onClick={onReply}
-            className="w-full flex items-center gap-3 px-4 py-[10px] text-left hover:bg-[#2C2C2E]"
+            className="w-full flex items-center gap-3 px-4 py-[12px] text-left active:bg-[#2C2C2E] focus-visible:bg-[#2C2C2E] focus-visible:outline-none"
             role="menuitem"
           >
-            <span className="text-[15px]">💬</span>
+            <Reply size={18} color="#fff" aria-hidden="true" />
             <span className="text-[15px] text-white">Ответить</span>
           </button>
-          <div style={{ height: '0.5px', background: '#38383A', marginLeft: '44px' }} />
+          <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
           <button
             onClick={onCopy}
-            className="w-full flex items-center gap-3 px-4 py-[10px] text-left hover:bg-[#2C2C2E]"
+            className="w-full flex items-center gap-3 px-4 py-[12px] text-left active:bg-[#2C2C2E] focus-visible:bg-[#2C2C2E] focus-visible:outline-none"
             role="menuitem"
           >
-            <span className="text-[15px]">📋</span>
+            <Copy size={18} color="#fff" aria-hidden="true" />
             <span className="text-[15px] text-white">Копировать</span>
           </button>
-          <div style={{ height: '0.5px', background: '#38383A', marginLeft: '44px' }} />
+          <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
           <button
             onClick={onDelete}
-            className="w-full flex items-center gap-3 px-4 py-[10px] text-left hover:bg-[#2C2C2E]"
+            className="w-full flex items-center gap-3 px-4 py-[12px] text-left active:bg-[#2C2C2E] focus-visible:bg-[#2C2C2E] focus-visible:outline-none"
             role="menuitem"
           >
-            <span className="text-[15px]">🗑</span>
-            <span className="text-[15px]" style={{ color: '#FF3B30' }}>Удалить</span>
+            <Trash2 size={18} color="#FF453A" aria-hidden="true" />
+            <span className="text-[15px]" style={{ color: '#FF453A' }}>Удалить</span>
           </button>
         </div>
       </div>

@@ -75,24 +75,26 @@ describe('ChatListItem', () => {
   it('calls onSelect when clicked', () => {
     const onSelect = vi.fn();
     render(<ChatListItem chat={mockDirectChat} isActive={false} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('listitem'));
+    fireEvent.click(screen.getByRole('button'));
     expect(onSelect).toHaveBeenCalledWith('chat-1');
   });
 
   it('shows lock icon for secret chats', () => {
-    render(<ChatListItem chat={mockSecretChat} isActive={false} onSelect={() => {}} />);
-    expect(screen.getByLabelText('Секретный чат')).toBeInTheDocument();
+    const { container } = render(<ChatListItem chat={mockSecretChat} isActive={false} onSelect={() => {}} />);
+    const lockIcon = container.querySelector('svg');
+    expect(lockIcon).toBeInTheDocument();
   });
 
   it('does not show lock icon for direct chats', () => {
-    render(<ChatListItem chat={mockDirectChat} isActive={false} onSelect={() => {}} />);
-    expect(screen.queryByLabelText('Секретный чат')).not.toBeInTheDocument();
+    const { container } = render(<ChatListItem chat={mockDirectChat} isActive={false} onSelect={() => {}} />);
+    const lockIcon = container.querySelector('svg');
+    expect(lockIcon).not.toBeInTheDocument();
   });
 
   it('applies active styling when isActive is true', () => {
     render(<ChatListItem chat={mockDirectChat} isActive={true} onSelect={() => {}} />);
-    const item = screen.getByRole('listitem');
-    expect(item).toHaveStyle({ backgroundColor: '#007AFF' });
+    const item = screen.getByRole('button');
+    expect(item).toHaveStyle({ background: '#007AFF' });
   });
 
   it('renders group chat name correctly', () => {
@@ -102,13 +104,13 @@ describe('ChatListItem', () => {
 
   it('has accessible label with unread count', () => {
     render(<ChatListItem chat={mockDirectChat} isActive={false} onSelect={() => {}} />);
-    const item = screen.getByRole('listitem');
+    const item = screen.getByRole('button');
     expect(item.getAttribute('aria-label')).toContain('2 непрочитанных');
   });
 
   it('has accessible label without unread when count is 0', () => {
     render(<ChatListItem chat={mockSecretChat} isActive={false} onSelect={() => {}} />);
-    const item = screen.getByRole('listitem');
+    const item = screen.getByRole('button');
     expect(item.getAttribute('aria-label')).not.toContain('непрочитанных');
   });
 });

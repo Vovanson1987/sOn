@@ -67,7 +67,8 @@ describe('ChatList', () => {
 
   it('сортирует чаты по дате (новые сверху)', () => {
     render(<ChatList />);
-    const items = screen.getAllByRole('listitem');
+    const list = screen.getByRole('list', { name: 'Чаты' });
+    const items = list.querySelectorAll('button');
     // chat-1 (Jan 3) должен быть первым, chat-3 (Jan 1) — последним
     expect(items.length).toBe(3);
   });

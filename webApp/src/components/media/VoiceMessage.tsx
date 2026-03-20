@@ -27,11 +27,15 @@ export const VoiceMessage = memo(function VoiceMessage({ duration, isPlaying, pr
     <div className="flex items-center gap-2 min-w-[180px]">
       <button
         onClick={onTogglePlay}
-        className="w-[28px] h-[28px] rounded-full flex items-center justify-center flex-shrink-0"
-        style={{ background: '#007AFF' }}
+        className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
         aria-label={isPlaying ? 'Пауза' : 'Воспроизвести'}
       >
-        {isPlaying ? <Pause size={14} color="white" /> : <Play size={14} color="white" style={{ marginLeft: '2px' }} />}
+        <div
+          className="w-[32px] h-[32px] rounded-full flex items-center justify-center"
+          style={{ background: '#007AFF' }}
+        >
+          {isPlaying ? <Pause size={14} color="white" /> : <Play size={14} color="white" style={{ marginLeft: '2px' }} />}
+        </div>
       </button>
 
       {/* SVG волна */}

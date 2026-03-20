@@ -10,12 +10,17 @@ describe('FrostedGlassBar', () => {
 
   it('applies backdrop-filter styles', () => {
     const { container } = render(<FrostedGlassBar><span>Test</span></FrostedGlassBar>);
-    const header = container.querySelector('header');
-    expect(header).toHaveStyle({ backdropFilter: 'var(--header-blur)' });
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.style.backdropFilter).toContain('blur');
   });
 
-  it('renders as a header element', () => {
+  it('renders as div by default', () => {
     const { container } = render(<FrostedGlassBar><span>Test</span></FrostedGlassBar>);
+    expect(container.querySelector('div')).toBeInTheDocument();
+  });
+
+  it('renders as header when as="header"', () => {
+    const { container } = render(<FrostedGlassBar as="header"><span>Test</span></FrostedGlassBar>);
     expect(container.querySelector('header')).toBeInTheDocument();
   });
 
@@ -23,7 +28,21 @@ describe('FrostedGlassBar', () => {
     const { container } = render(
       <FrostedGlassBar className="px-4 pt-2"><span>Test</span></FrostedGlassBar>,
     );
-    const header = container.querySelector('header');
-    expect(header?.className).toContain('px-4');
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.className).toContain('px-4');
+  });
+
+  it('applies custom style prop', () => {
+    const { container } = render(
+      <FrostedGlassBar style={{ paddingTop: '10px' }}><span>Test</span></FrostedGlassBar>,
+    );
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.style.paddingTop).toBe('10px');
+  });
+
+  it('has hairline border bottom', () => {
+    const { container } = render(<FrostedGlassBar><span>Test</span></FrostedGlassBar>);
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.style.borderBottom).toContain('0.5px');
   });
 });

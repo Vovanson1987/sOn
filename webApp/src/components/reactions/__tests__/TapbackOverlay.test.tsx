@@ -81,6 +81,19 @@ describe('TapbackOverlay', () => {
   it('"Удалить" отображается красным', () => {
     render(<TapbackOverlay {...defaultProps} />);
     const deleteBtn = screen.getByText('Удалить');
-    expect(deleteBtn).toHaveStyle({ color: '#FF3B30' });
+    expect(deleteBtn).toHaveStyle({ color: '#FF453A' });
+  });
+
+  it('закрывается по Escape', () => {
+    const onClose = vi.fn();
+    render(<TapbackOverlay {...defaultProps} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('имеет aria-modal="true"', () => {
+    const { container } = render(<TapbackOverlay {...defaultProps} />);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
   });
 });

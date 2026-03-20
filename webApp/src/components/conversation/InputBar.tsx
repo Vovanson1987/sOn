@@ -51,11 +51,11 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
     >
       {/* Кнопка вложений */}
       <button
-        className="w-[26px] h-[26px] rounded-full flex items-center justify-center flex-shrink-0 mb-[3px]"
+        className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
         style={{ background: '#636366' }}
         aria-label="Вложения"
       >
-        <Plus size={16} color="white" />
+        <Plus size={18} color="white" />
       </button>
 
       {/* Поле ввода */}
@@ -72,7 +72,7 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
           placeholder={placeholder}
           rows={1}
           aria-label="Написать сообщение"
-          className="flex-1 bg-transparent text-[15px] text-white placeholder-[#8E8E93] outline-none resize-none leading-[1.35]"
+          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#8E8E93] outline-none resize-none leading-[1.3]"
           style={{ maxHeight: '100px' }}
         />
       </div>
@@ -81,27 +81,27 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
       {hasText ? (
         <button
           onClick={handleSend}
-          className="w-[26px] h-[26px] rounded-full flex items-center justify-center flex-shrink-0 mb-[3px]"
+          className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
           style={{ background: '#007AFF' }}
           aria-label="Отправить"
         >
-          <ArrowUp size={16} color="white" strokeWidth={3} />
+          <ArrowUp size={18} color="white" strokeWidth={3} />
         </button>
       ) : (
         <button
-          className="flex items-center justify-center flex-shrink-0 mb-[3px]"
+          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
           aria-label="Голосовое сообщение"
         >
-          <AudioLines size={20} color="#8E8E93" />
+          <AudioLines size={22} color="#8E8E93" />
         </button>
       )}
 
       {/* Эмодзи */}
       <button
-        className="flex items-center justify-center flex-shrink-0 mb-[3px]"
+        className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
         aria-label="Эмодзи"
       >
-        <Smile size={20} color="#8E8E93" />
+        <Smile size={22} color="#8E8E93" />
       </button>
     </footer>
   );

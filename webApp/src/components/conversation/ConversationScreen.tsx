@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import { ChevronRight, Video, Shield, Timer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -77,7 +77,7 @@ function formatHeaderDate(dateStr: string): string {
 }
 
 /** Экран переписки в стиле iMessage Mac */
-export function ConversationScreen({ chat }: ConversationScreenProps) {
+export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messages = useMessageStore((s) => s.messages[chat.id] ?? []);
   const sendMessage = useMessageStore((s) => s.sendMessage);
@@ -243,36 +243,46 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
       )}
 
       {/* Шапка */}
-      <FrostedGlassBar className="flex items-center px-6 py-2 relative min-h-[70px]">
-        <div className="w-[60px]" />
+      <FrostedGlassBar
+        className="flex items-center px-2 relative"
+        style={{
+          paddingTop: 'max(8px, env(safe-area-inset-top))',
+          paddingBottom: '8px',
+          borderBottom: '0.5px solid rgba(255,255,255,0.1)',
+        }}
+      >
+        <div className="w-[60px] flex items-center">
+          <button
+            onClick={onBack}
+            className="w-[44px] h-[44px] flex items-center"
+            style={{ color: '#007AFF' }}
+            aria-label="Назад к списку чатов"
+          >
+            <ChevronLeft size={28} color="#007AFF" strokeWidth={2.5} />
+          </button>
+        </div>
         <div className="flex-1 flex flex-col items-center">
           <Avatar size={40} name={chatName} src={other?.avatarUrl} />
-          <button className="flex items-center gap-[2px] mt-[3px]">
-            <span className="text-[13px] font-semibold text-white">{chatName}</span>
-            <ChevronRight size={13} color="#8E8E93" />
-          </button>
+          <span className="text-[17px] font-semibold text-white mt-[2px]">{chatName}</span>
           <div className="flex items-center gap-1">
-            <span className="text-[10px]" style={{ color: isSecret ? '#34C759' : '#8E8E93' }}>{chatSubtype}</span>
+            <span className="text-[12px]" style={{ color: isSecret ? '#30D158' : '#8E8E93' }}>{chatSubtype}</span>
             {isSecret && secretSession?.isVerified && (
-              <span className="text-[10px]" style={{ color: '#34C759' }}>✓ Verified</span>
+              <span className="text-[12px]" style={{ color: '#30D158' }}>✓ Проверено</span>
             )}
           </div>
-          {lastMessageDate && (
-            <span className="text-[10px]" style={{ color: '#8E8E93' }}>{lastMessageDate}</span>
-          )}
         </div>
         <div className="w-[60px] flex justify-end gap-1 pr-1">
           {isSecret && (
             <>
-              <button onClick={() => setShowSelfDestructPicker(true)} aria-label="Таймер самоуничтожения">
-                <Timer size={20} color="#34C759" />
+              <button onClick={() => setShowSelfDestructPicker(true)} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Таймер самоуничтожения">
+                <Timer size={20} color="#30D158" />
               </button>
-              <button onClick={() => setShowEncryptionInfo(true)} aria-label="Информация о шифровании">
-                <Shield size={20} color="#34C759" />
+              <button onClick={() => setShowEncryptionInfo(true)} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Информация о шифровании">
+                <Shield size={20} color="#30D158" />
               </button>
             </>
           )}
-          <button aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
+          <button className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
 

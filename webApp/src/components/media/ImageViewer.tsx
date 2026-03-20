@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 
 interface ImageViewerProps {
@@ -8,17 +9,28 @@ interface ImageViewerProps {
 
 /** Полноэкранный просмотр изображения с затемнением */
 export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.9)' }}
       onClick={onClose}
       role="dialog"
+      aria-modal="true"
       aria-label="Просмотр изображения"
     >
       <button
-        className="absolute top-4 right-4 w-[32px] h-[32px] rounded-full flex items-center justify-center"
-        style={{ background: 'rgba(255,255,255,0.2)' }}
+        className="absolute right-4 w-[44px] h-[44px] rounded-full flex items-center justify-center"
+        style={{
+          top: 'max(16px, env(safe-area-inset-top))',
+          background: 'rgba(255,255,255,0.2)',
+          backdropFilter: 'blur(10px)',
+        }}
         onClick={onClose}
         aria-label="Закрыть"
       >
@@ -28,7 +40,7 @@ export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
       <img
         src={src}
         alt={alt}
-        className="max-w-[90vw] max-h-[90vh] rounded-[8px] object-contain"
+        className="max-w-[90vw] max-h-[90vh] object-contain"
         onClick={(e) => e.stopPropagation()}
       />
     </div>

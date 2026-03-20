@@ -6,35 +6,36 @@
   --color-bg-tertiary: #2C2C2E;
   --color-bg-elevated: #1C1C1E;
   --color-bubble-outgoing: #007AFF;
-  --color-bubble-outgoing-sms: #34C759;
-  --color-bubble-incoming: #26252A;
+  --color-bubble-outgoing-sms: #30D158;
+  --color-bubble-incoming: #3A3A3C;
   --color-bg-incoming-secret: #1E1E22;
   --color-text-primary: #FFFFFF;
-  --color-text-secondary: #8E8E93;
-  --color-text-tertiary: #636366;
+  --color-text-secondary: rgba(235, 235, 245, 0.6);
+  --color-text-tertiary: rgba(235, 235, 245, 0.3);
   --color-accent-blue: #007AFF;
-  --color-accent-green: #34C759;
-  --color-accent-red: #FF3B30;
-  --color-accent-orange: #FF9500;
-  --color-accent-yellow: #FFCC00;
-  --color-accent-purple: #AF52DE;
-  --color-separator: #38383A;
+  --color-accent-green: #30D158;
+  --color-accent-red: #FF453A;
+  --color-accent-orange: #FF9F0A;
+  --color-accent-yellow: #FFD60A;
+  --color-accent-purple: #BF5AF2;
+  --color-separator: rgba(255, 255, 255, 0.1);
   --color-selection: rgba(0, 122, 255, 0.12);
 }
 
 :root {
-  --header-bg: rgba(0, 0, 0, 0.85);
-  --header-blur: blur(20px) saturate(180%);
-  --secret-border: 3px solid #34C759;
+  --header-bg: rgba(0, 0, 0, 0.72);
+  --header-blur: saturate(180%) blur(20px);
+  --secret-border: 3px solid #30D158;
   --font-family: system-ui, -apple-system, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  --transition-default: 300ms ease;
-  --transition-fast: 150ms ease;
+  --transition-default: 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-fast: 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html, body, #root {
@@ -46,11 +47,17 @@ html, body, #root {
   font-family: var(--font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
+}
+
+button:active {
+  opacity: 0.6;
+  transition: opacity 0.1s ease;
 }
 
 @keyframes typingDots {
   0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30%           { opacity: 1;   transform: translateY(-4px); }
+  30%           { opacity: 1;   transform: translateY(-3px); }
 }
 
 @keyframes pulseRing {
@@ -63,14 +70,24 @@ html, body, #root {
   100% { opacity: 0; transform: scale(0.8); filter: blur(10px); }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
+  from { transform: translateX(100%); opacity: 0.8; }
+  to   { transform: translateX(0); opacity: 1; }
 }
 
 @keyframes slideOutLeft {
   from { transform: translateX(0); }
   to   { transform: translateX(-30%); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
 }
 
 @keyframes springBounce {

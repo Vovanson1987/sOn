@@ -37,32 +37,41 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
   return (
     <button
       onClick={() => onSelect(chat.id)}
-      className="w-full flex items-center gap-[10px] px-[14px] py-[8px] text-left rounded-[10px]"
+      className="w-full flex items-center gap-[12px] px-4 py-[8px] text-left rounded-[10px] active:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#007AFF]"
       style={{
         background: isActive ? '#007AFF' : 'transparent',
       }}
-      role="listitem"
       aria-label={`Чат с ${name}${chat.unreadCount > 0 ? `, ${chat.unreadCount} непрочитанных` : ''}`}
+      aria-current={isActive ? 'true' : undefined}
     >
       <Avatar size={50} name={avatar.name} src={avatar.src} isOnline={avatar.isOnline} groupMembers={avatar.groupMembers} />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1 min-w-0 flex-1">
-            {isSecret && <Lock size={13} color={isActive ? '#fff' : '#34C759'} aria-label="Секретный чат" />}
-            <span
-              className="text-[15px] font-semibold truncate"
-              style={{ color: isActive ? '#fff' : '#fff' }}
-            >
+            {isSecret && <Lock size={13} color={isActive ? '#fff' : '#30D158'} aria-hidden="true" />}
+            <span className="text-[15px] font-semibold truncate text-white">
               {name}
             </span>
           </div>
-          <span
-            className="text-[13px] flex-shrink-0 ml-2"
-            style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#8E8E93' }}
-          >
-            {date}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            <span
+              className="text-[13px]"
+              style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#8E8E93' }}
+            >
+              {date}
+            </span>
+            {chat.unreadCount > 0 && !isActive && (
+              <div
+                className="min-w-[20px] h-[20px] rounded-full flex items-center justify-center px-[5px]"
+                style={{ background: '#007AFF' }}
+              >
+                <span className="text-[11px] font-bold text-white">
+                  {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         <p
           className="text-[13px] leading-[1.35] mt-[1px] line-clamp-2"
