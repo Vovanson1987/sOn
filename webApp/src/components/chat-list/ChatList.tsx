@@ -1,9 +1,35 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties, type ReactElement } from 'react';
+import { List } from 'react-window';
 import { useChatStore } from '@stores/chatStore';
 import { SearchBar } from '@components/ui/SearchBar';
 import { ChatListHeader } from './ChatListHeader';
 import { ChatListItem } from './ChatListItem';
 import { NewChatModal } from './NewChatModal';
+import type { Chat } from '@/types/chat';
+
+/** LO-16: Виртуализированная строка чата для react-window */
+interface ChatRowProps {
+  chats: Chat[];
+  activeChatId: string | null;
+  onSelect: (chatId: string) => void;
+}
+
+function ChatRow({ index, style, ariaAttributes, chats, activeChatId, onSelect }: {
+  index: number;
+  style: CSSProperties;
+  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+  chats: Chat[];
+  activeChatId: string | null;
+  onSelect: (chatId: string) => void;
+}): ReactElement | null {
+  const chat = chats[index];
+  if (!chat) return null;
+  return (
+    <div style={style} {...ariaAttributes}>
+      <ChatListItem chat={chat} isActive={chat.id === activeChatId} onSelect={onSelect} />
+    </div>
+  );
+}
 
 export function ChatList() {
   const [showNewChat, setShowNewChat] = useState(false);
@@ -16,6 +42,20 @@ export function ChatList() {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const setActiveChat = useChatStore((s) => s.setActiveChat);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // LO-16: Отслеживание высоты контейнера для react-window
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setContainerHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const handleSearchChange = useCallback((value: string) => {
     setLocalSearch(value);
@@ -73,10 +113,9 @@ export function ChatList() {
       </div>
 
       <div
-        className="flex-1 overflow-y-auto px-3"
-        role="list"
+        ref={containerRef}
+        className="flex-1 overflow-hidden px-3"
         aria-label="Чаты"
-        style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {/* Skeleton при загрузке */}
         {isLoading && chats.length === 0 ? (
@@ -106,15 +145,29 @@ export function ChatList() {
               </button>
             )}
           </div>
+        ) : containerHeight > 0 ? (
+          /* LO-16: Виртуализированный список чатов */
+          <List
+            rowComponent={ChatRow}
+            rowCount={filteredChats.length}
+            rowHeight={72}
+            rowProps={{ chats: filteredChats, activeChatId, onSelect: handleSelect }}
+            style={{ height: containerHeight, overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as CSSProperties}
+            role="list"
+            aria-label="Чаты"
+          />
         ) : (
-          filteredChats.map((chat) => (
-            <ChatListItem
-              key={chat.id}
-              chat={chat}
-              isActive={chat.id === activeChatId}
-              onSelect={handleSelect}
-            />
-          ))
+          /* Fallback: обычный список (для тестов / SSR) */
+          <div role="list" aria-label="Чаты">
+            {filteredChats.map((chat) => (
+              <ChatListItem
+                key={chat.id}
+                chat={chat}
+                isActive={chat.id === activeChatId}
+                onSelect={handleSelect}
+              />
+            ))}
+          </div>
         )}
       </div>
 

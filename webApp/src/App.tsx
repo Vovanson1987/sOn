@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, lazy, Suspense } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ChatList } from '@components/chat-list/ChatList';
 import { TabBar, type TabId } from '@components/layout/TabBar';
 import { Phone, Users } from 'lucide-react';
@@ -67,6 +68,46 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<TabId>('chats');
   const unreadChats = chats.filter((c) => c.unreadCount > 0).length;
+
+  // CR-08: URL routing sync
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isSyncingFromUrl = useRef(false);
+
+  // URL -> state (browser back/forward, direct URL entry)
+  useEffect(() => {
+    isSyncingFromUrl.current = true;
+    const path = location.pathname;
+    if (path === '/settings') {
+      setActiveTab('settings');
+    } else if (path === '/calls') {
+      setActiveTab('calls');
+    } else if (path === '/contacts') {
+      setActiveTab('contacts');
+    } else {
+      setActiveTab('chats');
+      const match = path.match(/^\/chat\/([^/]+)$/);
+      const urlChatId = match ? match[1] : null;
+      if (urlChatId !== useChatStore.getState().activeChatId) {
+        setActiveChat(urlChatId);
+      }
+    }
+    isSyncingFromUrl.current = false;
+  }, [location.pathname, setActiveChat]);
+
+  // State -> URL (user clicks chat in ChatList, changes tab)
+  useEffect(() => {
+    if (isSyncingFromUrl.current) return;
+    let target: string;
+    if (activeTab === 'settings') target = '/settings';
+    else if (activeTab === 'calls') target = '/calls';
+    else if (activeTab === 'contacts') target = '/contacts';
+    else target = activeChatId ? `/chat/${activeChatId}` : '/';
+
+    if (location.pathname !== target) {
+      navigate(target);
+    }
+  }, [activeChatId, activeTab, navigate, location.pathname]);
 
   // Восстановить сессию при загрузке
   useEffect(() => { restore(); }, [restore]);

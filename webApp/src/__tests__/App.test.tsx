@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 
 // Моки stores
@@ -14,24 +15,31 @@ vi.mock('@stores/authStore', () => ({
   }),
 }));
 
-vi.mock('@stores/chatStore', () => ({
-  useChatStore: vi.fn((selector) => {
-    const state = {
-      activeChatId: null,
-      chats: [],
-      setActiveChat: vi.fn(),
-      fetchChats: vi.fn(),
-    };
-    return selector(state);
-  }),
-}));
+vi.mock('@stores/chatStore', () => {
+  const state = {
+    activeChatId: null,
+    chats: [],
+    setActiveChat: vi.fn(),
+    fetchChats: vi.fn(),
+    removeChatLocal: vi.fn(),
+  };
+  const useChatStore = vi.fn((selector: (s: typeof state) => unknown) => selector(state));
+  useChatStore.getState = () => state;
+  return { useChatStore };
+});
 
-vi.mock('@stores/messageStore', () => ({
-  useMessageStore: vi.fn((selector) => {
-    const state = { addMessage: vi.fn() };
-    return selector(state);
-  }),
-}));
+vi.mock('@stores/messageStore', () => {
+  const state = {
+    addMessage: vi.fn(),
+    removeMessageLocal: vi.fn(),
+    setTyping: vi.fn(),
+    clearTyping: vi.fn(),
+    messages: {},
+  };
+  const useMessageStore = vi.fn((selector: (s: typeof state) => unknown) => selector(state));
+  useMessageStore.getState = () => state;
+  return { useMessageStore };
+});
 
 vi.mock('@stores/callStore', () => ({
   useCallStore: vi.fn((selector) => {
@@ -57,7 +65,7 @@ describe('App', () => {
 
   it('показывает AuthScreen когда не авторизован', async () => {
     await act(async () => {
-      render(<App />);
+      render(<MemoryRouter><App /></MemoryRouter>);
     });
     // AuthScreen загружается lazy — ждём загрузки
     // Если не авторизован, не должно быть TabBar
