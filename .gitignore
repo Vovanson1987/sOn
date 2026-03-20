@@ -4,4 +4,13 @@ node_modules/
 dist/
 .vite/
 *.log
+
+# Секреты — никогда не коммитить
+**/.env
+**/.env.local
+**/.env.production.local
+.env
+.env.*
+!.env.example
+server/.env
 docs/ngrok_recovery_codes.txt

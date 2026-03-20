@@ -1,6 +1,8 @@
 /** sOn Messenger — Node.js API сервер + WebSocket */
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const bcrypt = require('bcryptjs');
@@ -18,7 +20,47 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-app.use(cors());
+// ==================== Безопасность ====================
+
+// Заголовки безопасности (CSP, HSTS, X-Frame-Options и т.д.)
+app.use(helmet({
+  contentSecurityPolicy: false, // CSP управляется через nginx
+}));
+
+// CORS — только разрешённые домены
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:8080', 'http://localhost'];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Разрешить запросы без origin (мобильные приложения, curl, серверные запросы)
+    if (!origin) return callback(null, true);
+    // Разрешить ngrok-домены
+    if (origin.endsWith('.ngrok-free.dev') || origin.endsWith('.ngrok.io')) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error('Заблокировано CORS'));
+  },
+  credentials: true,
+}));
+
+// Rate limiting на аутентификацию — защита от brute-force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 20, // максимум 20 попыток
+  message: { error: 'Слишком много попыток. Подождите 15 минут.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Общий rate limiter для API
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 минута
+  max: 200, // 200 запросов в минуту
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', apiLimiter);
 app.use(express.json());
 
 // ==================== Middleware ====================
@@ -37,7 +79,7 @@ function authMiddleware(req, res, next) {
 // ==================== AUTH ====================
 
 /** POST /api/auth/register */
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, display_name, password } = req.body;
     if (!email || !display_name || !password) {
@@ -59,7 +101,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 /** POST /api/auth/login */
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -93,6 +135,22 @@ app.get('/api/users/search', authMiddleware, async (req, res) => {
   );
   res.json({ users: result.rows });
 });
+
+// ==================== Проверка членства в чате ====================
+
+/** Middleware: проверить что пользователь — участник чата */
+async function chatMemberCheck(req, res, next) {
+  const chatId = req.params.chatId;
+  const userId = req.user.id;
+  const result = await pool.query(
+    'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+    [chatId, userId]
+  );
+  if (result.rows.length === 0) {
+    return res.status(403).json({ error: 'Нет доступа к этому чату' });
+  }
+  next();
+}
 
 // ==================== CHATS ====================
 
@@ -152,7 +210,7 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
 // ==================== MESSAGES ====================
 
 /** GET /api/chats/:chatId/messages */
-app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
+app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
   const result = await pool.query(
     `SELECT m.*, u.display_name as sender_name FROM messages m
      JOIN users u ON u.id = m.sender_id
@@ -163,7 +221,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
 });
 
 /** POST /api/chats/:chatId/messages */
-app.post('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
+app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
   const { content, type = 'text' } = req.body;
   const result = await pool.query(
     'INSERT INTO messages (chat_id, sender_id, content, type) VALUES ($1, $2, $3, $4) RETURNING *',
@@ -185,28 +243,56 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 const connections = new Map();
 
 wss.on('connection', (ws, req) => {
+  // Поддержка двух способов аутентификации:
+  // 1. Через первое сообщение (безопасный способ — рекомендуемый)
+  // 2. Через query-параметр (обратная совместимость)
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const token = url.searchParams.get('token');
+  const urlToken = url.searchParams.get('token');
 
-  let user;
-  try {
-    user = jwt.verify(token, JWT_SECRET);
-  } catch {
-    ws.close(4001, 'Невалидный токен');
-    return;
+  let user = null;
+  let authenticated = false;
+
+  // Попытка auth через query (обратная совместимость)
+  if (urlToken) {
+    try {
+      user = jwt.verify(urlToken, JWT_SECRET);
+      authenticated = true;
+      registerConnection(ws, user);
+    } catch {
+      // Токен невалиден — ждём auth через первое сообщение
+    }
   }
 
-  // Сохранить подключение
-  if (!connections.has(user.id)) connections.set(user.id, new Set());
-  connections.get(user.id).add(ws);
-  console.log(`🟢 ${user.display_name} подключился (${connections.get(user.id).size} сессий)`);
-
-  // Обновить статус онлайн
-  pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
+  // Таймаут аутентификации: 10 секунд на отправку auth-сообщения
+  const authTimeout = !authenticated ? setTimeout(() => {
+    if (!authenticated) {
+      ws.close(4001, 'Таймаут аутентификации');
+    }
+  }, 10000) : null;
 
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data);
+
+      // Первое сообщение — аутентификация
+      if (!authenticated && msg.type === 'auth') {
+        try {
+          user = jwt.verify(msg.token, JWT_SECRET);
+          authenticated = true;
+          if (authTimeout) clearTimeout(authTimeout);
+          registerConnection(ws, user);
+          ws.send(JSON.stringify({ type: 'auth_success', user_id: user.id }));
+        } catch {
+          ws.close(4001, 'Невалидный токен');
+        }
+        return;
+      }
+
+      if (!authenticated) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Не аутентифицирован' }));
+        return;
+      }
+
       handleWsMessage(user, ws, msg);
     } catch (err) {
       console.error('Ошибка обработки WS:', err);
@@ -214,14 +300,25 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    connections.get(user.id)?.delete(ws);
-    if (connections.get(user.id)?.size === 0) {
-      connections.delete(user.id);
-      pool.query('UPDATE users SET is_online = false, last_seen_at = NOW() WHERE id = $1', [user.id]);
-      console.log(`🔴 ${user.display_name} отключился`);
+    if (authTimeout) clearTimeout(authTimeout);
+    if (user) {
+      connections.get(user.id)?.delete(ws);
+      if (connections.get(user.id)?.size === 0) {
+        connections.delete(user.id);
+        pool.query('UPDATE users SET is_online = false, last_seen_at = NOW() WHERE id = $1', [user.id]);
+        console.log(`🔴 ${user.display_name} отключился`);
+      }
     }
   });
 });
+
+/** Зарегистрировать WebSocket-подключение */
+function registerConnection(ws, user) {
+  if (!connections.has(user.id)) connections.set(user.id, new Set());
+  connections.get(user.id).add(ws);
+  console.log(`🟢 ${user.display_name} подключился (${connections.get(user.id).size} сессий)`);
+  pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
+}
 
 /** Обработка WebSocket сообщений */
 function handleWsMessage(user, ws, msg) {

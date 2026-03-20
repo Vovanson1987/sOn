@@ -9,9 +9,17 @@ defmodule SonGatewayWeb.ChatChannel do
 
   @impl true
   def join("chat:" <> chat_id, _params, socket) do
-    # TODO: проверить что пользователь — участник чата
-    send(self(), :after_join)
-    {:ok, assign(socket, :chat_id, chat_id)}
+    user_id = socket.assigns.user_id
+
+    # Проверяем что пользователь — участник чата
+    case SonGateway.Repo.get_by(SonGateway.Chats.ChatMember, chat_id: chat_id, user_id: user_id) do
+      nil ->
+        {:error, %{reason: "unauthorized"}}
+
+      _member ->
+        send(self(), :after_join)
+        {:ok, assign(socket, :chat_id, chat_id)}
+    end
   end
 
   @impl true

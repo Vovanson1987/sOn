@@ -98,19 +98,34 @@ export async function searchUsers(query: string) {
 
 let ws: WebSocket | null = null;
 let wsListeners: Array<(data: unknown) => void> = [];
+let intentionalClose = false;
 
 /** Подключиться к WebSocket */
 export function connectWS(): void {
   const token = getToken();
   if (!token || ws?.readyState === WebSocket.OPEN) return;
 
-  ws = new WebSocket(`${WS_URL}?token=${token}`);
+  intentionalClose = false;
 
-  ws.onopen = () => console.log('🟢 WebSocket подключён');
+  // Подключение без токена в URL — аутентификация через первое сообщение
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    // Отправить токен в первом сообщении (безопасный способ)
+    ws?.send(JSON.stringify({ type: 'auth', token }));
+  };
 
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      if (data.type === 'auth_success') {
+        console.log('🟢 WebSocket аутентифицирован');
+        return;
+      }
+      if (data.type === 'error') {
+        console.error('WebSocket ошибка:', data.message);
+        return;
+      }
       wsListeners.forEach((fn) => fn(data));
     } catch {
       // Игнорируем невалидный JSON
@@ -118,8 +133,12 @@ export function connectWS(): void {
   };
 
   ws.onclose = () => {
+    if (intentionalClose) return;
     console.log('🔴 WebSocket отключён, переподключение через 3с...');
-    setTimeout(connectWS, 3000);
+    // Переподключение только если токен ещё есть (пользователь не вышел)
+    if (getToken()) {
+      setTimeout(connectWS, 3000);
+    }
   };
 }
 
@@ -140,6 +159,7 @@ export function onWS(callback: (data: unknown) => void): () => void {
 
 /** Отключить WebSocket */
 export function disconnectWS(): void {
+  intentionalClose = true;
   ws?.close();
   ws = null;
 }
