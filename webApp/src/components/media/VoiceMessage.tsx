@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Play, Pause } from 'lucide-react';
 
 interface VoiceMessageProps {
@@ -17,10 +17,11 @@ function formatDuration(sec: number): string {
 
 /** Голосовое сообщение с SVG-волной */
 export const VoiceMessage = memo(function VoiceMessage({ duration, isPlaying, progress, onTogglePlay }: VoiceMessageProps) {
-  // Генерация простой волны
+  // Генерация простой волны (мемоизируем, т.к. зависит только от количества баров)
   const bars = 24;
-  const heights = Array.from({ length: bars }, (_, i) =>
-    0.3 + 0.7 * Math.abs(Math.sin((i * 3.14) / 6)),
+  const heights = useMemo(
+    () => Array.from({ length: bars }, (_, i) => 0.3 + 0.7 * Math.abs(Math.sin((i * 3.14) / 6))),
+    [bars],
   );
 
   return (
@@ -39,7 +40,14 @@ export const VoiceMessage = memo(function VoiceMessage({ duration, isPlaying, pr
       </button>
 
       {/* SVG волна */}
-      <div className="flex-1 flex items-center gap-[2px] h-[28px]">
+      <div
+        className="flex-1 flex items-center gap-[2px] h-[28px]"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
+        aria-label="Прогресс воспроизведения"
+      >
         {heights.map((h, i) => {
           const played = i / bars <= progress;
           return (

@@ -66,7 +66,11 @@ export function VerificationModal({
         </div>
 
         {/* Эмодзи-сетка 4×4 */}
-        <div className="flex flex-col items-center gap-2 mb-5">
+        <div
+          className="flex flex-col items-center gap-2 mb-5"
+          role="img"
+          aria-label="Сетка эмодзи 4 на 4 для визуальной верификации ключей шифрования"
+        >
           {emojiGrid.map((row, i) => (
             <div key={i} className="flex gap-3">
               {row.map((emoji, j) => (

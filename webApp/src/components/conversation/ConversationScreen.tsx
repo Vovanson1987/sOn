@@ -178,10 +178,15 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
     [],
   );
 
+  // LO-12: Toast для уведомления о копировании
+  const [showCopyToast, setShowCopyToast] = useState(false);
+
   const handleCopy = useCallback(() => {
     if (tapbackMessage) {
       navigator.clipboard.writeText(tapbackMessage.content);
       setTapbackMessage(null);
+      setShowCopyToast(true);
+      setTimeout(() => setShowCopyToast(false), 1500);
     }
   }, [tapbackMessage]);
 
@@ -227,8 +232,16 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           ratchetIndex={secretSession.ratchetState?.sendCount || 0}
           isVerified={secretSession.isVerified}
           onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
-          onRegenerateKeys={() => { regenerateKeys(chat.id).then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); }); }}
-          onEndSecretChat={() => { endSession(chat.id); setShowEncryptionInfo(false); }}
+          onRegenerateKeys={() => {
+            if (window.confirm('Пересоздать ключи шифрования? Текущая сессия будет сброшена.')) {
+              regenerateKeys(chat.id).then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); });
+            }
+          }}
+          onEndSecretChat={() => {
+            if (window.confirm('Завершить секретный чат? Все сообщения будут удалены.')) {
+              endSession(chat.id); setShowEncryptionInfo(false);
+            }
+          }}
           onClose={() => setShowEncryptionInfo(false)}
         />
       )}
@@ -371,6 +384,18 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           onDelete={handleDelete}
           onClose={() => setTapbackMessage(null)}
         />
+      )}
+
+      {/* LO-12: Toast «Скопировано» */}
+      {showCopyToast && (
+        <div
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full text-[14px] text-white"
+          style={{ background: 'rgba(60,60,67,0.9)', animation: 'fadeIn 0.2s ease forwards' }}
+          role="status"
+          aria-live="polite"
+        >
+          Скопировано
+        </div>
       )}
     </div>
   );

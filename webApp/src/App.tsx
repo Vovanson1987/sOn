@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, lazy, Suspense } from 'react';
 import { ChatList } from '@components/chat-list/ChatList';
 import { TabBar, type TabId } from '@components/layout/TabBar';
+import { Phone, Users } from 'lucide-react';
 
 // Lazy-загрузка тяжёлых компонентов (code splitting)
 const ConversationScreen = lazy(() => import('@components/conversation/ConversationScreen').then(m => ({ default: m.ConversationScreen })));
@@ -153,7 +154,7 @@ export default function App() {
           {activeCall && <CallScreen />}
         </Suspense>
 
-        <main className="flex-1 overflow-hidden" id="main-content">
+        <main className="flex-1 overflow-hidden" id="main-content" style={{ animation: 'fadeIn 0.2s ease-out' }} key={activeTab + (activeChatId || '')}>
           {activeTab === 'chats' && !activeChat && <ChatList />}
           <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" role="status"><span className="sr-only">Загрузка...</span></div>}>
             {activeTab === 'chats' && activeChat && (
@@ -162,13 +163,21 @@ export default function App() {
             {activeTab === 'settings' && <SettingsScreen />}
           </Suspense>
           {activeTab === 'calls' && (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-[15px]" style={{ color: '#ABABAF' }}>Журнал звонков</p>
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <Phone size={48} color="#636366" strokeWidth={1.5} aria-hidden="true" />
+              <p className="text-[17px] font-semibold text-white">Нет звонков</p>
+              <p className="text-[14px] text-center px-8" style={{ color: '#ABABAF' }}>
+                Здесь будет отображаться журнал ваших звонков
+              </p>
             </div>
           )}
           {activeTab === 'contacts' && (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-[15px]" style={{ color: '#ABABAF' }}>Контакты</p>
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <Users size={48} color="#636366" strokeWidth={1.5} aria-hidden="true" />
+              <p className="text-[17px] font-semibold text-white">Нет контактов</p>
+              <p className="text-[14px] text-center px-8" style={{ color: '#ABABAF' }}>
+                Здесь будут отображаться ваши контакты
+              </p>
             </div>
           )}
         </main>

@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { getColorForName, getInitials } from '@utils/colors';
 
 interface AvatarProps {
-  size: 35 | 40 | 50 | 52 | 120;
+  size: number;
   src?: string;
   name: string;
   isOnline?: boolean;

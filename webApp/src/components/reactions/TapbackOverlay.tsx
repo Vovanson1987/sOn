@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useFocusTrap } from '@hooks/useFocusTrap';
 import { Reply, Copy, Trash2 } from 'lucide-react';
 import type { Message } from '@/types/message';
@@ -28,12 +28,30 @@ export function TapbackOverlay({
   onClose,
 }: TapbackOverlayProps) {
   const focusTrapRef = useFocusTrap();
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
+
+  /** Arrow-key navigation inside toolbar and menu */
+  const handleToolbarKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    const buttons = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button'));
+    const idx = buttons.indexOf(e.target as HTMLButtonElement);
+    if (idx === -1) return;
+
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      buttons[(idx + 1) % buttons.length]?.focus();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      buttons[(idx - 1 + buttons.length) % buttons.length]?.focus();
+    }
+  }, []);
 
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
@@ -45,7 +63,7 @@ export function TapbackOverlay({
   return (
     <div
       ref={focusTrapRef}
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className={`fixed inset-0 z-50 flex items-end ${isOwn ? 'justify-end' : 'justify-start'} pb-[20%] px-4`}
       style={{
         background: 'rgba(0,0,0,0.4)',
         backdropFilter: 'blur(20px) saturate(180%)',
@@ -60,6 +78,7 @@ export function TapbackOverlay({
       <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[80%]`}>
         {/* Панель реакций */}
         <div
+          ref={toolbarRef}
           className="flex items-center gap-1 px-2 py-1 rounded-full mb-2"
           style={{
             background: '#1C1C1E',
@@ -68,6 +87,7 @@ export function TapbackOverlay({
           }}
           role="toolbar"
           aria-label="Реакции"
+          onKeyDown={handleToolbarKeyDown}
         >
           {TAPBACK_EMOJIS.map((emoji) => {
             const isActive = (message.reactions[emoji] ?? []).includes('user-me');

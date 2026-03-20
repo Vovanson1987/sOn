@@ -43,7 +43,7 @@ export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPicker
       {/* Action Sheet */}
       <div
         className="absolute bottom-0 left-0 right-0 rounded-t-[12px] overflow-hidden"
-        style={{ background: '#1C1C1E' }}
+        style={{ background: '#1C1C1E', animation: 'slideUp 0.3s cubic-bezier(0.25,0.1,0.25,1) both' }}
         onClick={(e) => e.stopPropagation()}
       >
         {ITEMS.map((item, i) => (

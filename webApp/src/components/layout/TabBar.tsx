@@ -57,7 +57,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
               )}
             </div>
             <span
-              className="text-[10px]"
+              className="text-[11px]"
               style={{ color: isActive ? '#007AFF' : '#ABABAF' }}
             >
               {label}

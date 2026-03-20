@@ -107,62 +107,67 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   },
 
   initSession: async (chatId, peerId) => {
-    const state = get();
-    if (!state.myIdentityKey || !state.mySigningKey) {
-      await get().initialize();
-    }
-
-    const myIdentityKey = get().myIdentityKey!;
-    const mySigningKey = get().mySigningKey!;
-
-    // Получить prekey bundle собеседника с сервера
-    let preKeyBundle: PreKeyBundle;
     try {
-      const raw = await api.getPreKeyBundle(peerId);
-      preKeyBundle = {
-        identityKey: fromBase64(raw.identity_key),
-        signedPreKey: fromBase64(raw.signed_prekey),
-        signedPreKeySignature: fromBase64(raw.signed_prekey_signature),
-        signedPreKeyId: raw.signed_prekey_id,
-        identitySigningKey: fromBase64(raw.signing_key),
-        oneTimePreKey: raw.one_time_prekey ? fromBase64(raw.one_time_prekey) : undefined,
-        oneTimePreKeyId: raw.one_time_prekey_id,
+      const state = get();
+      if (!state.myIdentityKey || !state.mySigningKey) {
+        await get().initialize();
+      }
+
+      const myIdentityKey = get().myIdentityKey!;
+      const mySigningKey = get().mySigningKey!;
+
+      // Получить prekey bundle собеседника с сервера
+      let preKeyBundle: PreKeyBundle;
+      try {
+        const raw = await api.getPreKeyBundle(peerId);
+        preKeyBundle = {
+          identityKey: fromBase64(raw.identity_key),
+          signedPreKey: fromBase64(raw.signed_prekey),
+          signedPreKeySignature: fromBase64(raw.signed_prekey_signature),
+          signedPreKeyId: raw.signed_prekey_id,
+          identitySigningKey: fromBase64(raw.signing_key),
+          oneTimePreKey: raw.one_time_prekey ? fromBase64(raw.one_time_prekey) : undefined,
+          oneTimePreKeyId: raw.one_time_prekey_id,
+        };
+      } catch {
+        throw new Error('Невозможно установить защищённый канал — сервер недоступен');
+      }
+
+      // X3DH обмен ключами
+      const myEphemeral = await generateKeyPair();
+      const x3dhResult = await performX3DH(myIdentityKey, myEphemeral, preKeyBundle);
+
+      // Инициализация Double Ratchet
+      const ratchetState = await initSenderRatchet(x3dhResult.sharedSecret, preKeyBundle.signedPreKey);
+
+      // Сохранить ключи
+      await saveKeyPair(chatId, myIdentityKey).catch(() => {});
+      await saveSharedSecret(chatId, x3dhResult.sharedSecret).catch(() => {});
+
+      // Генерация fingerprint
+      const emojiGrid = await generateEmojiFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
+      const hexFingerprint = await generateHexFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
+
+      const session: SecretSession = {
+        chatId,
+        peerId,
+        myIdentityKey,
+        mySigningKey,
+        x3dhResult,
+        ratchetState,
+        isVerified: false,
+        selfDestructTimer: null,
+        sessionDate: new Date().toISOString(),
+        emojiGrid,
+        hexFingerprint,
       };
-    } catch {
-      throw new Error('Невозможно установить защищённый канал — сервер недоступен');
+
+      set((s) => ({ sessions: { ...s.sessions, [chatId]: session } }));
+      return session;
+    } catch (error) {
+      console.error('[secretChatStore] initSession failed:', error);
+      throw error;
     }
-
-    // X3DH обмен ключами
-    const myEphemeral = await generateKeyPair();
-    const x3dhResult = await performX3DH(myIdentityKey, myEphemeral, preKeyBundle);
-
-    // Инициализация Double Ratchet
-    const ratchetState = await initSenderRatchet(x3dhResult.sharedSecret, preKeyBundle.signedPreKey);
-
-    // Сохранить ключи
-    await saveKeyPair(chatId, myIdentityKey).catch(() => {});
-    await saveSharedSecret(chatId, x3dhResult.sharedSecret).catch(() => {});
-
-    // Генерация fingerprint
-    const emojiGrid = await generateEmojiFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
-    const hexFingerprint = await generateHexFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
-
-    const session: SecretSession = {
-      chatId,
-      peerId,
-      myIdentityKey,
-      mySigningKey,
-      x3dhResult,
-      ratchetState,
-      isVerified: false,
-      selfDestructTimer: null,
-      sessionDate: new Date().toISOString(),
-      emojiGrid,
-      hexFingerprint,
-    };
-
-    set((s) => ({ sessions: { ...s.sessions, [chatId]: session } }));
-    return session;
   },
 
   getSession: (chatId) => get().sessions[chatId],

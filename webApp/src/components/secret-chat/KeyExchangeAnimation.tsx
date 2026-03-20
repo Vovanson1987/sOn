@@ -93,6 +93,16 @@ export function KeyExchangeAnimation({ contactName, onComplete }: KeyExchangeAni
             </div>
           ))}
         </div>
+
+        {/* Кнопка «Пропустить» */}
+        <button
+          onClick={onComplete}
+          className="mt-6 text-[14px] px-4 py-2"
+          style={{ color: '#8E8E93' }}
+          aria-label="Пропустить анимацию"
+        >
+          Пропустить
+        </button>
       </div>
     </div>
   );

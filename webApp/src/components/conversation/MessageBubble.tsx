@@ -82,6 +82,7 @@ export const MessageBubble = memo(function MessageBubble({
         paddingLeft: isOwn ? '0' : '18px',
         paddingRight: isOwn ? '18px' : '0',
         marginTop: isFirstInGroup ? '8px' : '2px',
+        animation: 'fadeIn 0.2s ease-out',
       }}
     >
       {/* Имя отправителя в групповых чатах */}
