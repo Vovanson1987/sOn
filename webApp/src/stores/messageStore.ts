@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Message } from '@/types/message';
-import { mockMessages } from '@mocks/messages';
 import * as api from '@/api/client';
 import { useAuthStore } from './authStore';
 
@@ -44,7 +43,7 @@ function mapApiMessage(raw: Record<string, unknown>): Message {
 }
 
 export const useMessageStore = create<MessageStore>((set, get) => ({
-  messages: mockMessages, // Моки как fallback
+  messages: {},
   typingUsers: {},
   loadedChats: new Set(),
 
@@ -66,7 +65,7 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         }));
       }
     } catch {
-      // Если сервер недоступен — используем моки
+      // Если сервер недоступен — оставляем пустой список
     }
   },
 

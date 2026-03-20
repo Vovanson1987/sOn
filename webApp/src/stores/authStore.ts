@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setUnauthorizedHandler } from '@/api/client';
 
 interface AuthUser {
   id: string;
@@ -52,3 +53,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
     return false;
   },
 }));
+
+// Зарегистрировать обработчик 401 для API клиента
+setUnauthorizedHandler(() => useAuthStore.getState().logout());

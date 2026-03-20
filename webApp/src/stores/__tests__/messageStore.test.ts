@@ -1,11 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useMessageStore } from '../messageStore';
+import type { Message } from '@/types/message';
+
+const seedMessage: Message = {
+  id: 'msg-seed-1', chatId: 'chat-vladimir', senderId: 'user-vladimir',
+  senderName: 'Vladimir', content: 'Тестовое сообщение', type: 'text',
+  status: 'read', reactions: {}, isDestroyed: false,
+  createdAt: '2026-03-18T10:00:00Z',
+};
 
 describe('messageStore', () => {
   beforeEach(() => {
-    // Сбросить состояние к моковым данным
-    const { messages } = useMessageStore.getState();
-    useMessageStore.setState({ messages, typingUsers: {} });
+    // Сбросить и засеять тестовые данные
+    useMessageStore.setState({
+      messages: { 'chat-vladimir': [seedMessage] },
+      typingUsers: {},
+      loadedChats: new Set(),
+    });
   });
 
   describe('getMessages', () => {

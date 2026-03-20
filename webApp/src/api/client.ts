@@ -1,8 +1,6 @@
 /** API клиент для подключения к реальному бэкенду */
 
-/** URL API — относительный путь, nginx проксирует на бэкенд */
-const API_URL = import.meta.env.VITE_API_URL || '';
-const WS_URL = import.meta.env.VITE_WS_URL || `ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/ws`;
+import { API_URL, WS_URL } from './config';
 
 /** Получить JWT токен из localStorage */
 export function getToken(): string | null {
@@ -19,6 +17,21 @@ export function removeToken(): void {
   localStorage.removeItem('son-token');
 }
 
+/** Callback для обработки 401 (устанавливается из authStore) */
+let onUnauthorized: (() => void) | null = null;
+
+/** Установить обработчик 401 (вызывается из authStore при инициализации) */
+export function setUnauthorizedHandler(handler: () => void): void {
+  onUnauthorized = handler;
+}
+
+/** Обработка 401: очистить токен и выбросить ошибку */
+function handleUnauthorized(): never {
+  removeToken();
+  onUnauthorized?.();
+  throw new Error('Сессия истекла. Войдите заново.');
+}
+
 /** HTTP запрос с авторизацией */
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
@@ -30,6 +43,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options.headers,
     },
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Ошибка сервера' }));
     throw new Error(err.error || `HTTP ${res.status}`);
@@ -158,6 +174,9 @@ export function connectWS(): void {
       if (data.type === 'auth_success') {
         if (import.meta.env.DEV) console.log('WebSocket аутентифицирован');
         return;
+      }
+      if (data.type === 'auth_error' || (data.type === 'error' && data.code === 401)) {
+        handleUnauthorized();
       }
       if (data.type === 'error') {
         if (import.meta.env.DEV) console.error('WebSocket ошибка:', data.message);

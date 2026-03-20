@@ -3,9 +3,7 @@
  */
 
 import { getToken } from '@/api/client';
-
-/** URL API — относительный путь, nginx проксирует на бэкенд */
-const API_URL = import.meta.env.VITE_API_URL || '';
+import { API_URL } from '@/api/config';
 
 /** Результат загрузки файла */
 export interface UploadResult {
@@ -34,6 +32,9 @@ export async function uploadFile(file: File, folder = 'attachments', messageId?:
     body: formData,
   });
 
+  if (res.status === 401) {
+    throw new Error('Сессия истекла. Войдите заново.');
+  }
   if (!res.ok) throw new Error('Ошибка загрузки файла');
   return res.json();
 }

@@ -1,5 +1,6 @@
 import { useState, useCallback, type FormEvent } from 'react';
 import { Lock } from 'lucide-react';
+import { API_URL } from '@/api/config';
 
 interface AuthScreenProps {
   onAuth: (token: string, user: { id: string; email: string; display_name: string }) => void;
@@ -15,9 +16,6 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [loading, setLoading] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockUntil, setLockUntil] = useState(0);
-
-  /** URL API — относительный путь, nginx проксирует на бэкенд */
-  const API_URL = import.meta.env.VITE_API_URL || '';
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
@@ -62,7 +60,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
     } finally {
       setLoading(false);
     }
-  }, [isLogin, email, displayName, password, API_URL, onAuth, failedAttempts, lockUntil]);
+  }, [isLogin, email, displayName, password, onAuth, failedAttempts, lockUntil]);
 
   return (
     <div className="flex items-center justify-center h-full w-full bg-black">
