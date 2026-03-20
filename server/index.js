@@ -472,6 +472,110 @@ async function broadcastToChat(chatId, data, excludeUserId = null) {
   }
 }
 
+// ==================== E2EE PREKEYS ====================
+
+/** PUT /api/keys/bundle — загрузить prekey bundle */
+app.put('/api/keys/bundle', authMiddleware, async (req, res) => {
+  const { identity_key, signing_key, signed_prekey, signed_prekey_id, signed_prekey_signature, one_time_prekeys } = req.body;
+
+  if (!identity_key || !signing_key || !signed_prekey || !signed_prekey_signature) {
+    return res.status(400).json({ error: 'Все поля prekey bundle обязательны' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Обновить/создать основной prekey bundle
+    await client.query(`
+      INSERT INTO prekeys (user_id, identity_key, signing_key, signed_prekey, signed_prekey_id, signed_prekey_signature)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id) DO UPDATE SET
+        identity_key = EXCLUDED.identity_key,
+        signing_key = EXCLUDED.signing_key,
+        signed_prekey = EXCLUDED.signed_prekey,
+        signed_prekey_id = EXCLUDED.signed_prekey_id,
+        signed_prekey_signature = EXCLUDED.signed_prekey_signature,
+        created_at = NOW()
+    `, [req.user.id, identity_key, signing_key, signed_prekey, signed_prekey_id, signed_prekey_signature]);
+
+    // Загрузить one-time prekeys если есть
+    if (one_time_prekeys?.length) {
+      for (const otpk of one_time_prekeys) {
+        await client.query(`
+          INSERT INTO one_time_prekeys (user_id, key_id, public_key)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (user_id, key_id) DO NOTHING
+        `, [req.user.id, otpk.key_id, otpk.public_key]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Ошибка загрузки prekey bundle:', err);
+    res.status(500).json({ error: 'Ошибка сохранения ключей' });
+  } finally {
+    client.release();
+  }
+});
+
+/** GET /api/keys/bundle/:userId — получить prekey bundle собеседника */
+app.get('/api/keys/bundle/:userId', authMiddleware, async (req, res) => {
+  const targetUserId = req.params.userId;
+
+  // Получить основной bundle
+  const bundleResult = await pool.query(
+    'SELECT identity_key, signing_key, signed_prekey, signed_prekey_id, signed_prekey_signature FROM prekeys WHERE user_id = $1',
+    [targetUserId]
+  );
+
+  if (bundleResult.rows.length === 0) {
+    return res.status(404).json({ error: 'Prekey bundle не найден для этого пользователя' });
+  }
+
+  const bundle = bundleResult.rows[0];
+
+  // Попытаться забрать один one-time prekey (атомарно)
+  const otpkResult = await pool.query(`
+    UPDATE one_time_prekeys SET used = true
+    WHERE id = (
+      SELECT id FROM one_time_prekeys
+      WHERE user_id = $1 AND used = false
+      ORDER BY created_at ASC LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING key_id, public_key
+  `, [targetUserId]);
+
+  const response = {
+    identity_key: bundle.identity_key,
+    signing_key: bundle.signing_key,
+    signed_prekey: bundle.signed_prekey,
+    signed_prekey_id: bundle.signed_prekey_id,
+    signed_prekey_signature: bundle.signed_prekey_signature,
+  };
+
+  if (otpkResult.rows.length > 0) {
+    Object.assign(response, {
+      one_time_prekey: otpkResult.rows[0].public_key,
+      one_time_prekey_id: otpkResult.rows[0].key_id,
+    });
+  }
+
+  res.json(response);
+});
+
+/** GET /api/keys/count — сколько OPK осталось у текущего пользователя */
+app.get('/api/keys/count', authMiddleware, async (req, res) => {
+  const result = await pool.query(
+    'SELECT COUNT(*) as count FROM one_time_prekeys WHERE user_id = $1 AND used = false',
+    [req.user.id]
+  );
+  res.json({ remaining_one_time_prekeys: parseInt(result.rows[0].count) });
+});
+
 // ==================== ФАЙЛЫ ====================
 
 /** POST /api/media/upload — загрузка файла */

@@ -88,6 +88,41 @@ export async function sendMessage(chatId: string, content: string, type = 'text'
   });
 }
 
+// ==================== E2EE KEYS ====================
+
+/** Загрузить свой prekey bundle на сервер */
+export async function uploadPreKeyBundle(bundle: {
+  identity_key: string;
+  signing_key: string;
+  signed_prekey: string;
+  signed_prekey_id: number;
+  signed_prekey_signature: string;
+  one_time_prekeys?: Array<{ key_id: number; public_key: string }>;
+}) {
+  return request<{ ok: boolean }>('/api/keys/bundle', {
+    method: 'PUT',
+    body: JSON.stringify(bundle),
+  });
+}
+
+/** Получить prekey bundle собеседника */
+export async function getPreKeyBundle(userId: string) {
+  return request<{
+    identity_key: string;
+    signing_key: string;
+    signed_prekey: string;
+    signed_prekey_id: number;
+    signed_prekey_signature: string;
+    one_time_prekey?: string;
+    one_time_prekey_id?: number;
+  }>(`/api/keys/bundle/${userId}`);
+}
+
+/** Проверить количество оставшихся OPK */
+export async function getPreKeyCount() {
+  return request<{ remaining_one_time_prekeys: number }>('/api/keys/count');
+}
+
 // ==================== USERS ====================
 
 export async function searchUsers(query: string) {

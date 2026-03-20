@@ -1,6 +1,7 @@
 /**
  * Зашифрованное хранение ключей в IndexedDB.
- * Ключи шифруются перед записью через secretbox.
+ * Мастер-ключ выводится из пароля пользователя через Argon2id (libsodium).
+ * Fallback: случайный ключ для автономной работы.
  */
 
 import sodium from 'libsodium-wrappers';
@@ -8,45 +9,156 @@ import { ensureSodium, toBase64, fromBase64 } from './keyPair';
 import type { KeyPair } from './keyPair';
 
 const DB_NAME = 'son-keystore';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'keys';
+const SALT_KEY = 'son-ks-salt';
+const MK_KEY = 'son-mk';
 
-/** Получить или создать мастер-ключ для шифрования хранилища */
-async function getMasterKey(): Promise<Uint8Array> {
+/** Текущий мастер-ключ (кэш в памяти, НЕ в localStorage) */
+let cachedMasterKey: Uint8Array | null = null;
+
+/**
+ * Инициализировать мастер-ключ из пароля через Argon2id.
+ * Вызывается после успешного логина.
+ */
+export async function initMasterKeyFromPassword(password: string): Promise<void> {
   await ensureSodium();
 
-  const stored = localStorage.getItem('son-mk');
-  if (stored) {
-    return fromBase64(stored);
+  // Получить или создать соль (соль можно хранить открыто)
+  let saltBase64 = localStorage.getItem(SALT_KEY);
+  let salt: Uint8Array;
+  if (saltBase64) {
+    salt = fromBase64(saltBase64);
+  } else {
+    salt = sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES);
+    localStorage.setItem(SALT_KEY, toBase64(salt));
   }
-  // Генерируем новый мастер-ключ
-  const mk = sodium.crypto_secretbox_keygen();
-  localStorage.setItem('son-mk', toBase64(mk));
-  return mk;
+
+  // Вывод ключа через Argon2id
+  cachedMasterKey = sodium.crypto_pwhash(
+    32,                                          // длина ключа
+    password,                                    // пароль
+    salt,                                        // соль
+    sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,   // итерации (умеренная нагрузка)
+    sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE,   // память (~64 МБ)
+    sodium.crypto_pwhash_ALG_ARGON2ID13,         // алгоритм
+  );
+
+  // Убрать старый незащищённый мастер-ключ если он есть
+  localStorage.removeItem(MK_KEY);
+
+  // Мигрировать данные если нужно — перешифровать IndexedDB
+  await migrateFromLegacyKey();
 }
 
-/** Шифрование данных перед записью в IndexedDB */
-async function encryptData(data: Uint8Array): Promise<string> {
+/**
+ * Получить мастер-ключ.
+ * Если initMasterKeyFromPassword ещё не вызывался — fallback на случайный ключ.
+ */
+async function getMasterKey(): Promise<Uint8Array> {
+  if (cachedMasterKey) return cachedMasterKey;
+
   await ensureSodium();
-  const mk = await getMasterKey();
+
+  // Миграция: если есть старый ключ в localStorage, использовать его
+  const legacyKey = localStorage.getItem(MK_KEY);
+  if (legacyKey) {
+    cachedMasterKey = fromBase64(legacyKey);
+    return cachedMasterKey;
+  }
+
+  // Fallback: генерируем случайный ключ (для автономной работы без пароля)
+  cachedMasterKey = sodium.crypto_secretbox_keygen();
+  return cachedMasterKey;
+}
+
+/** Миграция: перешифровать данные со старым ключом на новый Argon2 ключ */
+async function migrateFromLegacyKey(): Promise<void> {
+  const legacyKeyStr = localStorage.getItem(MK_KEY);
+  if (!legacyKeyStr || !cachedMasterKey) return;
+
+  try {
+    const legacyKey = fromBase64(legacyKeyStr);
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const allKeys = await getAllRecords(store);
+
+    for (const record of allKeys) {
+      // Расшифровать старым ключом, зашифровать новым
+      for (const field of ['publicKey', 'privateKey', 'data']) {
+        if (record[field] && typeof record[field] === 'string') {
+          try {
+            const decrypted = decryptWithKey(record[field], legacyKey);
+            record[field] = encryptWithKey(decrypted, cachedMasterKey);
+          } catch {
+            // Пропускаем неподдающиеся миграции записи
+          }
+        }
+      }
+      store.put(record);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    // Удалить старый ключ после успешной миграции
+    localStorage.removeItem(MK_KEY);
+  } catch {
+    // Миграция необязательна — не блокируем
+  }
+}
+
+/** Очистить кэш мастер-ключа (при логауте) */
+export function clearMasterKey(): void {
+  if (cachedMasterKey) {
+    cachedMasterKey.fill(0); // Зануляем память
+  }
+  cachedMasterKey = null;
+}
+
+/** Шифрование данных с указанным ключом */
+function encryptWithKey(data: Uint8Array, key: Uint8Array): string {
   const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-  const encrypted = sodium.crypto_secretbox_easy(data, nonce, mk);
-  // Формат: nonce || ciphertext (base64)
+  const encrypted = sodium.crypto_secretbox_easy(data, nonce, key);
   const combined = new Uint8Array(nonce.length + encrypted.length);
   combined.set(nonce);
   combined.set(encrypted, nonce.length);
   return toBase64(combined);
 }
 
-/** Дешифрация данных из IndexedDB */
-async function decryptData(encoded: string): Promise<Uint8Array> {
-  await ensureSodium();
-  const mk = await getMasterKey();
+/** Дешифрация данных с указанным ключом */
+function decryptWithKey(encoded: string, key: Uint8Array): Uint8Array {
   const combined = fromBase64(encoded);
   const nonceLen = sodium.crypto_secretbox_NONCEBYTES;
   const nonce = combined.slice(0, nonceLen);
   const ciphertext = combined.slice(nonceLen);
-  return sodium.crypto_secretbox_open_easy(ciphertext, nonce, mk);
+  return sodium.crypto_secretbox_open_easy(ciphertext, nonce, key);
+}
+
+/** Шифрование данных перед записью в IndexedDB */
+async function encryptData(data: Uint8Array): Promise<string> {
+  await ensureSodium();
+  const mk = await getMasterKey();
+  return encryptWithKey(data, mk);
+}
+
+/** Дешифрация данных из IndexedDB */
+async function decryptData(encoded: string): Promise<Uint8Array> {
+  await ensureSodium();
+  const mk = await getMasterKey();
+  return decryptWithKey(encoded, mk);
+}
+
+/** Получить все записи из хранилища */
+function getAllRecords(store: IDBObjectStore): Promise<Record<string, unknown>[]> {
+  return new Promise((resolve, reject) => {
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 /** Открыть IndexedDB */
@@ -140,6 +252,37 @@ export async function loadSharedSecret(chatId: string): Promise<Uint8Array | nul
   });
 }
 
+/** Сохранить состояние Double Ratchet */
+export async function saveRatchetState(chatId: string, state: Record<string, unknown>): Promise<void> {
+  const db = await openDB();
+  const serialized = new TextEncoder().encode(JSON.stringify(state));
+  const encrypted = await encryptData(serialized);
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  tx.objectStore(STORE_NAME).put({ id: `dr:${chatId}`, data: encrypted });
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Загрузить состояние Double Ratchet */
+export async function loadRatchetState(chatId: string): Promise<Record<string, unknown> | null> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const req = tx.objectStore(STORE_NAME).get(`dr:${chatId}`);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = async () => {
+      const record = req.result;
+      if (!record) { resolve(null); return; }
+      try {
+        const data = await decryptData(record.data);
+        resolve(JSON.parse(new TextDecoder().decode(data)));
+      } catch { resolve(null); }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 /** Удалить все ключи для чата */
 export async function deleteKeys(chatId: string): Promise<void> {
   const db = await openDB();
@@ -147,6 +290,7 @@ export async function deleteKeys(chatId: string): Promise<void> {
   const store = tx.objectStore(STORE_NAME);
   store.delete(`kp:${chatId}`);
   store.delete(`ss:${chatId}`);
+  store.delete(`dr:${chatId}`);
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

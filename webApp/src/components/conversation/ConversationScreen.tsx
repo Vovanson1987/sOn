@@ -120,7 +120,12 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
   const initSession = useSecretChatStore((s) => s.initSession);
   const verifySession = useSecretChatStore((s) => s.verifySession);
   const setSelfDestruct = useSecretChatStore((s) => s.setSelfDestruct);
-  const regenerateKeys = useSecretChatStore((s) => s.regenerateKeys);
+  const regenerateKeys = async (chatId: string) => {
+    useSecretChatStore.getState().endSession(chatId);
+    // peerId из участников чата (первый кто не текущий пользователь)
+    const peerId = chat.members?.find((m: { id: string }) => m.id !== myUserId)?.id || '';
+    await useSecretChatStore.getState().initSession(chatId, peerId);
+  };
   const endSession = useSecretChatStore((s) => s.endSession);
 
   // Начальное значение: показать анимацию обмена ключами при первом открытии секретного чата
@@ -193,7 +198,8 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
         <KeyExchangeAnimation
           contactName={chatName}
           onComplete={() => {
-            initSession(chat.id).then(() => setShowKeyExchange(false));
+            const peerId = chat.members?.find((m: { id: string }) => m.id !== myUserId)?.id || '';
+            initSession(chat.id, peerId).then(() => setShowKeyExchange(false));
           }}
         />
       )}
@@ -217,7 +223,7 @@ export function ConversationScreen({ chat }: ConversationScreenProps) {
           protocol="Signal Protocol (X3DH + Double Ratchet)"
           algorithms="Curve25519, AES-256-GCM, HMAC-SHA256"
           sessionDate={new Date(secretSession.sessionDate).toLocaleDateString('ru-RU')}
-          ratchetIndex={secretSession.ratchetIndex}
+          ratchetIndex={secretSession.ratchetState?.sendCount || 0}
           isVerified={secretSession.isVerified}
           onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
           onRegenerateKeys={() => { regenerateKeys(chat.id).then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); }); }}

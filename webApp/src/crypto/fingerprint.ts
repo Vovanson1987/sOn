@@ -1,7 +1,11 @@
 /**
  * Генерация визуальных отпечатков для верификации ключей.
  * Эмодзи-сетка 4×4 + hex fingerprint.
+ * Использует BLAKE2b (libsodium) для криптографического хеширования.
  */
+
+import sodium from 'libsodium-wrappers';
+import { ensureSodium } from './keyPair';
 
 /** Пул эмодзи для отпечатка (256 шт.) */
 const EMOJI_POOL = [
@@ -29,7 +33,7 @@ const EMOJI_POOL = [
  */
 function fingerprintHash(key1: Uint8Array, key2: Uint8Array): Uint8Array {
   // Сортировка ключей для детерминированного результата
-  const cmp = key1.toString() < key2.toString();
+  const cmp = compareBytes(key1, key2) < 0;
   const first = cmp ? key1 : key2;
   const second = cmp ? key2 : key1;
 
@@ -38,23 +42,22 @@ function fingerprintHash(key1: Uint8Array, key2: Uint8Array): Uint8Array {
   combined.set(first);
   combined.set(second, first.length);
 
-  // Простой хеш (FNV-1a вариация) — детерминированный, не криптографический
-  // В продакшене заменить на sodium.crypto_generichash при инициализации
-  const result = new Uint8Array(32);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < combined.length; i++) {
-    hash ^= combined[i];
-    hash = Math.imul(hash, 0x01000193);
+  // Криптографический BLAKE2b хеш через libsodium (32 байта)
+  return sodium.crypto_generichash(32, combined, null);
+}
+
+/** Побайтовое сравнение массивов (для детерминированной сортировки) */
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
   }
-  for (let i = 0; i < 32; i++) {
-    hash = Math.imul(hash, 0x01000193) ^ i;
-    result[i] = Math.abs(hash) % 256;
-  }
-  return result;
+  return a.length - b.length;
 }
 
 /** Генерация эмодзи-сетки 4×4 (принимает Uint8Array ключи) */
-export function generateEmojiFingerprint(key1: Uint8Array | string, key2: Uint8Array | string): string[][] {
+export async function generateEmojiFingerprint(key1: Uint8Array | string, key2: Uint8Array | string): Promise<string[][]> {
+  await ensureSodium();
   const k1 = typeof key1 === 'string' ? new TextEncoder().encode(key1) : key1;
   const k2 = typeof key2 === 'string' ? new TextEncoder().encode(key2) : key2;
   const bytes = fingerprintHash(k1, k2);
@@ -71,7 +74,8 @@ export function generateEmojiFingerprint(key1: Uint8Array | string, key2: Uint8A
 }
 
 /** Генерация hex fingerprint (принимает Uint8Array ключи) */
-export function generateHexFingerprint(key1: Uint8Array | string, key2: Uint8Array | string): string {
+export async function generateHexFingerprint(key1: Uint8Array | string, key2: Uint8Array | string): Promise<string> {
+  await ensureSodium();
   const k1 = typeof key1 === 'string' ? new TextEncoder().encode(key1) : key1;
   const k2 = typeof key2 === 'string' ? new TextEncoder().encode(key2) : key2;
   const bytes = fingerprintHash(k1, k2);

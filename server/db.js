@@ -66,6 +66,28 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS prekeys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      identity_key TEXT NOT NULL,
+      signing_key TEXT NOT NULL,
+      signed_prekey TEXT NOT NULL,
+      signed_prekey_id INT NOT NULL,
+      signed_prekey_signature TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS one_time_prekeys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_id INT NOT NULL,
+      public_key TEXT NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, key_id)
+    );
+
     -- Добавить новые колонки (безопасно, если уже существуют)
     DO $$ BEGIN
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS description TEXT;
@@ -80,6 +102,8 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
     CREATE INDEX IF NOT EXISTS idx_chats_last_message ON chats(last_message_at);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_prekeys_user ON prekeys(user_id);
+    CREATE INDEX IF NOT EXISTS idx_otpk_user ON one_time_prekeys(user_id, used);
   `);
   console.log('✅ Таблицы БД инициализированы');
 }

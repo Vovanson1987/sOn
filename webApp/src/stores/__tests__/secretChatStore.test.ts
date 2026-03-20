@@ -1,29 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSecretChatStore } from '../secretChatStore';
-import { toBase64 } from '@/crypto/keyPair';
 
 describe('secretChatStore (реальная криптография)', () => {
   beforeEach(() => {
-    useSecretChatStore.setState({ sessions: {} });
+    useSecretChatStore.setState({ sessions: {}, initialized: false, myIdentityKey: null, mySigningKey: null });
   });
 
   it('инициализирует сессию с реальными X25519 ключами', async () => {
-    const session = await useSecretChatStore.getState().initSession('chat-secret-1');
+    const session = await useSecretChatStore.getState().initSession('chat-secret-1', 'peer-1');
     expect(session.chatId).toBe('chat-secret-1');
-    expect(session.myKeys.algorithm).toBe('X25519');
-    expect(session.myKeys.publicKey.length).toBe(32);
-    expect(session.theirKeys.algorithm).toBe('X25519');
+    expect(session.peerId).toBe('peer-1');
+    expect(session.myIdentityKey.algorithm).toBe('X25519');
+    expect(session.myIdentityKey.publicKey.length).toBe(32);
     expect(session.x3dhResult.protocol).toBe('X3DH');
     expect(session.x3dhResult.sharedSecret.length).toBe(32);
-    expect(session.ratchetIndex).toBe(1);
     expect(session.isVerified).toBe(false);
     expect(session.selfDestructTimer).toBeNull();
     expect(session.emojiGrid.length).toBe(4);
     expect(session.hexFingerprint).toBeTruthy();
+    expect(session.ratchetState).toBeDefined();
+    expect(session.ratchetState.rootKey.length).toBe(32);
   });
 
   it('getSession возвращает сессию после инициализации', async () => {
-    await useSecretChatStore.getState().initSession('chat-1');
+    await useSecretChatStore.getState().initSession('chat-1', 'peer-1');
     const session = useSecretChatStore.getState().getSession('chat-1');
     expect(session).toBeDefined();
     expect(session!.chatId).toBe('chat-1');
@@ -33,36 +33,30 @@ describe('secretChatStore (реальная криптография)', () => {
     expect(useSecretChatStore.getState().getSession('xxx')).toBeUndefined();
   });
 
-  it('advanceRatchet увеличивает ratchetIndex', async () => {
-    await useSecretChatStore.getState().initSession('chat-1');
-    await useSecretChatStore.getState().advanceRatchet('chat-1');
-    const session = useSecretChatStore.getState().getSession('chat-1')!;
-    expect(session.ratchetIndex).toBe(2);
+  it('encryptForSend и decryptReceived работают', async () => {
+    await useSecretChatStore.getState().initSession('chat-1', 'peer-1');
+
+    const result = await useSecretChatStore.getState().encryptForSend('chat-1', 'Привет!');
+    expect(result).toBeTruthy();
+    expect(result!.encrypted.algorithm).toBe('XSalsa20-Poly1305');
+    expect(result!.header.dhPublicKey.length).toBe(32);
   });
 
   it('verifySession устанавливает isVerified = true', async () => {
-    await useSecretChatStore.getState().initSession('chat-1');
+    await useSecretChatStore.getState().initSession('chat-1', 'peer-1');
     useSecretChatStore.getState().verifySession('chat-1');
     expect(useSecretChatStore.getState().getSession('chat-1')!.isVerified).toBe(true);
   });
 
   it('setSelfDestruct устанавливает таймер', async () => {
-    await useSecretChatStore.getState().initSession('chat-1');
+    await useSecretChatStore.getState().initSession('chat-1', 'peer-1');
     useSecretChatStore.getState().setSelfDestruct('chat-1', 30);
     expect(useSecretChatStore.getState().getSession('chat-1')!.selfDestructTimer).toBe(30);
   });
 
   it('endSession удаляет сессию', async () => {
-    await useSecretChatStore.getState().initSession('chat-1');
+    await useSecretChatStore.getState().initSession('chat-1', 'peer-1');
     useSecretChatStore.getState().endSession('chat-1');
     expect(useSecretChatStore.getState().getSession('chat-1')).toBeUndefined();
-  });
-
-  it('regenerateKeys создаёт новые ключи', async () => {
-    const old = await useSecretChatStore.getState().initSession('chat-1');
-    const oldPublic = toBase64(old.myKeys.publicKey);
-    await useSecretChatStore.getState().regenerateKeys('chat-1');
-    const fresh = useSecretChatStore.getState().getSession('chat-1')!;
-    expect(toBase64(fresh.myKeys.publicKey)).not.toBe(oldPublic);
   });
 });

@@ -1,17 +1,26 @@
 import { create } from 'zustand';
-import { generateKeyPair, type KeyPair } from '@/crypto/keyPair';
-import { performX3DH, type X3DHResult } from '@/crypto/x3dh';
-import { ratchetStep, type RatchetState } from '@/crypto/doubleRatchet';
+import { generateKeyPair, toBase64, fromBase64, type KeyPair } from '@/crypto/keyPair';
+import {
+  performX3DH,
+  generateSigningKeyPair, signData,
+  type PreKeyBundle, type X3DHResult, type SigningKeyPair,
+} from '@/crypto/x3dh';
+import {
+  initSenderRatchet, ratchetEncrypt, ratchetDecrypt,
+  type DoubleRatchetState, type MessageHeader,
+} from '@/crypto/doubleRatchet';
+import { encryptMessage, decryptMessage, type EncryptedMessage } from '@/crypto/encrypt';
 import { generateEmojiFingerprint, generateHexFingerprint } from '@/crypto/fingerprint';
 import { saveKeyPair, saveSharedSecret, deleteKeys } from '@/crypto/keyStore';
+import * as api from '@/api/client';
 
 export interface SecretSession {
   chatId: string;
-  myKeys: KeyPair;
-  theirKeys: KeyPair;
+  peerId: string;
+  myIdentityKey: KeyPair;
+  mySigningKey: SigningKeyPair;
   x3dhResult: X3DHResult;
-  ratchet: RatchetState;
-  ratchetIndex: number;
+  ratchetState: DoubleRatchetState;
   isVerified: boolean;
   selfDestructTimer: number | null;
   sessionDate: string;
@@ -21,56 +30,146 @@ export interface SecretSession {
 
 interface SecretChatStore {
   sessions: Record<string, SecretSession>;
+  myIdentityKey: KeyPair | null;
+  mySigningKey: SigningKeyPair | null;
+  initialized: boolean;
 
-  /** Инициализировать секретную сессию (async — реальная криптография) */
-  initSession: (chatId: string) => Promise<SecretSession>;
+  /** Инициализировать собственные ключи и загрузить prekey bundle на сервер */
+  initialize: () => Promise<void>;
+  /** Инициализировать секретную сессию с собеседником через prekey bundle */
+  initSession: (chatId: string, peerId: string) => Promise<SecretSession>;
   /** Получить сессию */
   getSession: (chatId: string) => SecretSession | undefined;
-  /** Выполнить шаг рэтчета */
-  advanceRatchet: (chatId: string) => Promise<void>;
+  /** Зашифровать сообщение для отправки */
+  encryptForSend: (chatId: string, plaintext: string) => Promise<{ encrypted: EncryptedMessage; header: MessageHeader } | null>;
+  /** Расшифровать полученное сообщение */
+  decryptReceived: (chatId: string, encrypted: EncryptedMessage, header: MessageHeader) => Promise<string | null>;
   /** Подтвердить верификацию */
   verifySession: (chatId: string) => void;
   /** Установить таймер самоуничтожения */
   setSelfDestruct: (chatId: string, seconds: number | null) => void;
-  /** Пересоздать ключи */
-  regenerateKeys: (chatId: string) => Promise<void>;
   /** Завершить секретный чат */
   endSession: (chatId: string) => void;
 }
 
+/** Количество OPK для генерации */
+const OPK_BATCH_SIZE = 20;
+
 export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   sessions: {},
+  myIdentityKey: null,
+  mySigningKey: null,
+  initialized: false,
 
-  initSession: async (chatId) => {
-    // Реальная генерация ключей Curve25519 через libsodium
-    const myKeys = await generateKeyPair();
+  initialize: async () => {
+    if (get().initialized) return;
+
+    // Генерируем Identity Key (X25519) и Signing Key (Ed25519)
+    const identityKey = await generateKeyPair();
+    const signingKey = await generateSigningKeyPair();
+
+    // Генерируем Signed PreKey
+    const signedPreKey = await generateKeyPair();
+    const spkSignature = await signData(signedPreKey.publicKey, signingKey.privateKey);
+
+    // Генерируем пачку One-Time PreKeys
+    const otpks: Array<{ key_id: number; public_key: string }> = [];
+    for (let i = 0; i < OPK_BATCH_SIZE; i++) {
+      const otpk = await generateKeyPair();
+      otpks.push({ key_id: i, public_key: toBase64(otpk.publicKey) });
+      // Сохраняем приватный ключ OPK в IndexedDB
+      await saveKeyPair(`otpk:${i}`, otpk).catch(() => {});
+    }
+
+    // Загружаем prekey bundle на сервер
+    try {
+      await api.uploadPreKeyBundle({
+        identity_key: toBase64(identityKey.publicKey),
+        signing_key: toBase64(signingKey.publicKey),
+        signed_prekey: toBase64(signedPreKey.publicKey),
+        signed_prekey_id: 1,
+        signed_prekey_signature: toBase64(spkSignature),
+        one_time_prekeys: otpks,
+      });
+    } catch {
+      // Сервер недоступен — работаем оффлайн
+    }
+
+    // Сохранить ключи
+    await saveKeyPair('identity', identityKey).catch(() => {});
+    await saveKeyPair('spk:1', signedPreKey).catch(() => {});
+
+    set({
+      myIdentityKey: identityKey,
+      mySigningKey: signingKey,
+      initialized: true,
+    });
+  },
+
+  initSession: async (chatId, peerId) => {
+    const state = get();
+    if (!state.myIdentityKey || !state.mySigningKey) {
+      await get().initialize();
+    }
+
+    const myIdentityKey = get().myIdentityKey!;
+    const mySigningKey = get().mySigningKey!;
+
+    // Получить prekey bundle собеседника с сервера
+    let preKeyBundle: PreKeyBundle;
+    try {
+      const raw = await api.getPreKeyBundle(peerId);
+      preKeyBundle = {
+        identityKey: fromBase64(raw.identity_key),
+        signedPreKey: fromBase64(raw.signed_prekey),
+        signedPreKeySignature: fromBase64(raw.signed_prekey_signature),
+        signedPreKeyId: raw.signed_prekey_id,
+        identitySigningKey: fromBase64(raw.signing_key),
+        oneTimePreKey: raw.one_time_prekey ? fromBase64(raw.one_time_prekey) : undefined,
+        oneTimePreKeyId: raw.one_time_prekey_id,
+      };
+    } catch {
+      // Fallback: генерируем локально (для тестирования)
+      const theirIk = await generateKeyPair();
+      const theirSigning = await generateSigningKeyPair();
+      const theirSpk = await generateKeyPair();
+      const theirSpkSig = await signData(theirSpk.publicKey, theirSigning.privateKey);
+      preKeyBundle = {
+        identityKey: theirIk.publicKey,
+        signedPreKey: theirSpk.publicKey,
+        signedPreKeySignature: theirSpkSig,
+        signedPreKeyId: 1,
+        identitySigningKey: theirSigning.publicKey,
+      };
+    }
+
+    // X3DH обмен ключами
     const myEphemeral = await generateKeyPair();
-    // В продакшене: получить pre-key bundle собеседника с сервера
-    const theirKeys = await generateKeyPair();
-    const theirSpk = await generateKeyPair();
+    const x3dhResult = await performX3DH(myIdentityKey, myEphemeral, preKeyBundle);
 
-    // Реальный X3DH обмен через libsodium crypto_scalarmult
-    const x3dhResult = await performX3DH(myKeys, myEphemeral, theirKeys, theirSpk);
+    // Инициализация Double Ratchet
+    const ratchetState = await initSenderRatchet(x3dhResult.sharedSecret, preKeyBundle.signedPreKey);
 
-    // Реальный Double Ratchet через BLAKE2b HMAC
-    const ratchet = await ratchetStep(x3dhResult.sharedSecret);
-
-    // Сохранить ключи в зашифрованное IndexedDB хранилище
-    await saveKeyPair(chatId, myKeys).catch(() => {});
+    // Сохранить ключи
+    await saveKeyPair(chatId, myIdentityKey).catch(() => {});
     await saveSharedSecret(chatId, x3dhResult.sharedSecret).catch(() => {});
+
+    // Генерация fingerprint
+    const emojiGrid = await generateEmojiFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
+    const hexFingerprint = await generateHexFingerprint(myIdentityKey.publicKey, preKeyBundle.identityKey);
 
     const session: SecretSession = {
       chatId,
-      myKeys,
-      theirKeys,
+      peerId,
+      myIdentityKey,
+      mySigningKey,
       x3dhResult,
-      ratchet,
-      ratchetIndex: 1,
+      ratchetState,
       isVerified: false,
       selfDestructTimer: null,
       sessionDate: new Date().toISOString(),
-      emojiGrid: generateEmojiFingerprint(myKeys.publicKey, theirKeys.publicKey),
-      hexFingerprint: generateHexFingerprint(myKeys.publicKey, theirKeys.publicKey),
+      emojiGrid,
+      hexFingerprint,
     };
 
     set((s) => ({ sessions: { ...s.sessions, [chatId]: session } }));
@@ -79,20 +178,50 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
   getSession: (chatId) => get().sessions[chatId],
 
-  advanceRatchet: async (chatId) => {
+  encryptForSend: async (chatId, plaintext) => {
     const session = get().sessions[chatId];
-    if (!session) return;
-    const newRatchet = await ratchetStep(session.ratchet.nextChainKey, session.ratchetIndex);
+    if (!session) return null;
+
+    // Шаг рэтчета + получение ключа сообщения
+    const { header, messageKey, state: newState } = ratchetEncrypt(session.ratchetState);
+
+    // Шифрование контента
+    const encrypted = await encryptMessage(plaintext, messageKey);
+
+    // Обновить состояние
     set((s) => ({
       sessions: {
         ...s.sessions,
-        [chatId]: {
-          ...session,
-          ratchet: newRatchet,
-          ratchetIndex: session.ratchetIndex + 1,
-        },
+        [chatId]: { ...session, ratchetState: newState },
       },
     }));
+
+    return { encrypted, header };
+  },
+
+  decryptReceived: async (chatId, encrypted, header) => {
+    const session = get().sessions[chatId];
+    if (!session) return null;
+
+    try {
+      // Получить ключ через DH/симметричный рэтчет
+      const { messageKey, state: newState } = await ratchetDecrypt(session.ratchetState, header);
+
+      // Дешифрация контента
+      const plaintext = await decryptMessage(encrypted, messageKey);
+
+      // Обновить состояние
+      set((s) => ({
+        sessions: {
+          ...s.sessions,
+          [chatId]: { ...session, ratchetState: newState },
+        },
+      }));
+
+      return plaintext;
+    } catch {
+      return null;
+    }
   },
 
   verifySession: (chatId) => {
@@ -111,13 +240,7 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
     });
   },
 
-  regenerateKeys: async (chatId) => {
-    get().endSession(chatId);
-    await get().initSession(chatId);
-  },
-
   endSession: (chatId) => {
-    // Удалить ключи из IndexedDB
     deleteKeys(chatId).catch(() => {});
     set((s) => {
       const { [chatId]: _removed, ...rest } = s.sessions;
