@@ -64,12 +64,14 @@ export function SettingsScreen() {
           icon={<User size={20} color="#007AFF" aria-hidden="true" />}
           label="Профиль"
           value="Изменить"
+          onClick={() => alert('Редактирование профиля будет доступно в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Palette size={20} color="#FF9500" aria-hidden="true" />}
           label="Тема"
           value="Тёмная"
+          onClick={() => alert('Смена темы будет доступна в следующем обновлении')}
         />
       </div>
 
@@ -79,18 +81,21 @@ export function SettingsScreen() {
           icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
           label="Уведомления"
           value="Включены"
+          onClick={() => alert('Настройки уведомлений будут доступны в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
           label="Звук"
           value="По умолчанию"
+          onClick={() => alert('Настройки звука будут доступны в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
           label="Предпросмотр"
           value="Всегда"
+          onClick={() => alert('Настройки предпросмотра будут доступны в следующем обновлении')}
         />
       </div>
 
@@ -100,18 +105,21 @@ export function SettingsScreen() {
           icon={<Shield size={20} color="#30D158" aria-hidden="true" />}
           label="Онлайн-статус"
           value="Все"
+          onClick={() => alert('Настройки онлайн-статуса будут доступны в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Shield size={20} color="#30D158" aria-hidden="true" />}
           label="Отчёты о прочтении"
           value="Включены"
+          onClick={() => alert('Настройки отчётов будут доступны в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Lock size={20} color="#30D158" aria-hidden="true" />}
           label="Блокировка приложения"
           value="Выкл"
+          onClick={() => alert('Блокировка приложения будет доступна в следующем обновлении')}
         />
       </div>
 
@@ -121,12 +129,14 @@ export function SettingsScreen() {
           icon={<HardDrive size={20} color="#5856D6" aria-hidden="true" />}
           label="Хранилище"
           value="1.2 ГБ"
+          onClick={() => alert('Управление хранилищем будет доступно в следующем обновлении')}
         />
         <Divider />
         <SettingsRow
           icon={<Lock size={20} color="#30D158" aria-hidden="true" />}
           label="Шифрование"
           value="Signal Protocol"
+          onClick={() => alert('Информация о шифровании будет доступна в следующем обновлении')}
         />
       </div>
 

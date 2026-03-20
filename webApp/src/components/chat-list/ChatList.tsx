@@ -58,9 +58,18 @@ export function ChatList() {
       style={{ background: '#1C1C1E', borderRight: '0.5px solid #38383A' }}
       aria-label="Список чатов"
     >
-      <ChatListHeader onNewChat={() => setShowNewChat(true)} />
+      <ChatListHeader
+        onNewChat={() => setShowNewChat(true)}
+        onFilter={() => {
+          const filters: Array<typeof filter> = ['all', 'unread', 'groups', 'secret'];
+          const idx = filters.indexOf(filter);
+          const next = filters[(idx + 1) % filters.length];
+          useChatStore.getState().setFilter(next);
+        }}
+        filterActive={filter !== 'all'}
+      />
       <div className="px-2 pb-1">
-        <SearchBar value={localSearch} onChange={handleSearchChange} placeholder="Поиск" />
+        <SearchBar value={localSearch} onChange={handleSearchChange} placeholder="Поиск чатов" />
       </div>
 
       <div

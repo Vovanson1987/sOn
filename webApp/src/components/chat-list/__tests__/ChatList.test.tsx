@@ -75,7 +75,7 @@ describe('ChatList', () => {
 
   it('показывает поле поиска', () => {
     render(<ChatList />);
-    expect(screen.getByPlaceholderText('Поиск')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Поиск чатов')).toBeTruthy();
   });
 
   it('открывает модальное окно "Новый чат" по кнопке', () => {

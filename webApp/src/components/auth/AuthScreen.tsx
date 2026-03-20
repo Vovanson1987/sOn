@@ -1,4 +1,4 @@
-import { useState, useCallback, type FormEvent } from 'react';
+import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import { Lock } from 'lucide-react';
 import { API_URL } from '@/api/config';
 
@@ -17,14 +17,33 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockUntil, setLockUntil] = useState(0);
 
+  // ME-12: Живой обратный отсчёт блокировки
+  const [lockRemaining, setLockRemaining] = useState(0);
+  useEffect(() => {
+    if (lockUntil <= Date.now()) { setLockRemaining(0); return; }
+    setLockRemaining(Math.ceil((lockUntil - Date.now()) / 1000));
+    const id = setInterval(() => {
+      const rem = Math.ceil((lockUntil - Date.now()) / 1000);
+      if (rem <= 0) { setLockRemaining(0); clearInterval(id); }
+      else setLockRemaining(rem);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lockUntil]);
+
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
+
+    // ME-11: Валидация email на клиенте
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError('Введите корректный email');
+      return;
+    }
 
     // Защита от brute-force: экспоненциальная задержка
     const now = Date.now();
     if (now < lockUntil) {
-      const sec = Math.ceil((lockUntil - now) / 1000);
-      setError(`Подождите ${sec} сек. перед повторной попыткой`);
+      setError(`Подождите ${Math.ceil((lockUntil - now) / 1000)} сек. перед повторной попыткой`);
       return;
     }
 
@@ -120,7 +139,12 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           />
 
           {error && (
-            <p className="text-[13px] text-center" style={{ color: '#FF453A' }}>{error}</p>
+            <p className="text-[13px] text-center" style={{ color: '#FF453A' }} role="alert">{error}</p>
+          )}
+          {lockRemaining > 0 && (
+            <p className="text-[13px] text-center" style={{ color: '#FF9F0A' }} role="timer" aria-live="polite">
+              Повторная попытка через {lockRemaining} сек.
+            </p>
           )}
 
           <button

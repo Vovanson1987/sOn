@@ -117,7 +117,7 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        document.querySelector<HTMLInputElement>('[aria-label="Поиск чатов"]')?.focus();
+        document.querySelector<HTMLInputElement>('input[aria-label="Поиск чатов"]')?.focus();
       }
       if (e.key === 'Escape' && activeChatId) setActiveChat(null);
     };
