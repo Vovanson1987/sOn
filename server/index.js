@@ -28,6 +28,18 @@ if (process.env.NODE_ENV !== 'test') {
     console.error('❌ JWT_SECRET должен быть минимум 32 символа');
     process.exit(1);
   }
+  // SEC: Предупреждения о слабых credentials в production
+  if (process.env.NODE_ENV === 'production') {
+    if (process.env.JWT_SECRET.includes('dev') || process.env.JWT_SECRET.includes('local')) {
+      console.warn('⚠️  ВНИМАНИЕ: JWT_SECRET содержит "dev"/"local" — не используйте dev-секрет в production!');
+    }
+    if (process.env.MINIO_ACCESS_KEY === 'minioadmin' || process.env.MINIO_SECRET_KEY === 'minioadmin') {
+      console.warn('⚠️  ВНИМАНИЕ: MinIO использует credentials по умолчанию (minioadmin) — смените для production!');
+    }
+    if (process.env.DATABASE_URL?.includes('postgres:postgres')) {
+      console.warn('⚠️  ВНИМАНИЕ: PostgreSQL использует credentials по умолчанию — смените для production!');
+    }
+  }
 }
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -85,7 +97,8 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
-app.use(express.json());
+// SEC: Ограничить размер JSON body (1MB)
+app.use(express.json({ limit: '1mb' }));
 
 // ==================== Middleware ====================
 
@@ -110,7 +123,17 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (!email || !display_name || !password) {
       return res.status(400).json({ error: 'Все поля обязательны' });
     }
-    const hash = await bcrypt.hash(password, 10);
+    // SEC: Валидация входных данных
+    if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Некорректный email' });
+    }
+    if (typeof display_name !== 'string' || display_name.length < 2 || display_name.length > 50) {
+      return res.status(400).json({ error: 'Имя должно быть от 2 до 50 символов' });
+    }
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+      return res.status(400).json({ error: 'Пароль должен быть от 8 до 128 символов' });
+    }
+    const hash = await bcrypt.hash(password, 12);
     const result = await pool.query(
       'INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, display_name',
       [email, display_name, hash]
@@ -121,7 +144,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     res.cookie('son-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
@@ -150,7 +173,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     res.cookie('son-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
@@ -220,6 +243,18 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
 /** POST /api/chats — создать чат */
 app.post('/api/chats', authMiddleware, async (req, res) => {
   const { type = 'direct', name, member_ids = [] } = req.body;
+
+  // SEC: Валидация
+  const allowedChatTypes = ['direct', 'group', 'secret'];
+  if (!allowedChatTypes.includes(type)) {
+    return res.status(400).json({ error: 'Недопустимый тип чата' });
+  }
+  if (name && (typeof name !== 'string' || name.length > 100)) {
+    return res.status(400).json({ error: 'Имя чата не может быть длиннее 100 символов' });
+  }
+  if (!Array.isArray(member_ids) || member_ids.length > 100) {
+    return res.status(400).json({ error: 'Слишком много участников' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -285,6 +320,18 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
   const { content, type = 'text', reply_to, self_destruct_seconds } = req.body;
   const chatId = req.params.chatId;
+
+  // SEC: Валидация содержимого сообщения
+  if (!content || typeof content !== 'string') {
+    return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+  }
+  if (content.length > 10000) {
+    return res.status(400).json({ error: 'Сообщение не может быть длиннее 10000 символов' });
+  }
+  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'system'];
+  if (!allowedTypes.includes(type)) {
+    return res.status(400).json({ error: 'Недопустимый тип сообщения' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -377,6 +424,30 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 /** Хранение подключений: userId → Set<ws> */
 const connections = new Map();
 
+// SEC: Rate limiting для WebSocket — sliding window per user
+const wsRateLimits = new Map(); // userId → { count, windowStart }
+const WS_RATE_LIMIT = 100; // макс сообщений
+const WS_RATE_WINDOW = 60000; // за 60 сек
+
+function checkWsRateLimit(userId) {
+  const now = Date.now();
+  let entry = wsRateLimits.get(userId);
+  if (!entry || now - entry.windowStart > WS_RATE_WINDOW) {
+    entry = { count: 0, windowStart: now };
+    wsRateLimits.set(userId, entry);
+  }
+  entry.count++;
+  return entry.count <= WS_RATE_LIMIT;
+}
+
+// Очистка старых записей каждые 5 минут
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of wsRateLimits) {
+    if (now - entry.windowStart > WS_RATE_WINDOW * 2) wsRateLimits.delete(userId);
+  }
+}, 300000);
+
 wss.on('connection', (ws) => {
   // Аутентификация только через первое сообщение (безопасный способ)
   // Токен в URL удалён — попадает в логи и историю
@@ -390,8 +461,14 @@ wss.on('connection', (ws) => {
     }
   }, 10000);
 
+  // SEC: Ограничение размера сообщения (64 KB)
   ws.on('message', (data) => {
     try {
+      if (data.length > 65536) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Сообщение слишком большое' }));
+        return;
+      }
+
       const msg = JSON.parse(data);
 
       // Первое сообщение — аутентификация
@@ -410,6 +487,12 @@ wss.on('connection', (ws) => {
 
       if (!authenticated) {
         ws.send(JSON.stringify({ type: 'error', message: 'Не аутентифицирован' }));
+        return;
+      }
+
+      // SEC: Rate limiting per user
+      if (!checkWsRateLimit(user.id)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Слишком много сообщений. Подождите.' }));
         return;
       }
 
