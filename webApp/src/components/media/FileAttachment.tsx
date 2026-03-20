@@ -28,7 +28,7 @@ export const FileAttachment = memo(function FileAttachment({ fileName, fileSize 
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[14px] text-white truncate">{fileName}</p>
-        <p className="text-[12px]" style={{ color: '#8E8E93' }}>{formatSize(fileSize)}</p>
+        <p className="text-[12px]" style={{ color: '#ABABAF' }}>{formatSize(fileSize)}</p>
       </div>
     </div>
   );

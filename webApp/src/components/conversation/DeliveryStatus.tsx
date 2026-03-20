@@ -18,7 +18,7 @@ function formatReadDate(dateStr: string): string {
 export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onRetry }: DeliveryStatusProps) {
   if (status === 'sending') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#8E8E93' }} role="status" aria-live="polite">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <Clock size={11} aria-hidden="true" />
         Отправка...
       </span>
@@ -26,7 +26,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   }
   if (status === 'sent') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#8E8E93' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status">
         <Check size={12} aria-hidden="true" />
         Отправлено
       </span>
@@ -34,7 +34,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   }
   if (status === 'delivered') {
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#8E8E93' }} role="status">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status">
         <CheckCheck size={12} aria-hidden="true" />
         Доставлено
       </span>

@@ -247,7 +247,12 @@ export async function loadSharedSecret(chatId: string): Promise<Uint8Array | nul
 /** Сохранить состояние Double Ratchet */
 export async function saveRatchetState(chatId: string, state: Record<string, unknown>): Promise<void> {
   const db = await openDB();
-  const serialized = new TextEncoder().encode(JSON.stringify(state));
+  // Map не сериализуется JSON.stringify — конвертируем в массив
+  const safeState = { ...state };
+  if (safeState.skippedKeys instanceof Map) {
+    safeState.skippedKeys = Array.from((safeState.skippedKeys as Map<string, unknown>).entries());
+  }
+  const serialized = new TextEncoder().encode(JSON.stringify(safeState));
   const encrypted = await encryptData(serialized);
   const tx = db.transaction(STORE_NAME, 'readwrite');
   tx.objectStore(STORE_NAME).put({ id: `dr:${chatId}`, data: encrypted });
@@ -268,7 +273,12 @@ export async function loadRatchetState(chatId: string): Promise<Record<string, u
       if (!record) { resolve(null); return; }
       try {
         const data = await decryptData(record.data);
-        resolve(JSON.parse(new TextDecoder().decode(data)));
+        const parsed = JSON.parse(new TextDecoder().decode(data));
+        // Восстановить Map из массива (сохранённого saveRatchetState)
+        if (Array.isArray(parsed.skippedKeys)) {
+          parsed.skippedKeys = new Map(parsed.skippedKeys);
+        }
+        resolve(parsed);
       } catch { resolve(null); }
     };
     req.onerror = () => reject(req.error);

@@ -56,7 +56,7 @@ export const VoiceMessage = memo(function VoiceMessage({ duration, isPlaying, pr
         })}
       </div>
 
-      <span className="text-[12px] flex-shrink-0" style={{ color: '#8E8E93' }}>
+      <span className="text-[12px] flex-shrink-0" style={{ color: '#ABABAF' }}>
         {formatDuration(duration)}
       </span>
     </div>

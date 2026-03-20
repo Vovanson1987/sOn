@@ -177,11 +177,11 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
     // Шифрование контента
     const encrypted = await encryptMessage(plaintext, messageKey);
 
-    // Обновить состояние
+    // Обновить состояние (используем свежую сессию из store, не захваченную)
     set((s) => ({
       sessions: {
         ...s.sessions,
-        [chatId]: { ...session, ratchetState: newState },
+        [chatId]: { ...s.sessions[chatId], ratchetState: newState },
       },
     }));
 
@@ -199,11 +199,11 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       // Дешифрация контента
       const plaintext = await decryptMessage(encrypted, messageKey);
 
-      // Обновить состояние
+      // Обновить состояние (используем свежую сессию из store)
       set((s) => ({
         sessions: {
           ...s.sessions,
-          [chatId]: { ...session, ratchetState: newState },
+          [chatId]: { ...s.sessions[chatId], ratchetState: newState },
         },
       }));
 

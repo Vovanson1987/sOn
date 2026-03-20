@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useMessageStore } from '@stores/messageStore';
+import { useAuthStore } from '@stores/authStore';
 import type { Chat } from '@/types/chat';
 
 /** Пул автоответов */
@@ -24,9 +25,10 @@ export function useAutoReply(chat: Chat) {
   const addMessage = useMessageStore((s) => s.addMessage);
   const setTyping = useMessageStore((s) => s.setTyping);
   const clearTyping = useMessageStore((s) => s.clearTyping);
+  const myUserId = useAuthStore((s) => s.user?.id) || 'user-me';
   const prevLengthRef = useRef(messages.length);
 
-  const other = chat.members.find((m) => m.id !== 'user-me');
+  const other = chat.members.find((m) => m.id !== myUserId);
   const otherName = other?.displayName ?? 'Собеседник';
   const otherId = other?.id ?? 'user-unknown';
 
@@ -39,7 +41,7 @@ export function useAutoReply(chat: Chat) {
     prevLengthRef.current = messages.length;
 
     const lastMsg = messages[messages.length - 1];
-    if (!lastMsg || lastMsg.senderId !== 'user-me' || lastMsg.type === 'system') return;
+    if (!lastMsg || lastMsg.senderId !== myUserId || lastMsg.type === 'system') return;
 
     // Не отвечать в секретных чатах с самоуничтожением и для спама
     if (chat.id === 'chat-900') return;

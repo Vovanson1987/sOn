@@ -32,17 +32,31 @@ function handleUnauthorized(): never {
   throw new Error('Сессия истекла. Войдите заново.');
 }
 
-/** HTTP запрос с авторизацией */
+/** HTTP запрос с авторизацией и таймаутом */
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Превышено время ожидания ответа от сервера');
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
   if (res.status === 401) {
     handleUnauthorized();
   }
@@ -150,6 +164,7 @@ export async function searchUsers(query: string) {
 let ws: WebSocket | null = null;
 let wsListeners: Array<(data: unknown) => void> = [];
 let intentionalClose = false;
+let wsReconnectAttempt = 0;
 
 /** Подключиться к WebSocket */
 export function connectWS(): void {
@@ -162,6 +177,7 @@ export function connectWS(): void {
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
+    wsReconnectAttempt = 0; // Сброс backoff при успешном подключении
     // Отправить токен в первом сообщении (безопасный способ)
     ws?.send(JSON.stringify({ type: 'auth', token }));
   };
@@ -190,10 +206,13 @@ export function connectWS(): void {
 
   ws.onclose = () => {
     if (intentionalClose) return;
-    if (import.meta.env.DEV) console.log('WebSocket отключён, переподключение через 3с...');
+    // Exponential backoff: 3с, 6с, 12с, 24с... макс 60с
+    const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempt), 60000);
+    wsReconnectAttempt++;
+    if (import.meta.env.DEV) console.log(`WebSocket отключён, переподключение через ${delay / 1000}с...`);
     // Переподключение только если токен ещё есть (пользователь не вышел)
     if (getToken()) {
-      setTimeout(connectWS, 3000);
+      setTimeout(connectWS, delay);
     }
   };
 }

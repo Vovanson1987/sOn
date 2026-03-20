@@ -34,10 +34,20 @@ interface CallStore {
   toggleSpeaker: () => void;
 }
 
+// Таймеры для cleanup
+let startTimerId: ReturnType<typeof setTimeout> | null = null;
+let endTimerId: ReturnType<typeof setTimeout> | null = null;
+
+function clearCallTimers() {
+  if (startTimerId) { clearTimeout(startTimerId); startTimerId = null; }
+  if (endTimerId) { clearTimeout(endTimerId); endTimerId = null; }
+}
+
 export const useCallStore = create<CallStore>((set) => ({
   activeCall: null,
 
   startCall: (chatId, contactName, isVideo, contactAvatar) => {
+    clearCallTimers();
     set({
       activeCall: {
         chatId,
@@ -53,7 +63,8 @@ export const useCallStore = create<CallStore>((set) => ({
       },
     });
     // Имитация: через 2.5с переходит в active
-    setTimeout(() => {
+    startTimerId = setTimeout(() => {
+      startTimerId = null;
       set((s) => {
         if (!s.activeCall || s.activeCall.status === 'ended') return s;
         return { activeCall: { ...s.activeCall, status: 'active', startedAt: Date.now() } };
@@ -86,12 +97,16 @@ export const useCallStore = create<CallStore>((set) => ({
   },
 
   endCall: () => {
+    clearCallTimers();
     set((s) => {
       if (!s.activeCall) return s;
       return { activeCall: { ...s.activeCall, status: 'ended' } };
     });
     // Убираем через 500мс
-    setTimeout(() => set({ activeCall: null }), 500);
+    endTimerId = setTimeout(() => {
+      endTimerId = null;
+      set({ activeCall: null });
+    }, 500);
   },
 
   toggleMic: () =>

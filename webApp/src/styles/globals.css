@@ -55,6 +55,25 @@ button:active {
   transition: opacity 0.1s ease;
 }
 
+/* Глобальный focus indicator для клавиатурной навигации (WCAG 2.4.7) */
+:focus-visible {
+  outline: 2px solid #007AFF;
+  outline-offset: 2px;
+}
+
+/* Скрытый элемент для screen reader */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 @keyframes typingDots {
   0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
   30%           { opacity: 1;   transform: translateY(-3px); }

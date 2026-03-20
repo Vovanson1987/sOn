@@ -20,7 +20,7 @@ export function ReplyQuote({ senderName, preview, onCancel }: ReplyQuoteProps) {
         <span className="text-[12px] font-semibold block" style={{ color: '#007AFF' }}>
           {senderName}
         </span>
-        <span className="text-[13px] block truncate" style={{ color: '#8E8E93' }}>
+        <span className="text-[13px] block truncate" style={{ color: '#ABABAF' }}>
           {preview}
         </span>
       </div>

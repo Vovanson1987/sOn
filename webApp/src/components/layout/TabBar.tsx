@@ -23,8 +23,8 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
       className="flex items-center justify-around border-t"
       style={{
         background: 'rgba(0,0,0,0.85)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
+        backdropFilter: 'saturate(180%) blur(20px)',
+        WebkitBackdropFilter: 'saturate(180%) blur(20px)',
         borderColor: '#38383A',
         paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
         paddingTop: '6px',
@@ -41,6 +41,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
             key={id}
             role="tab"
             aria-selected={isActive}
+            aria-label={badge > 0 ? `${label}, ${badge} непрочитанных` : label}
             onClick={() => onTabChange(id)}
             className="flex flex-col items-center gap-[2px] relative min-w-[64px]"
           >
@@ -57,7 +58,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
             </div>
             <span
               className="text-[10px]"
-              style={{ color: isActive ? '#007AFF' : '#8E8E93' }}
+              style={{ color: isActive ? '#007AFF' : '#ABABAF' }}
             >
               {label}
             </span>

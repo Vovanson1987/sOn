@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 
 interface SelfDestructPickerProps {
   isOpen: boolean;
@@ -20,15 +21,7 @@ const OPTIONS = [
 
 /** Picker таймера самоуничтожения (iOS-стиль снизу) */
 export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: SelfDestructPickerProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, [isOpen]);
+  const focusTrapRef = useFocusTrap(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,7 +34,7 @@ export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: 
 
   return (
     <div
-      ref={overlayRef}
+      ref={focusTrapRef}
       className="fixed inset-0 z-40"
       onClick={onClose}
       role="dialog"
@@ -67,6 +60,8 @@ export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: 
               <button
                 onClick={() => { onSelect(opt.value); onClose(); }}
                 className="w-full flex items-center justify-between px-4 py-[12px] text-left"
+                role="option"
+                aria-pressed={isActive}
               >
                 <span className="text-[16px] text-white">{opt.label}</span>
                 {isActive && <span className="text-[16px]" style={{ color: '#007AFF' }}>✓</span>}

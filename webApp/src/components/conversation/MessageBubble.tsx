@@ -1,7 +1,10 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Lock } from 'lucide-react';
 import type { Message } from '@/types/message';
 import type { ChatType } from '@/types/chat';
+import { FileAttachment } from '@components/media/FileAttachment';
+import { VoiceMessage } from '@components/media/VoiceMessage';
+import { ImageViewer } from '@components/media/ImageViewer';
 
 interface MessageBubbleProps {
   message: Message;
@@ -22,12 +25,13 @@ export const MessageBubble = memo(function MessageBubble({
   showSenderName,
 }: MessageBubbleProps) {
   const isSecret = chatType === 'secret';
+  const [viewImage, setViewImage] = useState(false);
 
   // Системное сообщение — по центру серым текстом
   if (message.type === 'system') {
     return (
       <div className="flex justify-center py-2 px-8">
-        <span className="text-[12px] text-center leading-[1.4]" style={{ color: '#8E8E93' }}>
+        <span className="text-[12px] text-center leading-[1.4]" style={{ color: '#ABABAF' }}>
           {message.content}
         </span>
       </div>
@@ -38,7 +42,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (message.isDestroyed) {
     return (
       <div className="flex justify-center py-2 px-8">
-        <span className="text-[12px] italic" style={{ color: '#8E8E93' }}>
+        <span className="text-[12px] italic" style={{ color: '#ABABAF' }}>
           🔒 Сообщение удалено
         </span>
       </div>
@@ -53,7 +57,7 @@ export const MessageBubble = memo(function MessageBubble({
     bg = isSecret ? '#1E1E22' : '#3A3A3C';
   }
 
-  // Скругления с группировкой (iOS HIG: 18px основные, 4px прилегающие)
+  // Скругления: овальные пузыри (18px), группировка (4px на прилегающей стороне)
   const ownRadius = {
     borderTopLeftRadius: '18px',
     borderTopRightRadius: isFirstInGroup ? '18px' : '4px',
@@ -75,9 +79,9 @@ export const MessageBubble = memo(function MessageBubble({
     <div
       className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}
       style={{
-        paddingLeft: isOwn ? '20%' : '20px',
-        paddingRight: isOwn ? '24px' : '20%',
-        marginTop: isFirstInGroup ? '12px' : '2px',
+        paddingLeft: isOwn ? '0' : '18px',
+        paddingRight: isOwn ? '18px' : '0',
+        marginTop: isFirstInGroup ? '8px' : '2px',
       }}
     >
       {/* Имя отправителя в групповых чатах */}
@@ -87,21 +91,54 @@ export const MessageBubble = memo(function MessageBubble({
         </span>
       )}
 
-      {/* Пузырь — fit-content */}
+      {/* Пузырь — овал, fit-content */}
       <div
-        className="relative px-[12px] py-[8px]"
         style={{
           background: bg,
           ...radiusStyle,
-          maxWidth: '100%',
+          maxWidth: '65%',
           width: 'fit-content',
+          padding: '8px 16px',
         }}
       >
-        {/* Текст сообщения */}
-        <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
-          {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" />}
-          {message.content}
-        </p>
+        {message.type === 'image' && message.attachment ? (
+          <>
+            <img
+              src={message.attachment.url}
+              alt={message.content || 'Изображение'}
+              className="rounded-[8px] max-w-full cursor-pointer"
+              style={{ maxHeight: '300px' }}
+              onClick={() => setViewImage(true)}
+            />
+            {message.content && (
+              <p className="text-[15px] leading-[1.35] text-white mt-1">{message.content}</p>
+            )}
+            {viewImage && (
+              <ImageViewer
+                src={message.attachment.url}
+                alt={message.content || 'Изображение'}
+                onClose={() => setViewImage(false)}
+              />
+            )}
+          </>
+        ) : message.type === 'file' && message.attachment ? (
+          <FileAttachment
+            fileName={message.attachment.fileName || 'Файл'}
+            fileSize={message.attachment.fileSize || 0}
+          />
+        ) : message.type === 'voice' && message.attachment ? (
+          <VoiceMessage
+            duration={message.attachment.duration || 0}
+            isPlaying={false}
+            progress={0}
+            onTogglePlay={() => {}}
+          />
+        ) : (
+          <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
+            {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" aria-hidden="true" />}
+            {message.content}
+          </p>
+        )}
       </div>
 
       {/* Реакции */}
@@ -112,6 +149,8 @@ export const MessageBubble = memo(function MessageBubble({
               key={emoji}
               className="text-[12px] px-[5px] py-[1px] rounded-full"
               style={{ background: '#1C1C1E', border: '0.5px solid #38383A' }}
+              role="img"
+              aria-label={`${emoji} ${users.length}`}
             >
               {emoji}{users.length > 1 ? ` ${users.length}` : ''}
             </span>

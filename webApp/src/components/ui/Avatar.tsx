@@ -55,6 +55,7 @@ export const Avatar = memo(function Avatar({ size, src, name, isOnline, groupMem
       <div
         className="relative inline-flex flex-wrap items-center justify-center rounded-full overflow-hidden"
         style={{ ...style, gap, background: '#2C2C2E' }}
+        role="img"
         aria-label={`Групповой аватар ${name}`}
       >
         {members.map((m, i) => (
@@ -65,7 +66,7 @@ export const Avatar = memo(function Avatar({ size, src, name, isOnline, groupMem
   }
 
   return (
-    <div className="relative inline-flex" style={style} aria-label={`Аватар ${name}`}>
+    <div className="relative inline-flex" style={style} role="img" aria-label={`Аватар ${name}${isOnline ? ', онлайн' : ''}`}>
       {src && (src.startsWith('/') || src.startsWith('blob:') || src.startsWith('data:image/')) ? (
         <img src={src} alt={name} className="rounded-full object-cover" style={style} referrerPolicy="no-referrer" />
       ) : name.match(/^\d+$/) || name === '900' ? (
@@ -86,7 +87,7 @@ export const Avatar = memo(function Avatar({ size, src, name, isOnline, groupMem
         <span
           className="absolute bottom-0 right-0 rounded-full border-2 border-black"
           style={{ width: size * 0.22, height: size * 0.22, background: '#30D158' }}
-          aria-label="Онлайн"
+          aria-hidden="true"
         />
       )}
     </div>

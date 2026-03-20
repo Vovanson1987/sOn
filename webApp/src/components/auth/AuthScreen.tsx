@@ -74,7 +74,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             <Lock size={32} color="white" />
           </div>
           <h1 className="text-[28px] font-bold text-white">sOn</h1>
-          <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>
+          <p className="text-[14px] mt-1" style={{ color: '#ABABAF' }}>
             Защищённый мессенджер
           </p>
         </div>
@@ -87,6 +87,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Имя"
+              aria-label="Имя"
               required={!isLogin}
               className="w-full px-4 py-[12px] rounded-[10px] text-[15px] text-white placeholder-[#636366] outline-none"
               style={{ background: '#1C1C1E', border: '0.5px solid #38383A' }}
@@ -98,6 +99,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
+            aria-label="Email"
             required
             autoComplete="email"
             className="w-full px-4 py-[12px] rounded-[10px] text-[15px] text-white placeholder-[#636366] outline-none"
@@ -109,6 +111,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль"
+            aria-label="Пароль"
             required
             minLength={8}
             autoComplete={isLogin ? 'current-password' : 'new-password'}
@@ -131,7 +134,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
         </form>
 
         {/* Переключение вход/регистрация */}
-        <p className="text-center mt-4 text-[14px]" style={{ color: '#8E8E93' }}>
+        <p className="text-center mt-4 text-[14px]" style={{ color: '#ABABAF' }}>
           {isLogin ? 'Нет аккаунта?' : 'Уже есть аккаунт?'}{' '}
           <button
             onClick={() => { setIsLogin(!isLogin); setError(''); }}

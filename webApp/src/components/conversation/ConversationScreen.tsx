@@ -84,6 +84,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   }, [chat.id, fetchMessages]);
 
   const authUserId = useAuthStore((s) => s.user?.id);
+  const myDisplayName = useAuthStore((s) => s.user?.display_name) || 'Вы';
   const myUserId = authUserId || 'user-me';
   const other = chat.members.find((m) => m.id !== myUserId);
   const chatName = chat.name ?? other?.displayName ?? 'Неизвестный';
@@ -107,12 +108,13 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const initSession = useSecretChatStore((s) => s.initSession);
   const verifySession = useSecretChatStore((s) => s.verifySession);
   const setSelfDestruct = useSecretChatStore((s) => s.setSelfDestruct);
-  const regenerateKeys = async (chatId: string) => {
+  // HI-32: Wrap regenerateKeys in useCallback to prevent unnecessary re-renders
+  const regenerateKeys = useCallback(async (chatId: string) => {
     useSecretChatStore.getState().endSession(chatId);
     // peerId из участников чата (первый кто не текущий пользователь)
     const peerId = chat.members?.find((m: { id: string }) => m.id !== myUserId)?.id || '';
     await useSecretChatStore.getState().initSession(chatId, peerId);
-  };
+  }, [chat.members, myUserId]);
   const endSession = useSecretChatStore((s) => s.endSession);
 
   // Начальное значение: показать анимацию обмена ключами при первом открытии секретного чата
@@ -123,8 +125,15 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
   const [showSelfDestructPicker, setShowSelfDestructPicker] = useState(false);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = scrollContainerRef.current;
+    if (!container) { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
+    // Скроллить вниз только если пользователь уже внизу (с запасом 150px)
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages.length, isTyping]);
 
   const lastOwnMessage = useMemo(() => {
@@ -134,14 +143,19 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       }
     }
     return null;
-  }, [messages]);
+  }, [messages, myUserId]);
 
   const handleSend = useCallback(
     (text: string) => {
-      sendMessage(chat.id, text);
+      const reply = replyTo ? {
+        id: replyTo.id,
+        senderName: replyTo.senderName,
+        preview: replyTo.content.slice(0, 100),
+      } : undefined;
+      sendMessage(chat.id, text, reply);
       setReplyTo(null);
     },
-    [chat.id, sendMessage],
+    [chat.id, sendMessage, replyTo],
   );
 
   const handleReact = useCallback(
@@ -194,7 +208,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       {/* Верификация ключей */}
       {showVerification && secretSession && (
         <VerificationModal
-          myName={useAuthStore((s) => s.user?.display_name) || 'Вы'}
+          myName={myDisplayName}
           theirName={chatName}
           emojiGrid={secretSession.emojiGrid}
           hexFingerprint={secretSession.hexFingerprint}
@@ -252,7 +266,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           <Avatar size={40} name={chatName} src={other?.avatarUrl} />
           <span className="text-[17px] font-semibold text-white mt-[2px]">{chatName}</span>
           <div className="flex items-center gap-1">
-            <span className="text-[12px]" style={{ color: isSecret ? '#30D158' : '#8E8E93' }}>{chatSubtype}</span>
+            <span className="text-[12px]" style={{ color: isSecret ? '#30D158' : '#ABABAF' }}>{chatSubtype}</span>
             {isSecret && secretSession?.isVerified && (
               <span className="text-[12px]" style={{ color: '#30D158' }}>✓ Проверено</span>
             )}
@@ -274,14 +288,20 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       </FrostedGlassBar>
 
       {/* Область сообщений */}
-      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto"
+        role="log"
+        aria-label={`Переписка с ${chatName}`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         <div className="h-3" />
 
         {/* Пустое состояние */}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-2 px-8">
             <p className="text-[17px] font-semibold text-white">Нет сообщений</p>
-            <p className="text-[14px] text-center" style={{ color: '#8E8E93' }}>
+            <p className="text-[14px] text-center" style={{ color: '#ABABAF' }}>
               {isSecret ? 'Начните защищённый разговор' : 'Отправьте первое сообщение'}
             </p>
           </div>
@@ -289,7 +309,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
 
         {grouped.map((item, i) => {
           if (item.type === 'date') {
-            return <DateSeparator key={`date-${i}`} date={item.date} />;
+            return <DateSeparator key={`date-${item.date}`} date={item.date} />;
           }
           const { message, isFirstInGroup, isLastInGroup } = item;
           const isOwn = message.senderId === myUserId;
@@ -309,7 +329,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
                 showSenderName={isGroup}
               />
               {isOwn && isLastOwn && message.type !== 'system' && (
-                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '24px' }}>
+                <div className="flex justify-end mt-[2px]" style={{ paddingRight: '18px' }}>
                   <DeliveryStatus status={message.status} readAt={message.readAt} />
                 </div>
               )}

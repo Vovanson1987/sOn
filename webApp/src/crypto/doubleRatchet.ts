@@ -218,7 +218,10 @@ export async function ratchetDecrypt(
   currentState = skipMessageKeys(currentState, header.messageNumber);
 
   // 4. Симметричный рэтчет получения
-  const [nextRecvChainKey, messageKey] = kdfChainKey(currentState.recvChainKey!);
+  if (!currentState.recvChainKey) {
+    throw new Error('recvChainKey не инициализирован — невозможно расшифровать');
+  }
+  const [nextRecvChainKey, messageKey] = kdfChainKey(currentState.recvChainKey);
   currentState.recvChainKey = nextRecvChainKey;
   currentState.recvCount = currentState.recvCount + 1;
 

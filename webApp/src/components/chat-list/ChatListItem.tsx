@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Lock } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import { formatChatDate } from '@utils/dateFormat';
+import { useAuthStore } from '@stores/authStore';
 import type { Chat } from '@/types/chat';
 
 interface ChatListItemProps {
@@ -10,26 +11,27 @@ interface ChatListItemProps {
   onSelect: (chatId: string) => void;
 }
 
-function getChatName(chat: Chat): string {
+function getChatName(chat: Chat, myUserId: string): string {
   if (chat.name) return chat.name;
-  const other = chat.members.find((m) => m.id !== 'user-me');
+  const other = chat.members.find((m) => m.id !== myUserId);
   return other?.displayName ?? 'Неизвестный';
 }
 
-function getChatAvatar(chat: Chat) {
-  const other = chat.members.find((m) => m.id !== 'user-me');
+function getChatAvatar(chat: Chat, myUserId: string) {
+  const other = chat.members.find((m) => m.id !== myUserId);
   const isGroup = chat.type === 'group';
   return {
-    name: getChatName(chat),
+    name: getChatName(chat, myUserId),
     src: isGroup ? undefined : other?.avatarUrl,
     isOnline: isGroup ? false : other?.isOnline,
-    groupMembers: isGroup ? chat.members.filter((m) => m.id !== 'user-me').map((m) => m.displayName) : undefined,
+    groupMembers: isGroup ? chat.members.filter((m) => m.id !== myUserId).map((m) => m.displayName) : undefined,
   };
 }
 
 export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelect }: ChatListItemProps) {
-  const name = getChatName(chat);
-  const avatar = getChatAvatar(chat);
+  const myUserId = useAuthStore((s) => s.user?.id) || 'user-me';
+  const name = getChatName(chat, myUserId);
+  const avatar = getChatAvatar(chat, myUserId);
   const preview = chat.lastMessage?.content ?? '';
   const date = chat.lastMessage ? formatChatDate(chat.lastMessage.createdAt) : '';
   const isSecret = chat.type === 'secret';
@@ -57,7 +59,7 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
             <span
               className="text-[13px]"
-              style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#8E8E93' }}
+              style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#ABABAF' }}
             >
               {date}
             </span>
@@ -75,7 +77,7 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
         </div>
         <p
           className="text-[13px] leading-[1.35] mt-[1px] line-clamp-2"
-          style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#8E8E93' }}
+          style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#ABABAF' }}
         >
           {preview}
         </p>

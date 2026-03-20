@@ -67,14 +67,14 @@ export function CallScreen() {
               <div
                 className="absolute inset-[-15px] rounded-full"
                 style={{
-                  border: '2px solid rgba(52,199,89,0.3)',
+                  border: '2px solid rgba(48,209,88,0.3)',
                   animation: 'pulseRing 2s ease-out infinite',
                 }}
               />
               <div
                 className="absolute inset-[-30px] rounded-full"
                 style={{
-                  border: '2px solid rgba(52,199,89,0.15)',
+                  border: '2px solid rgba(48,209,88,0.15)',
                   animation: 'pulseRing 2s ease-out 0.5s infinite',
                 }}
               />
@@ -84,7 +84,7 @@ export function CallScreen() {
         </div>
 
         <h2 className="text-[28px] font-semibold text-white mt-6">{call.contactName}</h2>
-        <p className="text-[16px] mt-1" style={{ color: '#8E8E93' }}>
+        <p className="text-[16px] mt-1" style={{ color: '#ABABAF' }}>
           {isIncoming
             ? `Входящий ${call.isVideo ? 'видеозвонок' : 'аудиозвонок'}...`
             : isRinging
@@ -105,7 +105,7 @@ export function CallScreen() {
             cursor: 'grab',
           }}
         >
-          <div className="flex items-center justify-center h-full text-[10px]" style={{ color: '#8E8E93' }}>
+          <div className="flex items-center justify-center h-full text-[10px]" style={{ color: '#ABABAF' }}>
             PiP
           </div>
         </div>

@@ -5,37 +5,47 @@ import * as api from '@/api/client';
 
 type ChatFilter = 'all' | 'unread' | 'groups' | 'secret' | 'archived';
 
-/** Преобразовать данные API в формат Chat */
+/** HI-19: Преобразовать данные API в формат Chat с защитой от null/undefined */
 function mapApiChat(raw: Record<string, unknown>): Chat {
-  const members = (raw.members as Array<Record<string, unknown>> || []).map((m) => ({
-    id: m.id as string,
-    displayName: m.display_name as string,
-    avatarUrl: m.avatar_url as string | undefined,
-    isOnline: m.is_online as boolean || false,
-  }));
+  // Guard: ensure raw is a valid object
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('mapApiChat: invalid API response — expected an object');
+  }
 
-  const lastMsg = raw.last_message as Record<string, unknown> | null;
+  const rawMembers = raw.members;
+  const members = (Array.isArray(rawMembers) ? rawMembers : [])
+    .filter((m): m is Record<string, unknown> => m != null && typeof m === 'object')
+    .map((m) => ({
+      id: (m.id as string) ?? '',
+      displayName: (m.display_name as string) ?? '',
+      avatarUrl: m.avatar_url as string | undefined,
+      isOnline: (m.is_online as boolean) || false,
+    }));
+
+  const lastMsg = raw.last_message != null && typeof raw.last_message === 'object'
+    ? (raw.last_message as Record<string, unknown>)
+    : null;
 
   return {
-    id: raw.id as string,
+    id: (raw.id as string) ?? '',
     type: (raw.type as Chat['type']) || 'direct',
     name: raw.name as string | undefined,
     members,
-    unreadCount: (raw.unread_count as number) || 0,
+    unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
     isMuted: false,
     isArchived: false,
-    updatedAt: lastMsg?.created_at as string || raw.created_at as string || new Date().toISOString(),
+    updatedAt: (lastMsg?.created_at as string) || (raw.created_at as string) || new Date().toISOString(),
     lastMessage: lastMsg ? {
       id: 'last',
-      chatId: raw.id as string,
-      senderId: lastMsg.sender_id as string || '',
+      chatId: (raw.id as string) ?? '',
+      senderId: (lastMsg.sender_id as string) || '',
       senderName: '',
-      content: lastMsg.content as string || '',
+      content: (lastMsg.content as string) || '',
       type: 'text',
       status: 'read',
       reactions: {},
       isDestroyed: false,
-      createdAt: lastMsg.created_at as string || '',
+      createdAt: (lastMsg.created_at as string) || '',
     } : undefined,
   };
 }

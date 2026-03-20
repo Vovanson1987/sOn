@@ -1,14 +1,17 @@
 import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
 import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
+import { AttachmentPicker } from '@components/media/AttachmentPicker';
 
 interface InputBarProps {
   onSend: (text: string) => void;
+  onAttachment?: (type: 'camera' | 'photo' | 'document' | 'location') => void;
   placeholder?: string;
 }
 
 /** Панель ввода сообщения в стиле iMessage Mac */
-export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
+export function InputBar({ onSend, onAttachment, placeholder = 'iMessage' }: InputBarProps) {
   const [text, setText] = useState('');
+  const [showAttachments, setShowAttachments] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = useCallback(() => {
@@ -51,12 +54,20 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
     >
       {/* Кнопка вложений */}
       <button
-        className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
+        onClick={() => setShowAttachments(true)}
+        className="w-[44px] h-[44px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
         style={{ background: '#636366' }}
         aria-label="Вложения"
       >
         <Plus size={18} color="white" />
       </button>
+
+      {/* Picker вложений */}
+      <AttachmentPicker
+        isOpen={showAttachments}
+        onClose={() => setShowAttachments(false)}
+        onSelect={(type) => { setShowAttachments(false); onAttachment?.(type); }}
+      />
 
       {/* Поле ввода */}
       <div
@@ -72,7 +83,7 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
           placeholder={placeholder}
           rows={1}
           aria-label="Написать сообщение"
-          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#8E8E93] outline-none resize-none leading-[1.3]"
+          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#ABABAF] outline-none resize-none leading-[1.3]"
           style={{ maxHeight: '100px' }}
         />
       </div>
@@ -81,7 +92,7 @@ export function InputBar({ onSend, placeholder = 'iMessage' }: InputBarProps) {
       {hasText ? (
         <button
           onClick={handleSend}
-          className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
+          className="w-[44px] h-[44px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
           style={{ background: '#007AFF' }}
           aria-label="Отправить"
         >

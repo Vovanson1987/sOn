@@ -17,7 +17,7 @@ export function ChatListHeader({ onNewChat, onFilter, filterActive }: ChatListHe
         <div className="flex items-center gap-1 pb-1">
           <button
             className="w-[44px] h-[44px] flex items-center justify-center"
-            style={{ color: filterActive ? '#007AFF' : '#8E8E93' }}
+            style={{ color: filterActive ? '#007AFF' : '#ABABAF' }}
             aria-label="Фильтр"
             aria-pressed={filterActive}
             onClick={onFilter}

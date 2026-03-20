@@ -69,7 +69,7 @@ export default function App() {
             senderId: m.sender_id,
             senderName: m.sender_name || '',
             content: m.content,
-            type: 'text',
+            type: (m.type as import('@/types/message').MessageType) || 'text',
             status: 'delivered',
             reactions: {},
             isDestroyed: false,
@@ -119,14 +119,15 @@ export default function App() {
   if (isMobile) {
     return (
       <div className="flex flex-col h-full w-full bg-black">
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-black focus:text-white">Перейти к контенту</a>
         {/* Экран звонка поверх всего */}
         <Suspense fallback={null}>
           {activeCall && <CallScreen />}
         </Suspense>
 
-        <div className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden" id="main-content">
           {activeTab === 'chats' && !activeChat && <ChatList />}
-          <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
+          <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" role="status"><span className="sr-only">Загрузка...</span></div>}>
             {activeTab === 'chats' && activeChat && (
               <ConversationScreen chat={activeChat} onBack={handleBack} />
             )}
@@ -134,15 +135,15 @@ export default function App() {
           </Suspense>
           {activeTab === 'calls' && (
             <div className="flex items-center justify-center h-full">
-              <p className="text-[15px]" style={{ color: '#8E8E93' }}>Журнал звонков</p>
+              <p className="text-[15px]" style={{ color: '#ABABAF' }}>Журнал звонков</p>
             </div>
           )}
           {activeTab === 'contacts' && (
             <div className="flex items-center justify-center h-full">
-              <p className="text-[15px]" style={{ color: '#8E8E93' }}>Контакты</p>
+              <p className="text-[15px]" style={{ color: '#ABABAF' }}>Контакты</p>
             </div>
           )}
-        </div>
+        </main>
 
         {/* Tab bar (скрывается когда открыт чат) */}
         {!(activeTab === 'chats' && activeChat) && (
@@ -159,6 +160,7 @@ export default function App() {
   // Desktop/Tablet: двухколоночный layout
   return (
     <div className="flex h-full w-full bg-black">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-black focus:text-white">Перейти к контенту</a>
       {/* Экран звонка поверх всего */}
       <Suspense fallback={null}>
         {activeCall && <CallScreen />}
@@ -170,13 +172,13 @@ export default function App() {
       </div>
 
       {/* Область чата */}
-      <main className="flex-1 h-full">
+      <main className="flex-1 h-full" id="main-content">
         <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" />}>
         {activeChat ? (
           <ConversationScreen chat={activeChat} onBack={handleBack} />
         ) : (
           <div className="flex items-center justify-center h-full" style={{ backgroundColor: '#000' }}>
-            <p className="text-[15px]" style={{ color: '#8E8E93' }}>
+            <p className="text-[15px]" style={{ color: '#ABABAF' }}>
               Выберите чат
             </p>
           </div>

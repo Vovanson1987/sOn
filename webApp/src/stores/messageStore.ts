@@ -6,14 +6,16 @@ import { useAuthStore } from './authStore';
 interface MessageStore {
   messages: Record<string, Message[]>;
   typingUsers: Record<string, string[]>;
-  loadedChats: Set<string>;
+  /** HI-37: Use Record instead of Set for Zustand serialization compatibility */
+  loadedChats: Record<string, boolean>;
+  fetchError: string | null;
 
   /** Получить сообщения чата */
   getMessages: (chatId: string) => Message[];
   /** Загрузить сообщения с сервера */
   fetchMessages: (chatId: string) => Promise<void>;
   /** Отправить сообщение (через API + локально) */
-  sendMessage: (chatId: string, content: string) => void;
+  sendMessage: (chatId: string, content: string, replyTo?: { id: string; senderName: string; preview: string }) => Promise<void>;
   /** Добавить входящее сообщение (от WebSocket) */
   addMessage: (chatId: string, message: Message) => void;
   /** Удалить сообщение */
@@ -45,7 +47,8 @@ function mapApiMessage(raw: Record<string, unknown>): Message {
 export const useMessageStore = create<MessageStore>((set, get) => ({
   messages: {},
   typingUsers: {},
-  loadedChats: new Set(),
+  loadedChats: {},
+  fetchError: null,
 
   getMessages: (chatId) => {
     return get().messages[chatId] ?? [];
@@ -53,29 +56,31 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
 
   fetchMessages: async (chatId) => {
     // Не загружать повторно
-    if (get().loadedChats.has(chatId)) return;
+    if (get().loadedChats[chatId]) return;
 
     try {
       const data = await api.getMessages(chatId);
       const msgs = (data.messages as Array<Record<string, unknown>>).map(mapApiMessage);
-      if (msgs.length > 0) {
-        set((s) => ({
-          messages: { ...s.messages, [chatId]: msgs },
-          loadedChats: new Set([...s.loadedChats, chatId]),
-        }));
-      }
-    } catch {
-      // Если сервер недоступен — оставляем пустой список
+      // HI-38: Always mark chat as loaded after successful fetch (even if empty)
+      set((s) => ({
+        messages: { ...s.messages, [chatId]: msgs },
+        loadedChats: { ...s.loadedChats, [chatId]: true },
+        fetchError: null,
+      }));
+    } catch (err) {
+      // HI-12: Log error instead of silently ignoring
+      console.error(`Failed to fetch messages for chat ${chatId}:`, err);
+      set({ fetchError: `Failed to load messages for chat ${chatId}` });
     }
   },
 
-  sendMessage: async (chatId, content) => {
+  sendMessage: async (chatId, content, replyTo) => {
     const auth = useAuthStore.getState();
     const userId = auth.user?.id || 'user-me';
     const userName = auth.user?.display_name || 'Я';
 
-    // Оптимистичное добавление (сразу в UI)
-    const tempId = `msg-${Date.now()}`;
+    // Уникальный ID с random-суффиксом для защиты от двойной отправки
+    const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newMsg: Message = {
       id: tempId,
       chatId,
@@ -85,6 +90,7 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       type: 'text',
       status: 'sending',
       reactions: {},
+      replyTo,
       isDestroyed: false,
       createdAt: new Date().toISOString(),
     };

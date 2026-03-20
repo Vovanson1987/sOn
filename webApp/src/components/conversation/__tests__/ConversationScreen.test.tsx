@@ -210,7 +210,7 @@ describe('ConversationScreen — отправка сообщения', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => {
-      expect(mockSendMessage).toHaveBeenCalledWith('chat-1', 'Тестовое сообщение');
+      expect(mockSendMessage).toHaveBeenCalledWith('chat-1', 'Тестовое сообщение', undefined);
     });
   });
 });

@@ -20,7 +20,7 @@ export function SearchBar({ value, onChange, placeholder = 'Поиск' }: Searc
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
-          className="bg-transparent text-[15px] text-white placeholder-[#8E8E93] outline-none w-full"
+          className="bg-transparent text-[15px] text-white placeholder-[#ABABAF] outline-none w-full"
         />
       </div>
     </div>

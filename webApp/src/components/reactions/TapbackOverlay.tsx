@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 import { Reply, Copy, Trash2 } from 'lucide-react';
 import type { Message } from '@/types/message';
 
@@ -26,14 +27,7 @@ export function TapbackOverlay({
   onDelete,
   onClose,
 }: TapbackOverlayProps) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    overlayRef.current?.querySelector<HTMLElement>('[role="toolbar"] button')?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const focusTrapRef = useFocusTrap();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -50,7 +44,7 @@ export function TapbackOverlay({
 
   return (
     <div
-      ref={overlayRef}
+      ref={focusTrapRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{
         background: 'rgba(0,0,0,0.4)',

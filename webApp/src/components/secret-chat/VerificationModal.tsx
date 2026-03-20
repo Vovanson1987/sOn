@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 
 interface VerificationModalProps {
   myName: string;
@@ -22,14 +23,7 @@ export function VerificationModal({
   onVerify,
   onClose,
 }: VerificationModalProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const focusTrapRef = useFocusTrap();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -39,7 +33,7 @@ export function VerificationModal({
 
   return (
     <div
-      ref={overlayRef}
+      ref={focusTrapRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.8)' }}
       role="dialog"
@@ -53,7 +47,7 @@ export function VerificationModal({
         {/* Заголовок + закрыть */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[18px] font-semibold text-white">Верификация шифрования</h2>
-          <button onClick={onClose} aria-label="Закрыть">
+          <button onClick={onClose} aria-label="Закрыть" className="min-w-[44px] min-h-[44px] flex items-center justify-center">
             <X size={20} color="#8E8E93" />
           </button>
         </div>
@@ -89,14 +83,14 @@ export function VerificationModal({
         >
           <p
             className="text-[12px] text-center break-all leading-[1.6]"
-            style={{ color: '#8E8E93', fontFamily: 'monospace' }}
+            style={{ color: '#ABABAF', fontFamily: 'monospace' }}
           >
             {hexFingerprint}
           </p>
         </div>
 
         {/* Описание */}
-        <p className="text-[12px] text-center mb-4" style={{ color: '#8E8E93' }}>
+        <p className="text-[12px] text-center mb-4" style={{ color: '#ABABAF' }}>
           Сравните эти символы на устройствах обоих собеседников. Если они совпадают — канал защищён.
         </p>
 

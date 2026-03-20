@@ -9,6 +9,7 @@ export function ChatList() {
   const [showNewChat, setShowNewChat] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const chats = useChatStore((s) => s.chats);
+  const isLoading = useChatStore((s) => s.isLoading);
   const searchQuery = useChatStore((s) => s.searchQuery);
   const filter = useChatStore((s) => s.filter);
   const setSearchQuery = useChatStore((s) => s.setSearchQuery);
@@ -68,9 +69,22 @@ export function ChatList() {
         aria-label="Чаты"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
-        {filteredChats.length === 0 ? (
+        {/* Skeleton при загрузке */}
+        {isLoading && chats.length === 0 ? (
+          <div className="space-y-1 px-1" role="status" aria-label="Загрузка чатов">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-[10px] animate-pulse">
+                <div className="w-[50px] h-[50px] rounded-full" style={{ background: '#2C2C2E' }} />
+                <div className="flex-1 space-y-2">
+                  <div className="h-[14px] rounded" style={{ background: '#2C2C2E', width: '60%' }} />
+                  <div className="h-[12px] rounded" style={{ background: '#2C2C2E', width: '80%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-3">
-            <p className="text-[14px]" style={{ color: '#8E8E93' }}>
+            <p className="text-[14px]" style={{ color: '#ABABAF' }}>
               {searchQuery ? 'Ничего не найдено' : 'Нет чатов'}
             </p>
             {!searchQuery && (

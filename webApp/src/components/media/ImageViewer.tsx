@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 
 interface ImageViewerProps {
   src: string;
@@ -9,12 +10,7 @@ interface ImageViewerProps {
 
 /** Полноэкранный просмотр изображения с затемнением */
 export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const focusTrapRef = useFocusTrap();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -24,6 +20,7 @@ export function ImageViewer({ src, alt, onClose }: ImageViewerProps) {
 
   return (
     <div
+      ref={focusTrapRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.9)' }}
       onClick={onClose}

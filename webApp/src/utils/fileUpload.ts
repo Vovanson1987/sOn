@@ -26,9 +26,12 @@ export async function uploadFile(file: File, folder = 'attachments', messageId?:
   formData.append('folder', folder);
   if (messageId) formData.append('message_id', messageId);
 
+  const token = getToken();
+  if (!token) throw new Error('Не авторизован');
+
   const res = await fetch(`${API_URL}/api/media/upload`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${getToken()}` },
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
 
@@ -43,10 +46,20 @@ export async function uploadFile(file: File, folder = 'attachments', messageId?:
 export async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file); // Битой файл — вернуть оригинал
+    };
 
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl); // Освободить память
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(file); return; }
+
       // Вычислить размеры
       let { width, height } = img;
       if (width > maxWidth) {
@@ -70,7 +83,7 @@ export async function compressImage(file: File, maxWidth = 1920, quality = 0.8):
       );
     };
 
-    img.src = URL.createObjectURL(file);
+    img.src = objectUrl;
   });
 }
 

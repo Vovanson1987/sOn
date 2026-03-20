@@ -30,12 +30,14 @@ describe('Avatar', () => {
 
   it('shows online indicator when isOnline is true', () => {
     render(<Avatar size={50} name="Vladimir" isOnline />);
-    expect(screen.getByLabelText('Онлайн')).toBeInTheDocument();
+    // Онлайн-статус теперь в aria-label родительского div
+    expect(screen.getByLabelText('Аватар Vladimir, онлайн')).toBeInTheDocument();
   });
 
   it('does not show online indicator when isOnline is false', () => {
     render(<Avatar size={50} name="Vladimir" isOnline={false} />);
-    expect(screen.queryByLabelText('Онлайн')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Аватар Vladimir')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Аватар Vladimir, онлайн')).not.toBeInTheDocument();
   });
 
   it('applies correct size', () => {

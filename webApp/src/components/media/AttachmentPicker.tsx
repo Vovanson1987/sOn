@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Camera, Image, FileText, MapPin } from 'lucide-react';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 
 interface AttachmentPickerProps {
   isOpen: boolean;
@@ -16,15 +17,7 @@ const ITEMS = [
 
 /** iOS Action Sheet для выбора типа вложения */
 export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPickerProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, [isOpen]);
+  const focusTrapRef = useFocusTrap(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -37,7 +30,7 @@ export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPicker
 
   return (
     <div
-      ref={overlayRef}
+      ref={focusTrapRef}
       className="fixed inset-0 z-40"
       onClick={onClose}
       role="dialog"
@@ -61,7 +54,7 @@ export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPicker
               className="w-full flex items-center gap-3 px-4 py-[12px] text-left hover:bg-[#2C2C2E]"
             >
               <div
-                className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center"
+                className="w-[44px] h-[44px] rounded-[8px] flex items-center justify-center"
                 style={{ background: item.color }}
               >
                 <item.icon size={18} color="white" />

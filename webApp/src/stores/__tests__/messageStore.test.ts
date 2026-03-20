@@ -15,7 +15,7 @@ describe('messageStore', () => {
     useMessageStore.setState({
       messages: { 'chat-vladimir': [seedMessage] },
       typingUsers: {},
-      loadedChats: new Set(),
+      loadedChats: {},
     });
   });
 

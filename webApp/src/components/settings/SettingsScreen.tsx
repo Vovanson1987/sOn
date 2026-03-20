@@ -20,8 +20,8 @@ function SettingsRow({ icon, label, value, onClick }: SettingRow) {
     >
       {icon}
       <span className="flex-1 text-[15px] text-white">{label}</span>
-      {value && <span className="text-[14px]" style={{ color: '#8E8E93' }}>{value}</span>}
-      <ChevronRight size={16} color="#38383A" />
+      {value && <span className="text-[14px]" style={{ color: '#ABABAF' }}>{value}</span>}
+      <ChevronRight size={16} color="#636366" aria-hidden="true" />
     </button>
   );
 }
@@ -32,7 +32,7 @@ function Divider() {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <p className="px-4 pt-5 pb-2 text-[12px] font-semibold uppercase" style={{ color: '#8E8E93' }}>
+    <p className="px-4 pt-5 pb-2 text-[12px] font-semibold uppercase" style={{ color: '#ABABAF' }}>
       {title}
     </p>
   );
@@ -56,7 +56,7 @@ export function SettingsScreen() {
       <div className="flex flex-col items-center py-6">
         <Avatar size={120} name={displayName} src={user?.avatar_url} />
         <h2 className="text-[20px] font-semibold text-white mt-3">{displayName}</h2>
-        <p className="text-[14px] mt-1" style={{ color: '#8E8E93' }}>{email}</p>
+        <p className="text-[14px] mt-1" style={{ color: '#ABABAF' }}>{email}</p>
       </div>
 
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>

@@ -11,7 +11,7 @@ export const DateSeparator = memo(function DateSeparator({ date }: DateSeparator
     <div className="flex justify-center py-2">
       <span
         className="text-[12px] font-medium px-3 py-[2px] rounded-full"
-        style={{ color: '#8E8E93' }}
+        style={{ color: '#ABABAF' }}
       >
         {formatDateSeparator(date)}
       </span>

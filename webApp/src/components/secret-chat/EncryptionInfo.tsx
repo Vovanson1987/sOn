@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Shield, Key, RefreshCw, Trash2 } from 'lucide-react';
+import { useFocusTrap } from '@hooks/useFocusTrap';
 
 interface EncryptionInfoProps {
   protocol: string;
@@ -25,14 +26,7 @@ export function EncryptionInfo({
   onEndSecretChat,
   onClose,
 }: EncryptionInfoProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    overlayRef.current?.querySelector<HTMLElement>('button')?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const focusTrapRef = useFocusTrap();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -42,7 +36,7 @@ export function EncryptionInfo({
 
   return (
     <div
-      ref={overlayRef}
+      ref={focusTrapRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.8)' }}
       onClick={onClose}
@@ -63,27 +57,27 @@ export function EncryptionInfo({
         {/* Параметры */}
         <div className="space-y-3 mb-5">
           <div className="flex justify-between">
-            <span className="text-[13px]" style={{ color: '#8E8E93' }}>Протокол</span>
+            <span className="text-[13px]" style={{ color: '#ABABAF' }}>Протокол</span>
             <span className="text-[13px] text-white">{protocol}</span>
           </div>
           <div style={{ height: '0.5px', background: '#38383A' }} />
           <div className="flex justify-between">
-            <span className="text-[13px]" style={{ color: '#8E8E93' }}>Алгоритмы</span>
+            <span className="text-[13px]" style={{ color: '#ABABAF' }}>Алгоритмы</span>
             <span className="text-[13px] text-white text-right max-w-[200px]">{algorithms}</span>
           </div>
           <div style={{ height: '0.5px', background: '#38383A' }} />
           <div className="flex justify-between">
-            <span className="text-[13px]" style={{ color: '#8E8E93' }}>Сессия создана</span>
+            <span className="text-[13px]" style={{ color: '#ABABAF' }}>Сессия создана</span>
             <span className="text-[13px] text-white">{sessionDate}</span>
           </div>
           <div style={{ height: '0.5px', background: '#38383A' }} />
           <div className="flex justify-between">
-            <span className="text-[13px]" style={{ color: '#8E8E93' }}>Ratchet index</span>
+            <span className="text-[13px]" style={{ color: '#ABABAF' }}>Ratchet index</span>
             <span className="text-[13px] text-white">#{ratchetIndex}</span>
           </div>
           <div style={{ height: '0.5px', background: '#38383A' }} />
           <div className="flex justify-between">
-            <span className="text-[13px]" style={{ color: '#8E8E93' }}>Верификация</span>
+            <span className="text-[13px]" style={{ color: '#ABABAF' }}>Верификация</span>
             <span className="text-[13px]" style={{ color: isVerified ? '#30D158' : '#FF9500' }}>
               {isVerified ? '✓ Подтверждено' : '⚠ Не верифицировано'}
             </span>
