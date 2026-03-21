@@ -55,6 +55,7 @@ SMOKE_EPHEMERAL=1 SMOKE_BASE_URL=https://staging.example.com node ./scripts/smok
 ### Staging
 
 - `STAGING_HOST`
+- `STAGING_PORT` (опционально, по умолчанию `22`)
 - `STAGING_USER`
 - `STAGING_SSH_KEY`
 - `STAGING_BASE_URL`
@@ -62,6 +63,7 @@ SMOKE_EPHEMERAL=1 SMOKE_BASE_URL=https://staging.example.com node ./scripts/smok
 ### Production
 
 - `SERVER_HOST`
+- `SERVER_PORT` (опционально, по умолчанию `22`)
 - `SERVER_USER`
 - `SERVER_SSH_KEY`
 - `PRODUCTION_BASE_URL`
