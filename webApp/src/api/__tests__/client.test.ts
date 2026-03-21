@@ -17,9 +17,10 @@ Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock });
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-describe('API client — токен', () => {
+describe('API client — токен (HI-18: в памяти)', () => {
   beforeEach(() => {
     localStorageMock.clear();
+    removeToken(); // Сбросить in-memory token
     vi.clearAllMocks();
   });
 
@@ -27,25 +28,28 @@ describe('API client — токен', () => {
     expect(getToken()).toBeNull();
   });
 
-  it('setToken сохраняет токен', () => {
+  it('setToken сохраняет токен в памяти', () => {
     setToken('test-token');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('son-token', 'test-token');
+    // HI-18: токен в памяти, не в localStorage
+    expect(getToken()).toBe('test-token');
   });
 
-  it('getToken возвращает сохранённый токен', () => {
-    localStorageMock.setItem('son-token', 'my-token');
+  it('getToken возвращает сохранённый в памяти токен', () => {
+    setToken('my-token');
     expect(getToken()).toBe('my-token');
   });
 
-  it('removeToken удаляет токен', () => {
+  it('removeToken удаляет токен из памяти', () => {
+    setToken('temp');
     removeToken();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-token');
+    expect(getToken()).toBeNull();
   });
 });
 
 describe('API client — HTTP запросы', () => {
   beforeEach(() => {
     localStorageMock.clear();
+    removeToken();
     vi.clearAllMocks();
   });
 
@@ -73,8 +77,8 @@ describe('API client — HTTP запросы', () => {
     expect(result.token).toBe('t');
   });
 
-  it('getChats отправляет GET /api/chats', async () => {
-    localStorageMock.setItem('son-token', 'jwt');
+  it('getChats отправляет GET /api/chats с credentials', async () => {
+    setToken('jwt');
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ chats: [] }),
@@ -82,16 +86,17 @@ describe('API client — HTTP запросы', () => {
 
     const result = await getChats();
     expect(result.chats).toEqual([]);
+    // HI-18: Авторизация через httpOnly cookie (credentials: 'include')
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/chats'),
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer jwt' }),
+        credentials: 'include',
       }),
     );
   });
 
   it('getMessages отправляет GET /api/chats/:id/messages', async () => {
-    localStorageMock.setItem('son-token', 'jwt');
+    setToken('jwt');
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ messages: [] }),
@@ -105,7 +110,7 @@ describe('API client — HTTP запросы', () => {
   });
 
   it('sendMessage отправляет POST с контентом', async () => {
-    localStorageMock.setItem('son-token', 'jwt');
+    setToken('jwt');
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ id: 'msg-1' }),
@@ -118,8 +123,40 @@ describe('API client — HTTP запросы', () => {
     expect(body.type).toBe('text');
   });
 
+  it('sendMessage добавляет e2ee payload для секретного чата', async () => {
+    setToken('jwt');
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ id: 'msg-1' }),
+    });
+
+    await sendMessage('chat-secret', 'CIPH', 'text', 30, {
+      nonce: 'NONCE',
+      algorithm: 'XSalsa20-Poly1305',
+      header: {
+        dh_public_key: 'AQID',
+        previous_count: 2,
+        message_number: 3,
+      },
+    });
+
+    const call = mockFetch.mock.calls[0];
+    const body = JSON.parse(call[1].body);
+    expect(body.content).toBe('CIPH');
+    expect(body.e2ee).toEqual({
+      nonce: 'NONCE',
+      algorithm: 'XSalsa20-Poly1305',
+      header: {
+        dh_public_key: 'AQID',
+        previous_count: 2,
+        message_number: 3,
+      },
+    });
+    expect(body.self_destruct_seconds).toBe(30);
+  });
+
   it('searchUsers передаёт query в URL', async () => {
-    localStorageMock.setItem('son-token', 'jwt');
+    setToken('jwt');
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ users: [] }),

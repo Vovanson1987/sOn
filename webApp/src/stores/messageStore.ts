@@ -1,8 +1,16 @@
 import { create } from 'zustand';
 import type { Message } from '@/types/message';
 import * as api from '@/api/client';
+import type { ChatType } from '@/types/chat';
+import {
+  isSecretMessagePayload,
+  fromSecretMessagePayload,
+  toSecretMessagePayload,
+  type SecretMessagePayload,
+} from '@/crypto/secretTransport';
 import { useAuthStore } from './authStore';
 import { useSecretChatStore } from './secretChatStore';
+import { useChatStore } from './chatStore';
 
 interface MessageStore {
   messages: Record<string, Message[]>;
@@ -17,6 +25,8 @@ interface MessageStore {
   fetchMessages: (chatId: string) => Promise<void>;
   /** Отправить сообщение (через API + локально) */
   sendMessage: (chatId: string, content: string, replyTo?: { id: string; senderName: string; preview: string }) => Promise<void>;
+  /** Добавить входящее сообщение от сервера с E2EE-дешифровкой */
+  addServerMessage: (rawMessage: Record<string, unknown>) => Promise<void>;
   /** Добавить входящее сообщение (от WebSocket) */
   addMessage: (chatId: string, message: Message) => void;
   /** Удалить сообщение (через API + локально) */
@@ -31,14 +41,15 @@ interface MessageStore {
   clearTyping: (chatId: string, userName: string) => void;
 }
 
-/** Преобразовать API-сообщение в наш формат */
-function mapApiMessage(raw: Record<string, unknown>): Message {
+const SECRET_LOCKED_PREVIEW = '🔒 Зашифрованное сообщение';
+
+function mapApiMessageBase(raw: Record<string, unknown>): Message {
   return {
     id: raw.id as string,
     chatId: raw.chat_id as string,
     senderId: raw.sender_id as string,
     senderName: raw.sender_name as string || '',
-    content: raw.content as string,
+    content: (raw.content as string) || '',
     type: (raw.type as Message['type']) || 'text',
     status: (raw.status as Message['status']) || 'sent',
     reactions: {},
@@ -46,6 +57,58 @@ function mapApiMessage(raw: Record<string, unknown>): Message {
     selfDestructAt: raw.self_destruct_at as string | undefined,
     createdAt: raw.created_at as string,
   };
+}
+
+function resolveChatType(chatId: string): ChatType {
+  const chat = useChatStore.getState().chats.find((c) => c.id === chatId);
+  return chat?.type || 'direct';
+}
+
+function getSecretPayload(raw: Record<string, unknown>): SecretMessagePayload | null {
+  const header = raw.e2ee_header;
+  const payloadFromFields: unknown = {
+    ciphertext: raw.content,
+    nonce: raw.e2ee_nonce,
+    algorithm: raw.e2ee_algorithm,
+    header,
+  };
+
+  if (isSecretMessagePayload(payloadFromFields)) {
+    return payloadFromFields;
+  }
+
+  if (typeof raw.content === 'string') {
+    try {
+      const parsed = JSON.parse(raw.content) as unknown;
+      if (isSecretMessagePayload(parsed)) return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function decryptSecretMessage(chatId: string, payload: SecretMessagePayload): Promise<string | null> {
+  const decoded = fromSecretMessagePayload(payload);
+  if (!decoded) return null;
+  return useSecretChatStore.getState().decryptReceived(chatId, decoded.encrypted, decoded.header);
+}
+
+async function mapServerMessage(raw: Record<string, unknown>, myUserId: string): Promise<Message> {
+  const message = mapApiMessageBase(raw);
+  if (resolveChatType(message.chatId) !== 'secret' || message.type !== 'text') return message;
+
+  // Текст собственных секретных сообщений не возвращается с сервера в открытом виде.
+  if (message.senderId === myUserId) {
+    return { ...message, content: SECRET_LOCKED_PREVIEW };
+  }
+
+  const payload = getSecretPayload(raw);
+  if (!payload) return { ...message, content: SECRET_LOCKED_PREVIEW };
+
+  const decrypted = await decryptSecretMessage(message.chatId, payload);
+  return { ...message, content: decrypted ?? SECRET_LOCKED_PREVIEW };
 }
 
 export const useMessageStore = create<MessageStore>((set, get) => ({
@@ -64,7 +127,11 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
 
     try {
       const data = await api.getMessages(chatId);
-      const msgs = (data.messages as Array<Record<string, unknown>>).map(mapApiMessage);
+      const myUserId = useAuthStore.getState().user?.id || 'user-me';
+      const msgs: Message[] = [];
+      for (const raw of data.messages as Array<Record<string, unknown>>) {
+        msgs.push(await mapServerMessage(raw, myUserId));
+      }
       // HI-38: Always mark chat as loaded after successful fetch (even if empty)
       set((s) => ({
         messages: { ...s.messages, [chatId]: msgs },
@@ -110,9 +177,34 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
     const secretSession = useSecretChatStore.getState().getSession(chatId);
     const selfDestructSeconds = secretSession?.selfDestructTimer ?? undefined;
 
+    const chatType = resolveChatType(chatId);
+
     // Отправить на сервер
     try {
-      const serverMsg = await api.sendMessage(chatId, content, 'text', selfDestructSeconds) as Record<string, unknown>;
+      let requestContent = content;
+      let secretPayload: api.SecretPayloadForSend | undefined;
+
+      if (chatType === 'secret') {
+        const encryptedBundle = await useSecretChatStore.getState().encryptForSend(chatId, content);
+        if (!encryptedBundle) {
+          throw new Error('Нет активной секретной сессии');
+        }
+        const payload = toSecretMessagePayload(encryptedBundle.encrypted, encryptedBundle.header);
+        requestContent = payload.ciphertext;
+        secretPayload = {
+          nonce: payload.nonce,
+          algorithm: payload.algorithm,
+          header: payload.header,
+        };
+      }
+
+      const serverMsg = await api.sendMessage(
+        chatId,
+        requestContent,
+        'text',
+        selfDestructSeconds,
+        secretPayload,
+      ) as Record<string, unknown>;
       // Заменить временное сообщение на серверное
       set((s) => ({
         messages: {
@@ -122,7 +214,8 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
           ),
         },
       }));
-    } catch {
+    } catch (error) {
+      console.error('Ошибка отправки сообщения:', error);
       // При ошибке — пометить как failed
       set((s) => ({
         messages: {
@@ -133,6 +226,12 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         },
       }));
     }
+  },
+
+  addServerMessage: async (rawMessage) => {
+    const myUserId = useAuthStore.getState().user?.id || 'user-me';
+    const message = await mapServerMessage(rawMessage, myUserId);
+    get().addMessage(message.chatId, message);
   },
 
   addMessage: (chatId, message) => {

@@ -32,7 +32,7 @@ vi.mock('@stores/chatStore', () => {
 
 vi.mock('@stores/messageStore', () => {
   const state = {
-    addMessage: vi.fn(),
+    addServerMessage: vi.fn(),
     removeMessageLocal: vi.fn(),
     setTyping: vi.fn(),
     clearTyping: vi.fn(),

@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { setupAuthenticatedApiMocks } from './helpers';
 
 test.describe('Список чатов', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await setupAuthenticatedApiMocks(page);
   });
 
   test('отображает список чатов', async ({ page }) => {
@@ -11,7 +12,7 @@ test.describe('Список чатов', () => {
   });
 
   test('отображает поле поиска', async ({ page }) => {
-    await expect(page.getByPlaceholder('Поиск')).toBeVisible();
+    await expect(page.getByPlaceholder('Поиск чатов')).toBeVisible();
   });
 
   test('клик по чату открывает переписку', async ({ page }) => {
@@ -19,21 +20,22 @@ test.describe('Список чатов', () => {
     await expect(page.getByText('iMessage')).toBeVisible();
   });
 
-  test('секретный чат показывает иконку замка', async ({ page }) => {
-    await expect(page.getByText('🔒')).toBeVisible();
+  test('секретный чат отображается в списке', async ({ page }) => {
+    await expect(page.getByText('Алексей')).toBeVisible();
+    await expect(page.getByText(/Зашифрованное сообщение/i)).toBeVisible();
   });
 });
 
 test.describe('Адаптивность', () => {
   test('мобильный viewport показывает список чатов', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/');
+    await setupAuthenticatedApiMocks(page);
     await expect(page.getByText('Алексей')).toBeVisible();
   });
 
   test('десктопный viewport показывает двухколоночный layout', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/');
+    await setupAuthenticatedApiMocks(page);
     await expect(page.getByText('Выберите чат')).toBeVisible();
     await expect(page.getByText('Алексей')).toBeVisible();
   });

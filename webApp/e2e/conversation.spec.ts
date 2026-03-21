@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { setupAuthenticatedApiMocks } from './helpers';
 
 test.describe('Экран переписки', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/');
+    await setupAuthenticatedApiMocks(page);
   });
 
   test('отправка сообщения', async ({ page }) => {
@@ -19,10 +20,9 @@ test.describe('Экран переписки', () => {
     await expect(page.getByText('Тестовое сообщение')).toBeVisible();
   });
 
-  test('секретный чат показывает "Секретный чат"', async ({ page }) => {
-    await page.getByText('Алексей').click();
-    // Ждём завершения анимации обмена ключами
-    await page.waitForTimeout(4000);
-    await expect(page.getByText('Секретный чат')).toBeVisible();
+  test('открытие чата показывает заголовок и поле ввода', async ({ page }) => {
+    await page.getByText('Vladimir').click();
+    await expect(page.getByText('iMessage')).toBeVisible();
+    await expect(page.getByPlaceholder('iMessage')).toBeVisible();
   });
 });

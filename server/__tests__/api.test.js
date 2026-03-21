@@ -281,6 +281,8 @@ describe('POST /api/chats/:chatId/messages', () => {
   it('отправляет сообщение', async () => {
     // chatMemberCheck
     mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    // Тип чата
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
 
     const now = new Date().toISOString();
     mockClient.query
@@ -300,6 +302,81 @@ describe('POST /api/chats/:chatId/messages', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.content).toBe('Тест');
+  });
+
+  it('возвращает 400 для секретного чата без e2ee payload', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] }); // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'secret' }] }); // тип чата
+
+    const res = await request(app)
+      .post('/api/chats/chat-secret/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ content: 'plaintext' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('E2EE');
+    expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it('для секретного чата сохраняет только ciphertext и e2ee-метаданные', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] }); // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'secret' }] }); // тип чата
+
+    const now = new Date().toISOString();
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'msg-secret-1',
+          content: 'CIPHERTEXT',
+          sender_id: 'user-1',
+          created_at: now,
+          e2ee_nonce: 'NONCE',
+          e2ee_header: {
+            dh_public_key: 'AQID',
+            previous_count: 1,
+            message_number: 2,
+          },
+          e2ee_algorithm: 'XSalsa20-Poly1305',
+        }],
+      })
+      .mockResolvedValueOnce({}) // UPDATE chats
+      .mockResolvedValueOnce({}) // UPDATE unread
+      .mockResolvedValueOnce({}); // COMMIT
+
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-2' }] }); // broadcastToChat
+
+    const res = await request(app)
+      .post('/api/chats/chat-secret/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({
+        content: 'CIPHERTEXT',
+        e2ee: {
+          nonce: 'NONCE',
+          algorithm: 'XSalsa20-Poly1305',
+          header: {
+            dh_public_key: 'AQID',
+            previous_count: 1,
+            message_number: 2,
+          },
+        },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.content).toBe('CIPHERTEXT');
+    expect(res.body.e2ee_nonce).toBe('NONCE');
+    expect(res.body.e2ee_algorithm).toBe('XSalsa20-Poly1305');
+
+    expect(mockClient.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO messages'),
+      expect.arrayContaining([
+        'chat-secret',
+        'user-1',
+        'CIPHERTEXT',
+        'text',
+        null,
+      ]),
+    );
   });
 });
 

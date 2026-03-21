@@ -11,6 +11,8 @@ set -e
 
 HOST=${1:-"root@your-server.com"}
 APP_DIR="/opt/son-messenger"
+RUN_SMOKE=${RUN_SMOKE:-1}
+BASE_URL=${SMOKE_BASE_URL:-"http://$(echo "$HOST" | cut -d@ -f2)"}
 
 echo "🚀 Деплой sOn Messenger на $HOST"
 
@@ -35,6 +37,18 @@ echo "✅ Проверка здоровья..."
 sleep 5
 ssh $HOST "docker ps --format 'table {{.Names}}\t{{.Status}}'"
 
+# 6. Smoke-check (по умолчанию включён)
+if [ "$RUN_SMOKE" = "1" ]; then
+  echo "🧪 Smoke-check: $BASE_URL"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "❌ Для smoke-check нужен node (локально на машине запуска deploy.sh)"
+    exit 1
+  fi
+  node ./scripts/smoke-web-server.mjs --base-url "$BASE_URL"
+else
+  echo "ℹ️ Smoke-check пропущен (RUN_SMOKE=0)"
+fi
+
 echo ""
 echo "🎉 Деплой завершён!"
-echo "📱 Откройте http://$(echo $HOST | cut -d@ -f2) в браузере"
+echo "📱 Откройте $BASE_URL в браузере"

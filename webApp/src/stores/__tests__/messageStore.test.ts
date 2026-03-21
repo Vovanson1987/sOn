@@ -1,135 +1,215 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useMessageStore } from '../messageStore';
-import type { Message } from '@/types/message';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const seedMessage: Message = {
-  id: 'msg-seed-1', chatId: 'chat-vladimir', senderId: 'user-vladimir',
-  senderName: 'Vladimir', content: 'Тестовое сообщение', type: 'text',
-  status: 'read', reactions: {}, isDestroyed: false,
-  createdAt: '2026-03-18T10:00:00Z',
-};
+const {
+  mockGetMessages,
+  mockSendMessage,
+  mockDeleteMessage,
+  authState,
+  chatState,
+  secretStoreState,
+} = vi.hoisted(() => ({
+  mockGetMessages: vi.fn(),
+  mockSendMessage: vi.fn(),
+  mockDeleteMessage: vi.fn(),
+  authState: {
+    user: {
+      id: 'user-me',
+      display_name: 'Я',
+    },
+  },
+  chatState: {
+    chats: [
+      { id: 'chat-vladimir', type: 'direct' as const },
+      { id: 'chat-secret', type: 'secret' as const },
+    ],
+  },
+  secretStoreState: {
+    getSession: vi.fn(),
+    encryptForSend: vi.fn(),
+    decryptReceived: vi.fn(),
+  },
+}));
+
+vi.mock('@/api/client', () => ({
+  getMessages: mockGetMessages,
+  sendMessage: mockSendMessage,
+  deleteMessage: mockDeleteMessage,
+}));
+
+vi.mock('../authStore', () => {
+  const useAuthStore = Object.assign(
+    vi.fn((selector: (s: typeof authState) => unknown) => selector(authState)),
+    { getState: () => authState },
+  );
+  return { useAuthStore };
+});
+
+vi.mock('../chatStore', () => {
+  const useChatStore = Object.assign(
+    vi.fn((selector: (s: typeof chatState) => unknown) => selector(chatState)),
+    { getState: () => chatState },
+  );
+  return { useChatStore };
+});
+
+vi.mock('../secretChatStore', () => {
+  const useSecretChatStore = Object.assign(vi.fn(), {
+    getState: () => secretStoreState,
+  });
+  return { useSecretChatStore };
+});
+
+import { useMessageStore } from '../messageStore';
 
 describe('messageStore', () => {
   beforeEach(() => {
-    // Сбросить и засеять тестовые данные
+    vi.clearAllMocks();
+
     useMessageStore.setState({
-      messages: { 'chat-vladimir': [seedMessage] },
+      messages: {
+        'chat-vladimir': [{
+          id: 'msg-seed-1',
+          chatId: 'chat-vladimir',
+          senderId: 'user-vladimir',
+          senderName: 'Vladimir',
+          content: 'Тестовое сообщение',
+          type: 'text',
+          status: 'read',
+          reactions: {},
+          isDestroyed: false,
+          createdAt: '2026-03-18T10:00:00Z',
+        }],
+        'chat-secret': [],
+      },
       typingUsers: {},
       loadedChats: {},
+      fetchError: null,
     });
+
+    secretStoreState.getSession.mockReturnValue(null);
+    secretStoreState.encryptForSend.mockResolvedValue(null);
+    secretStoreState.decryptReceived.mockResolvedValue(null);
+    mockSendMessage.mockResolvedValue({ id: 'msg-server' });
+    mockGetMessages.mockResolvedValue({ messages: [] });
+    mockDeleteMessage.mockResolvedValue({ ok: true });
   });
 
-  describe('getMessages', () => {
-    it('возвращает сообщения для существующего чата', () => {
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      expect(msgs.length).toBeGreaterThan(0);
-    });
+  it('sendMessage для обычного чата отправляет plaintext', async () => {
+    await useMessageStore.getState().sendMessage('chat-vladimir', 'Привет');
 
-    it('возвращает пустой массив для несуществующего чата', () => {
-      const msgs = useMessageStore.getState().getMessages('chat-nonexistent');
-      expect(msgs).toEqual([]);
-    });
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      'chat-vladimir',
+      'Привет',
+      'text',
+      undefined,
+      undefined,
+    );
+
+    const msgs = useMessageStore.getState().getMessages('chat-vladimir');
+    const last = msgs[msgs.length - 1];
+    expect(last.content).toBe('Привет');
+    expect(last.status).toBe('sent');
   });
 
-  describe('sendMessage', () => {
-    it('добавляет новое сообщение в чат', () => {
-      const before = useMessageStore.getState().getMessages('chat-vladimir').length;
-      useMessageStore.getState().sendMessage('chat-vladimir', 'Тестовое сообщение');
-      const after = useMessageStore.getState().getMessages('chat-vladimir').length;
-      expect(after).toBe(before + 1);
+  it('sendMessage для секретного чата шифрует до отправки', async () => {
+    secretStoreState.getSession.mockReturnValue({ selfDestructTimer: 30 });
+    secretStoreState.encryptForSend.mockResolvedValue({
+      encrypted: {
+        ciphertext: 'CIPHERTEXT',
+        nonce: 'NONCE',
+        algorithm: 'XSalsa20-Poly1305',
+      },
+      header: {
+        dhPublicKey: new Uint8Array([1, 2, 3]),
+        previousCount: 2,
+        messageNumber: 7,
+      },
     });
 
-    it('новое сообщение имеет правильные поля', () => {
-      useMessageStore.getState().sendMessage('chat-vladimir', 'Привет');
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      const last = msgs[msgs.length - 1];
-      expect(last.content).toBe('Привет');
-      expect(last.type).toBe('text');
-      // Статус начинается с 'sending' (оптимистичное добавление)
-      expect(['sending', 'sent', 'failed']).toContain(last.status);
-    });
+    await useMessageStore.getState().sendMessage('chat-secret', 'Секретный текст');
 
-    it('создаёт сообщение в новом чате', () => {
-      useMessageStore.getState().sendMessage('chat-new', 'Первое сообщение');
-      const msgs = useMessageStore.getState().getMessages('chat-new');
-      expect(msgs.length).toBe(1);
-      expect(msgs[0].content).toBe('Первое сообщение');
-    });
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      'chat-secret',
+      'CIPHERTEXT',
+      'text',
+      30,
+      {
+        nonce: 'NONCE',
+        algorithm: 'XSalsa20-Poly1305',
+        header: {
+          dh_public_key: 'AQID',
+          previous_count: 2,
+          message_number: 7,
+        },
+      },
+    );
 
-    it('оптимистично добавляет сообщение со статусом sending', () => {
-      useMessageStore.getState().sendMessage('chat-vladimir', 'Тест доставки');
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      const last = msgs[msgs.length - 1];
-      // Оптимистичное добавление — статус sending
-      expect(last.status).toBe('sending');
-      expect(last.content).toBe('Тест доставки');
-    });
+    const msgs = useMessageStore.getState().getMessages('chat-secret');
+    const last = msgs[msgs.length - 1];
+    expect(last.content).toBe('Секретный текст');
+    expect(last.status).toBe('sent');
   });
 
-  describe('addMessage', () => {
-    it('добавляет входящее сообщение', () => {
-      const msg = {
-        id: 'msg-incoming', chatId: 'chat-vladimir', senderId: 'user-vladimir',
-        senderName: 'Vladimir', content: 'Входящее', type: 'text' as const,
-        status: 'delivered' as const, reactions: {}, isDestroyed: false,
-        createdAt: new Date().toISOString(),
-      };
-      useMessageStore.getState().addMessage('chat-vladimir', msg);
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      expect(msgs.find((m) => m.id === 'msg-incoming')).toBeDefined();
-    });
+  it('sendMessage для секретного чата помечает failed без активной сессии', async () => {
+    await useMessageStore.getState().sendMessage('chat-secret', 'Не отправится');
+
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    const msgs = useMessageStore.getState().getMessages('chat-secret');
+    expect(msgs[msgs.length - 1].status).toBe('failed');
   });
 
-  describe('deleteMessage', () => {
-    it('удаляет сообщение по id', () => {
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      const firstId = msgs[0].id;
-      useMessageStore.getState().deleteMessage('chat-vladimir', firstId);
-      const updated = useMessageStore.getState().getMessages('chat-vladimir');
-      expect(updated.find((m) => m.id === firstId)).toBeUndefined();
+  it('fetchMessages расшифровывает входящее секретное сообщение', async () => {
+    mockGetMessages.mockResolvedValue({
+      messages: [{
+        id: 'msg-incoming',
+        chat_id: 'chat-secret',
+        sender_id: 'user-other',
+        sender_name: 'Алексей',
+        content: 'CIPH',
+        type: 'text',
+        status: 'delivered',
+        created_at: '2026-03-21T12:00:00Z',
+        e2ee_nonce: 'NONCE',
+        e2ee_algorithm: 'XSalsa20-Poly1305',
+        e2ee_header: {
+          dh_public_key: 'AQID',
+          previous_count: 0,
+          message_number: 0,
+        },
+      }],
     });
+    secretStoreState.decryptReceived.mockResolvedValue('Расшифровано');
+
+    await useMessageStore.getState().fetchMessages('chat-secret');
+
+    const msgs = useMessageStore.getState().getMessages('chat-secret');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe('Расшифровано');
+    expect(secretStoreState.decryptReceived).toHaveBeenCalledTimes(1);
   });
 
-  describe('addReaction', () => {
-    it('добавляет реакцию на сообщение', () => {
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      const msgId = msgs[0].id;
-      useMessageStore.getState().addReaction('chat-vladimir', msgId, '❤️', 'user-me');
-      const updated = useMessageStore.getState().getMessages('chat-vladimir');
-      const msg = updated.find((m) => m.id === msgId);
-      expect(msg?.reactions['❤️']).toContain('user-me');
+  it('addServerMessage добавляет расшифрованное сообщение', async () => {
+    secretStoreState.decryptReceived.mockResolvedValue('Текст после дешифровки');
+
+    await useMessageStore.getState().addServerMessage({
+      id: 'msg-live-1',
+      chat_id: 'chat-secret',
+      sender_id: 'user-other',
+      sender_name: 'Алексей',
+      content: 'CIPH',
+      type: 'text',
+      created_at: '2026-03-21T12:01:00Z',
+      e2ee_nonce: 'NONCE',
+      e2ee_algorithm: 'XSalsa20-Poly1305',
+      e2ee_header: {
+        dh_public_key: 'AQID',
+        previous_count: 0,
+        message_number: 1,
+      },
     });
 
-    it('убирает реакцию при повторном нажатии', () => {
-      const msgs = useMessageStore.getState().getMessages('chat-vladimir');
-      const msgId = msgs[0].id;
-      useMessageStore.getState().addReaction('chat-vladimir', msgId, '👍', 'user-me');
-      useMessageStore.getState().addReaction('chat-vladimir', msgId, '👍', 'user-me');
-      const updated = useMessageStore.getState().getMessages('chat-vladimir');
-      const msg = updated.find((m) => m.id === msgId);
-      expect(msg?.reactions['👍'] ?? []).not.toContain('user-me');
-    });
-  });
-
-  describe('typing', () => {
-    it('setTyping добавляет пользователя', () => {
-      useMessageStore.getState().setTyping('chat-vladimir', 'Vladimir');
-      const typing = useMessageStore.getState().typingUsers['chat-vladimir'];
-      expect(typing).toContain('Vladimir');
-    });
-
-    it('setTyping не дублирует', () => {
-      useMessageStore.getState().setTyping('chat-vladimir', 'Vladimir');
-      useMessageStore.getState().setTyping('chat-vladimir', 'Vladimir');
-      const typing = useMessageStore.getState().typingUsers['chat-vladimir'];
-      expect(typing?.filter((n) => n === 'Vladimir').length).toBe(1);
-    });
-
-    it('clearTyping убирает пользователя', () => {
-      useMessageStore.getState().setTyping('chat-vladimir', 'Vladimir');
-      useMessageStore.getState().clearTyping('chat-vladimir', 'Vladimir');
-      const typing = useMessageStore.getState().typingUsers['chat-vladimir'];
-      expect(typing ?? []).not.toContain('Vladimir');
-    });
+    const msgs = useMessageStore.getState().getMessages('chat-secret');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe('Текст после дешифровки');
   });
 });

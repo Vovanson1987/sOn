@@ -94,6 +94,9 @@ async function initDB() {
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS avatar_url TEXT;
       ALTER TABLE chats ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS self_destruct_at TIMESTAMPTZ;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS e2ee_nonce TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS e2ee_header JSONB;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS e2ee_algorithm VARCHAR(64);
     EXCEPTION WHEN OTHERS THEN NULL;
     END $$;
 

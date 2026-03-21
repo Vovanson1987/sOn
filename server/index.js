@@ -222,6 +222,51 @@ async function chatMemberCheck(req, res, next) {
   next();
 }
 
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSecretPayload(content, e2ee) {
+  let payload = null;
+
+  if (isPlainObject(e2ee)) {
+    payload = {
+      ciphertext: content,
+      nonce: e2ee.nonce,
+      algorithm: e2ee.algorithm,
+      header: e2ee.header,
+    };
+  } else if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content);
+      if (isPlainObject(parsed)) payload = parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isPlainObject(payload)) return null;
+  if (typeof payload.ciphertext !== 'string' || payload.ciphertext.length === 0) return null;
+  if (payload.ciphertext.length > 30000) return null;
+  if (typeof payload.nonce !== 'string' || payload.nonce.length === 0) return null;
+  if (payload.algorithm !== 'XSalsa20-Poly1305') return null;
+  if (!isPlainObject(payload.header)) return null;
+  if (typeof payload.header.dh_public_key !== 'string' || payload.header.dh_public_key.length === 0) return null;
+  if (typeof payload.header.previous_count !== 'number' || payload.header.previous_count < 0) return null;
+  if (typeof payload.header.message_number !== 'number' || payload.header.message_number < 0) return null;
+
+  return {
+    ciphertext: payload.ciphertext,
+    nonce: payload.nonce,
+    algorithm: payload.algorithm,
+    header: {
+      dh_public_key: payload.header.dh_public_key,
+      previous_count: payload.header.previous_count,
+      message_number: payload.header.message_number,
+    },
+  };
+}
+
 // ==================== CHATS ====================
 
 /** GET /api/chats — список чатов пользователя */
@@ -230,7 +275,11 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
     SELECT c.*, cm.unread_count,
       (SELECT json_agg(json_build_object('id', u.id, 'display_name', u.display_name, 'avatar_url', u.avatar_url, 'is_online', u.is_online))
        FROM chat_members cm2 JOIN users u ON u.id = cm2.user_id WHERE cm2.chat_id = c.id) as members,
-      (SELECT json_build_object('content', m.content, 'created_at', m.created_at, 'sender_id', m.sender_id)
+      (SELECT json_build_object(
+        'content', CASE WHEN c.type = 'secret' THEN '🔒 Зашифрованное сообщение' ELSE m.content END,
+        'created_at', m.created_at,
+        'sender_id', m.sender_id
+      )
        FROM messages m WHERE m.chat_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id
@@ -318,20 +367,49 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 
 /** POST /api/chats/:chatId/messages */
 app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
-  const { content, type = 'text', reply_to, self_destruct_seconds } = req.body;
+  const { content, type = 'text', reply_to, self_destruct_seconds, e2ee } = req.body;
   const chatId = req.params.chatId;
 
-  // SEC: Валидация содержимого сообщения
-  if (!content || typeof content !== 'string') {
-    return res.status(400).json({ error: 'Сообщение не может быть пустым' });
-  }
-  if (content.length > 10000) {
-    return res.status(400).json({ error: 'Сообщение не может быть длиннее 10000 символов' });
-  }
   const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'system'];
   if (!allowedTypes.includes(type)) {
     return res.status(400).json({ error: 'Недопустимый тип сообщения' });
   }
+
+  const chatResult = await pool.query('SELECT type FROM chats WHERE id = $1', [chatId]);
+  if (chatResult.rows.length === 0) {
+    return res.status(404).json({ error: 'Чат не найден' });
+  }
+  const chatType = chatResult.rows[0].type;
+
+  let dbContent = content;
+  let e2eeNonce = null;
+  let e2eeHeader = null;
+  let e2eeAlgorithm = null;
+
+  if (chatType === 'secret') {
+    if (type !== 'text') {
+      return res.status(400).json({ error: 'Секретный чат поддерживает только текстовые сообщения' });
+    }
+
+    const payload = normalizeSecretPayload(content, e2ee);
+    if (!payload) {
+      return res.status(400).json({ error: 'Для секретного чата требуется валидный E2EE payload' });
+    }
+
+    dbContent = payload.ciphertext;
+    e2eeNonce = payload.nonce;
+    e2eeHeader = payload.header;
+    e2eeAlgorithm = payload.algorithm;
+  } else {
+    // SEC: Валидация содержимого сообщения
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+    }
+    if (content.length > 10000) {
+      return res.status(400).json({ error: 'Сообщение не может быть длиннее 10000 символов' });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -342,8 +420,8 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
       : null;
 
     const result = await client.query(
-      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to, self_destruct_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [chatId, req.user.id, content, type, reply_to || null, selfDestructAt]
+      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to, self_destruct_at, e2ee_nonce, e2ee_header, e2ee_algorithm) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [chatId, req.user.id, dbContent, type, reply_to || null, selfDestructAt, e2eeNonce, e2eeHeader, e2eeAlgorithm]
     );
     const msg = result.rows[0];
     msg.sender_name = req.user.display_name;
@@ -448,18 +526,47 @@ setInterval(() => {
   }
 }, 300000);
 
-wss.on('connection', (ws) => {
-  // Аутентификация только через первое сообщение (безопасный способ)
-  // Токен в URL удалён — попадает в логи и историю
+/** Получить значение cookie по имени */
+function getCookieValue(cookieHeader, name) {
+  if (!cookieHeader || !name) return null;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [rawKey, ...rawValueParts] = part.trim().split('=');
+    if (rawKey === name) {
+      return decodeURIComponent(rawValueParts.join('='));
+    }
+  }
+  return null;
+}
+
+wss.on('connection', (ws, req) => {
+  // Аутентификация через cookie на handshake (основной путь)
+  // и через первое auth-сообщение (fallback).
   let user = null;
   let authenticated = false;
+  let authTimeout = null;
 
-  // Таймаут аутентификации: 10 секунд на отправку auth-сообщения
-  const authTimeout = setTimeout(() => {
-    if (!authenticated) {
-      ws.close(4001, 'Таймаут аутентификации');
+  // Попробовать аутентифицировать по httpOnly cookie сразу при подключении.
+  const cookieToken = getCookieValue(req?.headers?.cookie, 'son-token');
+  if (cookieToken) {
+    try {
+      user = jwt.verify(cookieToken, JWT_SECRET);
+      authenticated = true;
+      registerConnection(ws, user);
+      ws.send(JSON.stringify({ type: 'auth_success', user_id: user.id }));
+    } catch {
+      // Если cookie-токен невалиден, ждём auth-сообщение от клиента.
     }
-  }, 10000);
+  }
+
+  if (!authenticated) {
+    // Таймаут аутентификации: 10 секунд на отправку auth-сообщения
+    authTimeout = setTimeout(() => {
+      if (!authenticated) {
+        ws.close(4001, 'Таймаут аутентификации');
+      }
+    }, 10000);
+  }
 
   // SEC: Ограничение размера сообщения (64 KB)
   ws.on('message', (data) => {
@@ -530,7 +637,7 @@ function handleWsMessage(user, ws, msg) {
       broadcastToChat(msg.chat_id, { type: 'typing', user_id: user.id, display_name: user.display_name }, user.id);
       break;
     case 'stop_typing':
-      broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id }, user.id);
+      broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id, display_name: user.display_name }, user.id);
       break;
     case 'read':
       broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);

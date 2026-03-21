@@ -2,18 +2,24 @@
 
 import { API_URL, WS_URL } from './config';
 
-/** Получить JWT токен из localStorage */
+/** HI-18: JWT хранится в памяти, НЕ в localStorage (защита от XSS) */
+let memoryToken: string | null = null;
+
+/** Получить JWT токен (из памяти — только для WebSocket auth) */
 export function getToken(): string | null {
-  return localStorage.getItem('son-token');
+  return memoryToken;
 }
 
-/** Сохранить JWT токен */
+/** Сохранить JWT токен в памяти */
 export function setToken(token: string): void {
-  localStorage.setItem('son-token', token);
+  memoryToken = token;
+  // Миграция: убрать из localStorage если остался
+  localStorage.removeItem('son-token');
 }
 
-/** Удалить токен (выход) */
+/** Удалить токен из памяти */
 export function removeToken(): void {
+  memoryToken = null;
   localStorage.removeItem('son-token');
 }
 
@@ -34,7 +40,6 @@ function handleUnauthorized(): never {
 
 /** HTTP запрос с авторизацией и таймаутом */
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -46,7 +51,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       credentials: 'include', // HI-18: Send httpOnly cookies
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // HI-18: HTTP авторизация через httpOnly cookie (credentials: 'include').
+        // Authorization header используется только как fallback для обратной совместимости.
+        ...(memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {}),
         ...options.headers,
       },
     });
@@ -120,13 +127,30 @@ export async function getMessages(chatId: string) {
   return request<{ messages: unknown[] }>(`/api/chats/${chatId}/messages`);
 }
 
-export async function sendMessage(chatId: string, content: string, type = 'text', selfDestructSeconds?: number) {
+export interface SecretPayloadForSend {
+  nonce: string;
+  algorithm: 'XSalsa20-Poly1305';
+  header: {
+    dh_public_key: string;
+    previous_count: number;
+    message_number: number;
+  };
+}
+
+export async function sendMessage(
+  chatId: string,
+  content: string,
+  type = 'text',
+  selfDestructSeconds?: number,
+  secretPayload?: SecretPayloadForSend,
+) {
   return request<unknown>(`/api/chats/${chatId}/messages`, {
     method: 'POST',
     body: JSON.stringify({
       content,
       type,
       ...(selfDestructSeconds ? { self_destruct_seconds: selfDestructSeconds } : {}),
+      ...(secretPayload ? { e2ee: secretPayload } : {}),
     }),
   });
 }
@@ -194,17 +218,21 @@ let wsReconnectAttempt = 0;
 /** Подключиться к WebSocket */
 export function connectWS(): void {
   const token = getToken();
-  if (!token || ws?.readyState === WebSocket.OPEN) return;
+  if (ws?.readyState === WebSocket.OPEN) return;
 
   intentionalClose = false;
 
-  // Подключение без токена в URL — аутентификация через первое сообщение
+  // Подключение без токена в URL.
+  // При наличии memory-token отправляем auth-сообщение.
+  // Иначе сервер попробует аутентифицировать по httpOnly cookie.
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     wsReconnectAttempt = 0; // Сброс backoff при успешном подключении
-    // Отправить токен в первом сообщении (безопасный способ)
-    ws?.send(JSON.stringify({ type: 'auth', token }));
+    if (token) {
+      // Отправить токен в первом сообщении (безопасный способ)
+      ws?.send(JSON.stringify({ type: 'auth', token }));
+    }
   };
 
   ws.onmessage = (event) => {
@@ -235,10 +263,9 @@ export function connectWS(): void {
     const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempt), 60000);
     wsReconnectAttempt++;
     if (import.meta.env.DEV) console.log(`WebSocket отключён, переподключение через ${delay / 1000}с...`);
-    // Переподключение только если токен ещё есть (пользователь не вышел)
-    if (getToken()) {
-      setTimeout(connectWS, delay);
-    }
+    // Переподключение пока не было явного disconnect().
+    // Это поддерживает сценарий cookie-auth без memory-token.
+    setTimeout(connectWS, delay);
   };
 }
 

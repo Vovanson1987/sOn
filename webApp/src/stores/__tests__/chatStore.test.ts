@@ -81,6 +81,7 @@ describe('chatStore', () => {
     expect(chats[0].id).toBe('chat-1');
     expect(chats[0].unreadCount).toBe(3);
     expect(chats[0].lastMessage?.content).toBe('Привет');
+    expect(chats[2].lastMessage?.content).toBe('🔒 Зашифрованное сообщение');
   });
 
   it('fetchChats маппит участников', async () => {

@@ -1,13 +1,13 @@
-name: Deploy sOn Messenger
+name: Deploy Staging
 
 on:
   push:
-    branches: [master]
+    branches: [dev]
   workflow_dispatch:
 
 jobs:
-  deploy-production:
-    name: Деплой на production + smoke
+  deploy-staging:
+    name: Деплой на staging + smoke
     runs-on: ubuntu-latest
 
     steps:
@@ -17,23 +17,25 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Деплой через SSH
+      - name: Деплой staging через SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             cd /opt/son-messenger
-            git pull origin master
+            git fetch origin dev
+            git checkout dev
+            git pull origin dev
             docker compose -f docker-compose.prod.yml up -d --build
 
-      - name: Smoke-check production
+      - name: Smoke-check staging
         env:
-          SMOKE_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          SMOKE_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
         run: |
           if [ -z "$SMOKE_BASE_URL" ]; then
-            echo "Секрет PRODUCTION_BASE_URL не задан"
+            echo "Секрет STAGING_BASE_URL не задан"
             exit 1
           fi
           node scripts/smoke-web-server.mjs --base-url "$SMOKE_BASE_URL"

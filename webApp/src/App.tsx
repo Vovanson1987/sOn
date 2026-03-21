@@ -113,7 +113,7 @@ export default function App() {
   useEffect(() => { restore(); }, [restore]);
 
   const fetchChats = useChatStore((s) => s.fetchChats);
-  const addMessage = useMessageStore((s) => s.addMessage);
+  const addServerMessage = useMessageStore((s) => s.addServerMessage);
 
   // HI-11: Восстановить E2EE сессии при авторизации
   useEffect(() => {
@@ -136,22 +136,11 @@ export default function App() {
 
         // Новое сообщение (от других пользователей)
         if (msg.type === 'new_message') {
-          const m = msg.message as Record<string, string>;
+          const m = msg.message as Record<string, unknown>;
           // Пропустить свои сообщения — они уже добавлены через optimistic update
           const myId = useAuthStore.getState().user?.id;
           if (m.sender_id === myId) return;
-          addMessage(m.chat_id, {
-            id: m.id,
-            chatId: m.chat_id,
-            senderId: m.sender_id,
-            senderName: m.sender_name || '',
-            content: m.content,
-            type: (m.type as import('@/types/message').MessageType) || 'text',
-            status: 'delivered',
-            reactions: {},
-            isDestroyed: false,
-            createdAt: m.created_at,
-          });
+          void addServerMessage(m);
         }
 
         // Удаление чатов от других пользователей
@@ -206,7 +195,7 @@ export default function App() {
 
       return () => { disconnectWS(); unsub(); };
     }
-  }, [isAuthenticated, fetchChats, addMessage]);
+  }, [isAuthenticated, fetchChats, addServerMessage]);
 
   // Горячие клавиши
   useEffect(() => {

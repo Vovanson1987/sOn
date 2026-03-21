@@ -25,10 +25,14 @@ function mapApiChat(raw: Record<string, unknown>): Chat {
   const lastMsg = raw.last_message != null && typeof raw.last_message === 'object'
     ? (raw.last_message as Record<string, unknown>)
     : null;
+  const chatType = (raw.type as Chat['type']) || 'direct';
+  const preview = chatType === 'secret'
+    ? '🔒 Зашифрованное сообщение'
+    : ((lastMsg?.content as string) || '');
 
   return {
     id: (raw.id as string) ?? '',
-    type: (raw.type as Chat['type']) || 'direct',
+    type: chatType,
     name: raw.name as string | undefined,
     members,
     unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
@@ -40,7 +44,7 @@ function mapApiChat(raw: Record<string, unknown>): Chat {
       chatId: (raw.id as string) ?? '',
       senderId: (lastMsg.sender_id as string) || '',
       senderName: '',
-      content: (lastMsg.content as string) || '',
+      content: preview,
       type: 'text',
       status: 'read',
       reactions: {},
@@ -114,9 +118,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   fetchChats: async () => {
-    const token = api.getToken();
-    if (!token) return;
-
     set({ isLoading: true });
     try {
       const data = await api.getChats();
