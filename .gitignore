@@ -14,3 +14,7 @@ dist/
 !.env.example
 server/.env
 docs/ngrok_recovery_codes.txt
+
+# Временные промпт-файлы
+PROMPT-REMAINING-AUDIT.md
+PROMPT-SETTINGS.md
