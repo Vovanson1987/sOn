@@ -72,6 +72,7 @@ vi.mock('@/api/client', () => ({
   sendMessage: vi.fn(),
   deleteMessage: vi.fn(),
   sendWS: vi.fn(),
+  markChatAsRead: vi.fn(() => Promise.resolve({})),
 }));
 
 const directChat: Chat = {

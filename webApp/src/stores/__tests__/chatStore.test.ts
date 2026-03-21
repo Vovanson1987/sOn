@@ -32,6 +32,8 @@ vi.mock('@/api/client', () => ({
   createChat: vi.fn(() => Promise.resolve({
     chat: { id: 'chat-new', type: 'direct', name: null, members: [], created_at: '2026-01-04T00:00:00Z' },
   })),
+  deleteChat: vi.fn(() => Promise.resolve({})),
+  markChatAsRead: vi.fn(() => Promise.resolve({})),
 }));
 
 describe('chatStore', () => {
