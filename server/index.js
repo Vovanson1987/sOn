@@ -673,6 +673,40 @@ app.delete('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, re
   res.json({ ok: true });
 });
 
+/** PATCH /api/chats/:chatId — обновить группу (имя, описание, аватар) */
+app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { name, description, avatar_url } = req.body;
+    // Только для групп
+    const chatResult = await pool.query('SELECT type FROM chats WHERE id = $1', [req.params.chatId]);
+    if (chatResult.rows[0]?.type !== 'group') {
+      return res.status(400).json({ error: 'Редактировать можно только группы' });
+    }
+    // Только admin
+    const roleResult = await pool.query('SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2', [req.params.chatId, req.user.id]);
+    if (roleResult.rows[0]?.role !== 'admin') {
+      return res.status(403).json({ error: 'Только администратор может редактировать группу' });
+    }
+    const updates = [];
+    const values = [];
+    let idx = 1;
+    if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
+    if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
+    if (avatar_url !== undefined) { updates.push(`avatar_url = $${idx++}`); values.push(avatar_url); }
+    if (updates.length === 0) return res.status(400).json({ error: 'Нет данных' });
+    values.push(req.params.chatId);
+    const result = await pool.query(
+      `UPDATE chats SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values
+    );
+    broadcastToChat(req.params.chatId, { type: 'chat_updated', chat: result.rows[0] });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка обновления группы' });
+  }
+});
+
 /** DELETE /api/chats/:chatId/messages/:id — удалить своё сообщение */
 app.delete('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, async (req, res) => {
   const result = await pool.query(

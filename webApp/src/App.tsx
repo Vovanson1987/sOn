@@ -188,6 +188,21 @@ export default function App() {
           }
         }
 
+        // Reaction broadcasts from other users
+        if (msg.type === 'reaction_update') {
+          const { chat_id, message_id, user_id, emoji } = msg as Record<string, unknown>;
+          // Don't process own reactions (already handled optimistically)
+          if (user_id !== useAuthStore.getState().user?.id) {
+            useMessageStore.getState().addReaction(
+              chat_id as string,
+              message_id as string,
+              emoji as string,
+              user_id as string,
+              true, // skipApi — this is already persisted on the server
+            );
+          }
+        }
+
         // WebRTC signaling события
         if (msg.type === 'call_offer') {
           // Incoming call - show ringing UI

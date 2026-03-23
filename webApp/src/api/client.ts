@@ -121,6 +121,11 @@ export async function deleteChat(chatId: string) {
   });
 }
 
+/** Обновить группу (имя, описание, аватар) */
+export function updateChat(chatId: string, data: { name?: string; description?: string; avatar_url?: string }) {
+  return request<Record<string, unknown>>(`/api/chats/${chatId}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
 // ==================== MESSAGES ====================
 
 export async function getMessages(chatId: string) {

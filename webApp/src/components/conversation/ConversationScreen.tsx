@@ -19,6 +19,7 @@ import { useMessageStore } from '@stores/messageStore';
 import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAuthStore } from '@stores/authStore';
 import { useChatStore } from '@stores/chatStore';
+import { uploadImage, uploadFile } from '@/utils/fileUpload';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
 
@@ -288,6 +289,147 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
     [chat.id, sendMessage, replyTo],
   );
 
+  /** Обработка вложений: фото/видео, документ, камера */
+  const handleAttachment = useCallback(
+    async (type: 'camera' | 'photo' | 'document' | 'location') => {
+      if (type === 'photo') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*,video/*';
+        input.onchange = async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          try {
+            const result = await uploadImage(file);
+            const store = useMessageStore.getState();
+            const auth = useAuthStore.getState();
+            const userId = auth.user?.id || 'user-me';
+            const userName = auth.user?.display_name || 'Я';
+            const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            const msg: Message = {
+              id: tempId,
+              chatId: chat.id,
+              senderId: userId,
+              senderName: userName,
+              content: result.url,
+              type: 'image',
+              status: 'sent',
+              reactions: {},
+              isDestroyed: false,
+              createdAt: new Date().toISOString(),
+              attachment: {
+                id: result.objectName,
+                type: file.type.startsWith('video/') ? 'video' : 'image',
+                fileName: file.name,
+                fileSize: result.size,
+                mimeType: result.mimeType,
+                url: result.url,
+              },
+            };
+            store.addMessage(chat.id, msg);
+          } catch (err) {
+            console.error('Ошибка загрузки изображения:', err);
+          }
+        };
+        input.click();
+      } else if (type === 'document') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '*/*';
+        input.onchange = async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          try {
+            const result = await uploadFile(file);
+            const store = useMessageStore.getState();
+            const auth = useAuthStore.getState();
+            const userId = auth.user?.id || 'user-me';
+            const userName = auth.user?.display_name || 'Я';
+            const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            const msg: Message = {
+              id: tempId,
+              chatId: chat.id,
+              senderId: userId,
+              senderName: userName,
+              content: file.name,
+              type: 'file',
+              status: 'sent',
+              reactions: {},
+              isDestroyed: false,
+              createdAt: new Date().toISOString(),
+              attachment: {
+                id: result.objectName,
+                type: 'file',
+                fileName: file.name,
+                fileSize: result.size,
+                mimeType: result.mimeType,
+                url: result.url,
+              },
+            };
+            store.addMessage(chat.id, msg);
+          } catch (err) {
+            console.error('Ошибка загрузки файла:', err);
+          }
+        };
+        input.click();
+      } else if (type === 'camera') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const video = document.createElement('video');
+          video.srcObject = stream;
+          video.autoplay = true;
+          await video.play();
+          // Wait a frame for camera to initialize
+          await new Promise((r) => setTimeout(r, 500));
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          }
+          stream.getTracks().forEach((t) => t.stop());
+          const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, 'image/jpeg', 0.85),
+          );
+          if (!blob) return;
+          const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          const result = await uploadImage(file);
+          const store = useMessageStore.getState();
+          const auth = useAuthStore.getState();
+          const userId = auth.user?.id || 'user-me';
+          const userName = auth.user?.display_name || 'Я';
+          const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const msg: Message = {
+            id: tempId,
+            chatId: chat.id,
+            senderId: userId,
+            senderName: userName,
+            content: result.url,
+            type: 'image',
+            status: 'sent',
+            reactions: {},
+            isDestroyed: false,
+            createdAt: new Date().toISOString(),
+            attachment: {
+              id: result.objectName,
+              type: 'image',
+              fileName: file.name,
+              fileSize: result.size,
+              mimeType: result.mimeType,
+              url: result.url,
+            },
+          };
+          store.addMessage(chat.id, msg);
+        } catch (err) {
+          console.error('Ошибка камеры:', err);
+        }
+      }
+      // 'location' — не реализовано
+    },
+    [chat.id],
+  );
+
   const handleReact = useCallback(
     (emoji: TapbackEmoji) => {
       if (tapbackMessage) {
@@ -511,6 +653,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
       {/* Панель ввода */}
       <InputBar
         onSend={handleSend}
+        onAttachment={handleAttachment}
         placeholder={chat.type === 'secret' ? 'Секретное сообщение...' : 'iMessage'}
         chatId={chat.id}
       />

@@ -33,8 +33,8 @@ interface MessageStore {
   deleteMessage: (chatId: string, messageId: string) => Promise<void>;
   /** Удалить сообщение локально (для WS event) */
   removeMessageLocal: (chatId: string, messageId: string) => void;
-  /** Добавить реакцию */
-  addReaction: (chatId: string, messageId: string, emoji: string, userId: string) => void;
+  /** Добавить реакцию (optimistic + API call) */
+  addReaction: (chatId: string, messageId: string, emoji: string, userId: string, skipApi?: boolean) => void;
   /** Установить "печатает..." */
   setTyping: (chatId: string, userName: string) => void;
   /** Убрать "печатает..." */
@@ -132,6 +132,9 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       for (const raw of data.messages as Array<Record<string, unknown>>) {
         msgs.push(await mapServerMessage(raw, myUserId));
       }
+      // TODO: Messages loaded from API may not include reactions yet.
+      // Once the backend returns reactions in the message query, map them
+      // into each Message.reactions (Record<emoji, userId[]>) here.
       // HI-38: Always mark chat as loaded after successful fetch (even if empty)
       set((s) => ({
         messages: { ...s.messages, [chatId]: msgs },
@@ -273,7 +276,8 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
     }));
   },
 
-  addReaction: (chatId, messageId, emoji, userId) => {
+  addReaction: (chatId, messageId, emoji, userId, skipApi) => {
+    // Optimistic local update
     set((s) => ({
       messages: {
         ...s.messages,
@@ -288,6 +292,14 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         }),
       },
     }));
+
+    // Call API (skip for incoming WS broadcasts — they are already persisted)
+    if (!skipApi) {
+      api.toggleReaction(chatId, messageId, emoji).catch((err) => {
+        console.error('Reaction error:', err);
+        // Could add rollback here but keeping it simple
+      });
+    }
   },
 
   setTyping: (chatId, userName) => {

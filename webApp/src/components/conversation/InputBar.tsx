@@ -2,6 +2,10 @@ import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 're
 import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
 import { sendWS } from '@/api/client';
+import { createVoiceRecorder, uploadVoice } from '@/utils/fileUpload';
+import { useMessageStore } from '@stores/messageStore';
+import { useAuthStore } from '@stores/authStore';
+import type { Message } from '@/types/message';
 
 interface InputBarProps {
   onSend: (text: string) => void;
@@ -14,9 +18,11 @@ interface InputBarProps {
 export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatId }: InputBarProps) {
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isTypingRef = useRef(false);
+  const recorderRef = useRef<ReturnType<typeof createVoiceRecorder> | null>(null);
 
   // ME-16: Очистить таймер typing при размонтировании
   useEffect(() => {
@@ -60,6 +66,59 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatI
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
   }, []);
+
+  const handleVoiceToggle = useCallback(async () => {
+    if (!isRecording) {
+      // Start recording
+      try {
+        const recorder = createVoiceRecorder();
+        recorderRef.current = recorder;
+        await recorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error('Ошибка доступа к микрофону:', err);
+      }
+    } else {
+      // Stop recording, upload, send
+      setIsRecording(false);
+      if (!recorderRef.current) return;
+      try {
+        const blob = await recorderRef.current.stop();
+        recorderRef.current = null;
+        if (blob.size === 0) return;
+        const result = await uploadVoice(blob);
+        const auth = useAuthStore.getState();
+        const store = useMessageStore.getState();
+        const userId = auth.user?.id || 'user-me';
+        const userName = auth.user?.display_name || 'Я';
+        const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const msg: Message = {
+          id: tempId,
+          chatId: chatId || '',
+          senderId: userId,
+          senderName: userName,
+          content: result.url,
+          type: 'voice',
+          status: 'sent',
+          reactions: {},
+          isDestroyed: false,
+          createdAt: new Date().toISOString(),
+          attachment: {
+            id: result.objectName,
+            type: 'voice',
+            fileName: `voice-${Date.now()}.webm`,
+            fileSize: result.size,
+            mimeType: result.mimeType,
+            url: result.url,
+          },
+        };
+        store.addMessage(chatId || '', msg);
+      } catch (err) {
+        console.error('Ошибка записи голосового:', err);
+        recorderRef.current = null;
+      }
+    }
+  }, [isRecording, chatId]);
 
   const hasText = text.trim().length > 0;
 
@@ -138,10 +197,11 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatI
         </button>
       ) : (
         <button
+          onClick={handleVoiceToggle}
           className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
-          aria-label="Голосовое сообщение"
+          aria-label={isRecording ? 'Остановить запись' : 'Голосовое сообщение'}
         >
-          <AudioLines size={22} color="#8E8E93" />
+          <AudioLines size={22} color={isRecording ? '#FF3B30' : '#8E8E93'} />
         </button>
       )}
 
