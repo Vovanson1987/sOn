@@ -290,3 +290,110 @@ export function disconnectWS(): void {
   ws?.close();
   ws = null;
 }
+
+// ==================== PROFILE ====================
+
+export function updateProfile(data: { display_name?: string; avatar_url?: string }) {
+  return request<{ id: string; email: string; display_name: string; avatar_url: string | null }>('/api/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadAvatar(file: File) {
+  const form = new FormData();
+  form.append('avatar', file);
+  const res = await fetch(`${API_URL}/api/users/me/avatar`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('Upload failed');
+  return res.json() as Promise<{ avatar_url: string }>;
+}
+
+export function changePassword(current_password: string, new_password: string) {
+  return request<{ ok: boolean }>('/api/users/me/password', {
+    method: 'PATCH',
+    body: JSON.stringify({ current_password, new_password }),
+  });
+}
+
+// ==================== SETTINGS ====================
+
+export function getSettings() {
+  return request<Record<string, unknown>>('/api/settings');
+}
+
+export function updateSettings(data: Record<string, unknown>) {
+  return request<Record<string, unknown>>('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// ==================== CONTACTS ====================
+
+export function getContacts() {
+  return request<{
+    contacts: Array<{
+      id: string;
+      nickname: string | null;
+      is_favorite: boolean;
+      user_id: string;
+      display_name: string;
+      email: string;
+      avatar_url: string | null;
+      is_online: boolean;
+    }>;
+  }>('/api/contacts');
+}
+
+export function addContact(contact_id: string, nickname?: string) {
+  return request<{ id: string; user_id: string; display_name: string }>('/api/contacts', {
+    method: 'POST',
+    body: JSON.stringify({ contact_id, nickname }),
+  });
+}
+
+export function deleteContact(id: string) {
+  return request<undefined>(`/api/contacts/${id}`, { method: 'DELETE' });
+}
+
+export function updateContact(id: string, data: { nickname?: string; is_favorite?: boolean }) {
+  return request<Record<string, unknown>>(`/api/contacts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// ==================== REACTIONS ====================
+
+export function toggleReaction(chatId: string, messageId: string, emoji: string) {
+  return request<{ action: string; reactions: Array<{ emoji: string; user_id: string }> }>(
+    `/api/chats/${chatId}/messages/${messageId}/reactions`,
+    { method: 'POST', body: JSON.stringify({ emoji }) },
+  );
+}
+
+// ==================== EDIT MESSAGE ====================
+
+export function editMessage(chatId: string, messageId: string, content: string) {
+  return request<Record<string, unknown>>(`/api/chats/${chatId}/messages/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  });
+}
+
+// ==================== GROUP MANAGEMENT ====================
+
+export function addGroupMember(chatId: string, user_id: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id }),
+  });
+}
+
+export function removeGroupMember(chatId: string, userId: string) {
+  return request<undefined>(`/api/chats/${chatId}/members/${userId}`, { method: 'DELETE' });
+}

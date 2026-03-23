@@ -147,6 +147,20 @@ services:
     networks:
       - son-internal
 
+  # ====== TURN сервер ======
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: son-coturn
+    restart: always
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+
 volumes:
   postgres_data:
   redis_data:

@@ -1,4 +1,12 @@
 import { create } from 'zustand';
+import {
+  startCall as webrtcStartCall,
+  acceptCall as webrtcAcceptCall,
+  endCall as webrtcEndCall,
+  toggleMic as webrtcToggleMic,
+  toggleCamera as webrtcToggleCamera,
+  onCallEvent,
+} from '@/utils/webrtc';
 
 export type CallStatus = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
 
@@ -13,15 +21,19 @@ export interface CallState {
   isCameraOn: boolean;
   isSpeakerOn: boolean;
   startedAt: number | null;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  targetUserId: string;
+  incomingOffer?: RTCSessionDescriptionInit;
 }
 
 interface CallStore {
   activeCall: CallState | null;
 
   /** Начать исходящий звонок */
-  startCall: (chatId: string, contactName: string, isVideo: boolean, contactAvatar?: string) => void;
-  /** Имитация входящего звонка */
-  incomingCall: (chatId: string, contactName: string, isVideo: boolean, contactAvatar?: string) => void;
+  startCall: (chatId: string, contactName: string, isVideo: boolean, targetUserId: string, contactAvatar?: string) => void;
+  /** Входящий звонок */
+  incomingCall: (chatId: string, contactName: string, isVideo: boolean, callerUserId: string, offer: RTCSessionDescriptionInit, contactAvatar?: string) => void;
   /** Принять звонок */
   acceptCall: () => void;
   /** Завершить звонок */
@@ -34,20 +46,10 @@ interface CallStore {
   toggleSpeaker: () => void;
 }
 
-// Таймеры для cleanup
-let startTimerId: ReturnType<typeof setTimeout> | null = null;
-let endTimerId: ReturnType<typeof setTimeout> | null = null;
-
-function clearCallTimers() {
-  if (startTimerId) { clearTimeout(startTimerId); startTimerId = null; }
-  if (endTimerId) { clearTimeout(endTimerId); endTimerId = null; }
-}
-
-export const useCallStore = create<CallStore>((set) => ({
+export const useCallStore = create<CallStore>((set, get) => ({
   activeCall: null,
 
-  startCall: (chatId, contactName, isVideo, contactAvatar) => {
-    clearCallTimers();
+  startCall: (chatId, contactName, isVideo, targetUserId, contactAvatar) => {
     set({
       activeCall: {
         chatId,
@@ -60,19 +62,23 @@ export const useCallStore = create<CallStore>((set) => ({
         isCameraOn: isVideo,
         isSpeakerOn: false,
         startedAt: null,
+        localStream: null,
+        remoteStream: null,
+        targetUserId,
       },
     });
-    // Имитация: через 2.5с переходит в active
-    startTimerId = setTimeout(() => {
-      startTimerId = null;
+
+    webrtcStartCall(chatId, targetUserId, isVideo).catch((err) => {
+      console.error('[callStore] webrtcStartCall failed:', err);
       set((s) => {
-        if (!s.activeCall || s.activeCall.status === 'ended') return s;
-        return { activeCall: { ...s.activeCall, status: 'active', startedAt: Date.now() } };
+        if (!s.activeCall) return s;
+        return { activeCall: { ...s.activeCall, status: 'ended' } };
       });
-    }, 2500);
+      setTimeout(() => set({ activeCall: null }), 500);
+    });
   },
 
-  incomingCall: (chatId, contactName, isVideo, contactAvatar) => {
+  incomingCall: (chatId, contactName, isVideo, callerUserId, offer, contactAvatar) => {
     set({
       activeCall: {
         chatId,
@@ -85,34 +91,133 @@ export const useCallStore = create<CallStore>((set) => ({
         isCameraOn: isVideo,
         isSpeakerOn: false,
         startedAt: null,
+        localStream: null,
+        remoteStream: null,
+        targetUserId: callerUserId,
+        incomingOffer: offer,
       },
     });
   },
 
   acceptCall: () => {
+    const call = get().activeCall;
+    if (!call || !call.incomingOffer) return;
+
     set((s) => {
       if (!s.activeCall) return s;
-      return { activeCall: { ...s.activeCall, status: 'active', startedAt: Date.now() } };
+      return { activeCall: { ...s.activeCall, status: 'connecting' } };
+    });
+
+    webrtcAcceptCall(call.chatId, call.targetUserId, call.incomingOffer, call.isVideo).catch((err) => {
+      console.error('[callStore] webrtcAcceptCall failed:', err);
+      set((s) => {
+        if (!s.activeCall) return s;
+        return { activeCall: { ...s.activeCall, status: 'ended' } };
+      });
+      setTimeout(() => set({ activeCall: null }), 500);
     });
   },
 
   endCall: () => {
-    clearCallTimers();
+    webrtcEndCall();
     set((s) => {
       if (!s.activeCall) return s;
-      return { activeCall: { ...s.activeCall, status: 'ended' } };
+      return {
+        activeCall: {
+          ...s.activeCall,
+          status: 'ended',
+          localStream: null,
+          remoteStream: null,
+        },
+      };
     });
-    // Убираем через 500мс
-    endTimerId = setTimeout(() => {
-      endTimerId = null;
-      set({ activeCall: null });
-    }, 500);
+    setTimeout(() => set({ activeCall: null }), 500);
   },
 
-  toggleMic: () =>
-    set((s) => s.activeCall ? { activeCall: { ...s.activeCall, isMicMuted: !s.activeCall.isMicMuted } } : s),
-  toggleCamera: () =>
-    set((s) => s.activeCall ? { activeCall: { ...s.activeCall, isCameraOn: !s.activeCall.isCameraOn } } : s),
+  toggleMic: () => {
+    const enabled = webrtcToggleMic();
+    set((s) => {
+      if (!s.activeCall) return s;
+      return { activeCall: { ...s.activeCall, isMicMuted: !enabled } };
+    });
+  },
+
+  toggleCamera: () => {
+    const enabled = webrtcToggleCamera();
+    set((s) => {
+      if (!s.activeCall) return s;
+      return { activeCall: { ...s.activeCall, isCameraOn: enabled } };
+    });
+  },
+
   toggleSpeaker: () =>
-    set((s) => s.activeCall ? { activeCall: { ...s.activeCall, isSpeakerOn: !s.activeCall.isSpeakerOn } } : s),
+    set((s) =>
+      s.activeCall ? { activeCall: { ...s.activeCall, isSpeakerOn: !s.activeCall.isSpeakerOn } } : s,
+    ),
 }));
+
+/** Subscribe to WebRTC events and update the store accordingly */
+function initCallEventListener() {
+  onCallEvent((event: string, data: unknown) => {
+    const payload = data as Record<string, unknown>;
+
+    switch (event) {
+      case 'call_started': {
+        const stream = payload.localStream as MediaStream | null;
+        useCallStore.setState((s) => {
+          if (!s.activeCall) return s;
+          return { activeCall: { ...s.activeCall, localStream: stream } };
+        });
+        break;
+      }
+
+      case 'call_accepted': {
+        const stream = payload.localStream as MediaStream | null;
+        useCallStore.setState((s) => {
+          if (!s.activeCall) return s;
+          return { activeCall: { ...s.activeCall, localStream: stream } };
+        });
+        break;
+      }
+
+      case 'call_connected': {
+        useCallStore.setState((s) => {
+          if (!s.activeCall) return s;
+          return {
+            activeCall: { ...s.activeCall, status: 'active' as CallStatus, startedAt: Date.now() },
+          };
+        });
+        break;
+      }
+
+      case 'remote_stream': {
+        const stream = payload.stream as MediaStream | null;
+        useCallStore.setState((s) => {
+          if (!s.activeCall) return s;
+          return { activeCall: { ...s.activeCall, remoteStream: stream } };
+        });
+        break;
+      }
+
+      case 'call_ended':
+      case 'call_rejected': {
+        useCallStore.setState((s) => {
+          if (!s.activeCall) return s;
+          return {
+            activeCall: {
+              ...s.activeCall,
+              status: 'ended' as CallStatus,
+              localStream: null,
+              remoteStream: null,
+            },
+          };
+        });
+        setTimeout(() => useCallStore.setState({ activeCall: null }), 500);
+        break;
+      }
+    }
+  });
+}
+
+// Initialize event listener as a module-level side effect
+initCallEventListener();

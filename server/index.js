@@ -70,6 +70,7 @@ app.use(cors({
     // Разрешить ngrok и cloudflare tunnel домены
     if (origin.endsWith('.ngrok-free.dev') || origin.endsWith('.ngrok.io')) return callback(null, true);
     if (origin.endsWith('.trycloudflare.com')) return callback(null, true);
+    if (origin.endsWith('.sonchat.uk')) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     callback(new Error('Заблокировано CORS'));
   },
@@ -194,6 +195,196 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/users/me', authMiddleware, async (req, res) => {
   const result = await pool.query('SELECT id, email, display_name, avatar_url, is_online FROM users WHERE id = $1', [req.user.id]);
   res.json(result.rows[0]);
+});
+
+/** PATCH /api/users/me — обновить профиль */
+app.patch('/api/users/me', authMiddleware, async (req, res) => {
+  try {
+    const { display_name, avatar_url } = req.body;
+    const updates = [];
+    const values = [];
+    let idx = 1;
+    if (display_name !== undefined) {
+      if (typeof display_name !== 'string' || display_name.length < 2 || display_name.length > 50) {
+        return res.status(400).json({ error: 'Имя должно быть от 2 до 50 символов' });
+      }
+      updates.push(`display_name = $${idx++}`);
+      values.push(display_name);
+    }
+    if (avatar_url !== undefined) {
+      updates.push(`avatar_url = $${idx++}`);
+      values.push(avatar_url);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Нет данных для обновления' });
+    values.push(req.user.id);
+    const result = await pool.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, email, display_name, avatar_url, is_online`,
+      values
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка обновления профиля' });
+  }
+});
+
+/** POST /api/users/me/avatar — загрузить аватар */
+app.post('/api/users/me/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const { uploadFile } = require('./storage');
+    const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, 'avatars');
+    await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [result.url, req.user.id]);
+    res.json({ avatar_url: result.url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка загрузки аватара' });
+  }
+});
+
+/** PATCH /api/users/me/password — смена пароля */
+app.patch('/api/users/me/password', authMiddleware, async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) return res.status(400).json({ error: 'Все поля обязательны' });
+    if (new_password.length < 8) return res.status(400).json({ error: 'Пароль минимум 8 символов' });
+    const user = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+    const valid = await bcrypt.compare(current_password, user.rows[0].password_hash);
+    if (!valid) return res.status(401).json({ error: 'Неверный текущий пароль' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка смены пароля' });
+  }
+});
+
+// ==================== Настройки пользователя ====================
+
+/** GET /api/settings */
+app.get('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    let result = await pool.query('SELECT * FROM user_settings WHERE user_id = $1', [req.user.id]);
+    if (result.rows.length === 0) {
+      await pool.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [req.user.id]);
+      result = await pool.query('SELECT * FROM user_settings WHERE user_id = $1', [req.user.id]);
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка загрузки настроек' });
+  }
+});
+
+/** PATCH /api/settings */
+app.patch('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    const allowed = ['theme', 'language', 'notifications_enabled', 'notification_sound', 'notification_preview', 'show_online_status', 'read_receipts', 'app_lock'];
+    const updates = [];
+    const values = [];
+    let idx = 1;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        updates.push(`${key} = $${idx++}`);
+        values.push(req.body[key]);
+      }
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Нет данных' });
+    updates.push(`updated_at = NOW()`);
+    values.push(req.user.id);
+    // Upsert: создать запись если не существует
+    await pool.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [req.user.id]);
+    const result = await pool.query(
+      `UPDATE user_settings SET ${updates.join(', ')} WHERE user_id = $${idx} RETURNING *`,
+      values
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка сохранения настроек' });
+  }
+});
+
+// ==================== Контакты ====================
+
+/** GET /api/contacts */
+app.get('/api/contacts', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.id, c.nickname, c.is_favorite, c.created_at,
+        u.id as user_id, u.display_name, u.email, u.avatar_url, u.is_online, u.last_seen_at
+      FROM contacts c
+      JOIN users u ON u.id = c.contact_id
+      WHERE c.owner_id = $1
+      ORDER BY c.is_favorite DESC, u.display_name
+    `, [req.user.id]);
+    res.json({ contacts: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка загрузки контактов' });
+  }
+});
+
+/** POST /api/contacts — добавить контакт */
+app.post('/api/contacts', authMiddleware, async (req, res) => {
+  try {
+    const { contact_id, nickname } = req.body;
+    if (!contact_id) return res.status(400).json({ error: 'contact_id обязателен' });
+    if (contact_id === req.user.id) return res.status(400).json({ error: 'Нельзя добавить себя' });
+    // Проверить что пользователь существует
+    const user = await pool.query('SELECT id FROM users WHERE id = $1', [contact_id]);
+    if (user.rows.length === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    const result = await pool.query(
+      'INSERT INTO contacts (owner_id, contact_id, nickname) VALUES ($1, $2, $3) ON CONFLICT (owner_id, contact_id) DO UPDATE SET nickname = COALESCE($3, contacts.nickname) RETURNING *',
+      [req.user.id, contact_id, nickname || null]
+    );
+    // Вернуть контакт с данными пользователя
+    const contact = await pool.query(`
+      SELECT c.id, c.nickname, c.is_favorite, c.created_at,
+        u.id as user_id, u.display_name, u.email, u.avatar_url, u.is_online
+      FROM contacts c JOIN users u ON u.id = c.contact_id WHERE c.id = $1
+    `, [result.rows[0].id]);
+    res.status(201).json(contact.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка добавления контакта' });
+  }
+});
+
+/** DELETE /api/contacts/:id */
+app.delete('/api/contacts/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM contacts WHERE id = $1 AND owner_id = $2 RETURNING id', [req.params.id, req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Контакт не найден' });
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка удаления контакта' });
+  }
+});
+
+/** PATCH /api/contacts/:id — обновить (nickname, is_favorite) */
+app.patch('/api/contacts/:id', authMiddleware, async (req, res) => {
+  try {
+    const { nickname, is_favorite } = req.body;
+    const updates = [];
+    const values = [];
+    let idx = 1;
+    if (nickname !== undefined) { updates.push(`nickname = $${idx++}`); values.push(nickname); }
+    if (is_favorite !== undefined) { updates.push(`is_favorite = $${idx++}`); values.push(is_favorite); }
+    if (updates.length === 0) return res.status(400).json({ error: 'Нет данных' });
+    values.push(req.params.id, req.user.id);
+    const result = await pool.query(
+      `UPDATE contacts SET ${updates.join(', ')} WHERE id = $${idx++} AND owner_id = $${idx} RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Контакт не найден' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка обновления контакта' });
+  }
 });
 
 /** GET /api/users/search?q= */
@@ -493,6 +684,122 @@ app.delete('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, a
   }
   broadcastToChat(req.params.chatId, { type: 'message_deleted', chat_id: req.params.chatId, message_id: req.params.id });
   res.status(204).send();
+});
+
+/** PATCH /api/chats/:chatId/messages/:id — редактировать своё сообщение */
+app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Содержимое обязательно' });
+    }
+    const result = await pool.query(
+      'UPDATE messages SET content = $1, edited_at = NOW() WHERE id = $2 AND sender_id = $3 AND chat_id = $4 RETURNING *',
+      [content.trim(), req.params.id, req.user.id, req.params.chatId]
+    );
+    if (result.rows.length === 0) return res.status(403).json({ error: 'Нельзя редактировать' });
+    const msg = result.rows[0];
+    broadcastToChat(req.params.chatId, { type: 'message_edited', chat_id: req.params.chatId, message: msg });
+    res.json(msg);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка редактирования' });
+  }
+});
+
+// ==================== РЕАКЦИИ ====================
+
+/** POST /api/chats/:chatId/messages/:id/reactions — добавить/убрать реакцию (toggle) */
+app.post('/api/chats/:chatId/messages/:id/reactions', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!emoji) return res.status(400).json({ error: 'emoji обязателен' });
+    // Toggle: если реакция уже есть — удалить, иначе — добавить
+    const existing = await pool.query(
+      'SELECT id FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
+      [req.params.id, req.user.id, emoji]
+    );
+    let action;
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM reactions WHERE id = $1', [existing.rows[0].id]);
+      action = 'removed';
+    } else {
+      await pool.query(
+        'INSERT INTO reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)',
+        [req.params.id, req.user.id, emoji]
+      );
+      action = 'added';
+    }
+    // Получить все реакции на это сообщение
+    const reactions = await pool.query(
+      'SELECT emoji, user_id FROM reactions WHERE message_id = $1',
+      [req.params.id]
+    );
+    broadcastToChat(req.params.chatId, {
+      type: 'reaction_update',
+      chat_id: req.params.chatId,
+      message_id: req.params.id,
+      reactions: reactions.rows,
+      action,
+      user_id: req.user.id,
+      emoji,
+    });
+    res.json({ action, reactions: reactions.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка реакции' });
+  }
+});
+
+/** GET /api/chats/:chatId/messages/:id/reactions — получить реакции */
+app.get('/api/chats/:chatId/messages/:id/reactions', authMiddleware, chatMemberCheck, async (req, res) => {
+  const result = await pool.query(
+    'SELECT r.emoji, r.user_id, u.display_name FROM reactions r JOIN users u ON u.id = r.user_id WHERE r.message_id = $1',
+    [req.params.id]
+  );
+  res.json({ reactions: result.rows });
+});
+
+// ==================== УПРАВЛЕНИЕ ГРУППОЙ ====================
+
+/** POST /api/chats/:chatId/members — добавить участника */
+app.post('/api/chats/:chatId/members', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'user_id обязателен' });
+    // Проверить что чат — группа
+    const chat = await pool.query('SELECT type, created_by FROM chats WHERE id = $1', [req.params.chatId]);
+    if (chat.rows[0].type !== 'group') return res.status(400).json({ error: 'Можно добавлять только в группы' });
+    // Проверить что текущий пользователь — admin
+    const member = await pool.query('SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2', [req.params.chatId, req.user.id]);
+    if (member.rows[0].role !== 'admin') return res.status(403).json({ error: 'Только админ может добавлять участников' });
+    await pool.query('INSERT INTO chat_members (chat_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.params.chatId, user_id]);
+    // Уведомить чат
+    const newUser = await pool.query('SELECT display_name FROM users WHERE id = $1', [user_id]);
+    broadcastToChat(req.params.chatId, { type: 'member_added', chat_id: req.params.chatId, user_id, display_name: newUser.rows[0]?.display_name });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка добавления участника' });
+  }
+});
+
+/** DELETE /api/chats/:chatId/members/:userId — удалить участника */
+app.delete('/api/chats/:chatId/members/:userId', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const chat = await pool.query('SELECT type FROM chats WHERE id = $1', [req.params.chatId]);
+    if (chat.rows[0].type !== 'group') return res.status(400).json({ error: 'Только для групп' });
+    // Admin или сам участник может выйти
+    const member = await pool.query('SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2', [req.params.chatId, req.user.id]);
+    const isSelf = req.params.userId === req.user.id;
+    if (!isSelf && member.rows[0].role !== 'admin') return res.status(403).json({ error: 'Только админ может удалять' });
+    await pool.query('DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2', [req.params.chatId, req.params.userId]);
+    broadcastToChat(req.params.chatId, { type: 'member_removed', chat_id: req.params.chatId, user_id: req.params.userId });
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка удаления участника' });
+  }
 });
 
 // ==================== WEBSOCKET ====================

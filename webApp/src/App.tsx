@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, lazy, S
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ChatList } from '@components/chat-list/ChatList';
 import { TabBar, type TabId } from '@components/layout/TabBar';
-import { Phone, Users } from 'lucide-react';
+import { Phone } from 'lucide-react';
 
 // Lazy-загрузка тяжёлых компонентов (code splitting)
 const ConversationScreen = lazy(() => import('@components/conversation/ConversationScreen').then(m => ({ default: m.ConversationScreen })));
 const CallScreen = lazy(() => import('@components/calls/CallScreen').then(m => ({ default: m.CallScreen })));
 const SettingsScreen = lazy(() => import('@components/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
+const ContactsScreen = lazy(() => import('@components/contacts/ContactsScreen'));
 const AuthScreen = lazy(() => import('@components/auth/AuthScreen').then(m => ({ default: m.AuthScreen })));
 import { useChatStore } from '@stores/chatStore';
 import { useMessageStore } from '@stores/messageStore';
@@ -188,6 +189,15 @@ export default function App() {
         }
 
         // WebRTC signaling события
+        if (msg.type === 'call_offer') {
+          // Incoming call - show ringing UI
+          const callerName = (msg as Record<string, unknown>).caller_name as string || 'Неизвестный';
+          const isVideo = !!(msg as Record<string, unknown>).is_video;
+          const chatId = (msg as Record<string, unknown>).chat_id as string;
+          const callerId = (msg as Record<string, unknown>).caller_id as string;
+          const sdp = (msg as Record<string, unknown>).sdp as RTCSessionDescriptionInit;
+          useCallStore.getState().incomingCall(chatId, callerName, isVideo, callerId, sdp);
+        }
         if (['call_answer', 'ice_candidate', 'call_end', 'call_reject'].includes(msg.type as string)) {
           handleSignaling(msg as Record<string, unknown>);
         }
@@ -257,15 +267,7 @@ export default function App() {
               </p>
             </div>
           )}
-          {activeTab === 'contacts' && (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-              <Users size={48} color="#636366" strokeWidth={1.5} aria-hidden="true" />
-              <p className="text-[17px] font-semibold text-white">Нет контактов</p>
-              <p className="text-[14px] text-center px-8" style={{ color: '#ABABAF' }}>
-                Здесь будут отображаться ваши контакты
-              </p>
-            </div>
-          )}
+          {activeTab === 'contacts' && <ContactsScreen />}
         </main>
 
         {/* Tab bar (скрывается когда открыт чат) */}

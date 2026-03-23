@@ -10,8 +10,11 @@ const ICE_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // TURN сервер (для NAT traversal) — в продакшене заменить на свой
-    // { urls: 'turn:turn.son-messenger.com:3478', username: 'son', credential: 'secret' },
+    {
+      urls: ['turn:chat.sonchat.uk:3478', 'turns:chat.sonchat.uk:5349'],
+      username: 'son',
+      credential: 'son-turn-2026',
+    },
   ],
 };
 

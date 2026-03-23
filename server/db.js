@@ -108,6 +108,49 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_prekeys_user ON prekeys(user_id);
     CREATE INDEX IF NOT EXISTS idx_otpk_user ON one_time_prekeys(user_id, used);
+
+    -- Фаза 1: Контакты
+    CREATE TABLE IF NOT EXISTS contacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      contact_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      nickname VARCHAR(100),
+      is_favorite BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(owner_id, contact_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
+
+    -- Фаза 1: Настройки пользователя
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      theme VARCHAR(10) DEFAULT 'dark',
+      language VARCHAR(5) DEFAULT 'ru',
+      notifications_enabled BOOLEAN DEFAULT true,
+      notification_sound VARCHAR(50) DEFAULT 'default',
+      notification_preview VARCHAR(20) DEFAULT 'always',
+      show_online_status VARCHAR(20) DEFAULT 'everyone',
+      read_receipts BOOLEAN DEFAULT true,
+      app_lock BOOLEAN DEFAULT false,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Фаза 1: Реакции на сообщения
+    CREATE TABLE IF NOT EXISTS reactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      emoji VARCHAR(10) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(message_id, user_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
+
+    -- Добавить edited_at для редактирования сообщений
+    DO $$ BEGIN
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END $$;
   `);
   console.log('✅ Таблицы БД инициализированы');
 }

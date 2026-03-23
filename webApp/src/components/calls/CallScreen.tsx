@@ -95,20 +95,26 @@ export function CallScreen() {
         </p>
       </div>
 
-      {/* Видео-заглушка (для видеозвонка) */}
-      {call.isVideo && call.status === 'active' && (
-        <div
-          className="w-[100px] h-[140px] rounded-[12px] absolute top-[200px] right-[20px]"
-          style={{
-            background: 'linear-gradient(135deg, #1C1C1E, #2C2C2E)',
-            border: '2px solid #38383A',
-            cursor: 'grab',
-          }}
-        >
-          <div className="flex items-center justify-center h-full text-[10px]" style={{ color: '#ABABAF' }}>
-            PiP
-          </div>
-        </div>
+      {/* Удалённое видео (полноэкранный фон) */}
+      {call.isVideo && call.status === 'active' && call.remoteStream && (
+        <video
+          ref={(el) => { if (el && call.remoteStream) el.srcObject = call.remoteStream; }}
+          autoPlay
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      )}
+
+      {/* Локальное видео (PiP в углу) */}
+      {call.isVideo && call.status === 'active' && call.localStream && (
+        <video
+          ref={(el) => { if (el && call.localStream) el.srcObject = call.localStream; }}
+          autoPlay
+          playsInline
+          muted
+          className="w-[100px] h-[140px] rounded-[12px] absolute top-[200px] right-[20px] object-cover"
+          style={{ border: '2px solid #38383A', zIndex: 10 }}
+        />
       )}
 
       {/* Кнопки управления */}
