@@ -3,10 +3,29 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CallScreen } from '../CallScreen';
 import { useCallStore } from '@stores/callStore';
 
+// Mock i18n to return proper Russian translations in test environment
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'call.audio': 'Аудиозвонок',
+      'call.video': 'Видеозвонок',
+      'call.incoming': 'Входящий',
+      'call.outgoing': 'Вызов',
+      'call.ended': 'Завершён',
+      'call.accept': 'Принять',
+      'call.decline': 'Отклонить',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru',
+  setLocale: vi.fn(),
+}));
+
 // Mock webrtc module to prevent actual WebRTC calls in tests
+// startCall and acceptCall must return Promises because callStore calls .catch() on them
 vi.mock('@/utils/webrtc', () => ({
-  startCall: vi.fn(),
-  acceptCall: vi.fn(),
+  startCall: vi.fn().mockResolvedValue(undefined),
+  acceptCall: vi.fn().mockResolvedValue(undefined),
   endCall: vi.fn(),
   rejectCall: vi.fn(),
   toggleMic: vi.fn(() => true),
@@ -36,7 +55,7 @@ describe('CallScreen', () => {
   it('отображает "Входящий аудиозвонок" при входящем', () => {
     useCallStore.getState().incomingCall('chat-1', 'Vladimir', false, 'user-2', fakeSdp);
     render(<CallScreen />);
-    expect(screen.getByText('Входящий аудиозвонок...')).toBeInTheDocument();
+    expect(screen.getByText('Входящий Аудиозвонок...')).toBeInTheDocument();
     expect(screen.getByText('Принять')).toBeInTheDocument();
     expect(screen.getByText('Отклонить')).toBeInTheDocument();
   });
@@ -44,7 +63,7 @@ describe('CallScreen', () => {
   it('отображает "Входящий видеозвонок" при видео', () => {
     useCallStore.getState().incomingCall('chat-1', 'Vladimir', true, 'user-2', fakeSdp);
     render(<CallScreen />);
-    expect(screen.getByText('Входящий видеозвонок...')).toBeInTheDocument();
+    expect(screen.getByText('Входящий Видеозвонок...')).toBeInTheDocument();
   });
 
   it('имеет aria-modal="true"', () => {

@@ -41,6 +41,11 @@ jest.mock('../storage', () => ({
   getUploadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-upload-url'),
 }));
 
+jest.mock('web-push', () => ({
+  setVapidDetails: jest.fn(),
+  sendNotification: jest.fn().mockResolvedValue({}),
+}));
+
 const { app } = require('../index');
 
 const JWT_SECRET = process.env.JWT_SECRET;

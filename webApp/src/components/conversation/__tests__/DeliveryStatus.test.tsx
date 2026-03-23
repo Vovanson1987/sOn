@@ -1,11 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { DeliveryStatus } from '../DeliveryStatus';
+
+// Mock i18n to return proper Russian translations in test environment
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'status.sending': 'Отправляется',
+      'status.sent': 'Отправлено',
+      'status.delivered': 'Доставлено',
+      'status.read': 'Прочитано',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru',
+  setLocale: vi.fn(),
+}));
 
 describe('DeliveryStatus', () => {
   it('показывает "Отправка..." для sending', () => {
     render(<DeliveryStatus status="sending" />);
-    expect(screen.getByText('Отправка...')).toBeInTheDocument();
+    expect(screen.getByText('Отправляется...')).toBeInTheDocument();
   });
 
   it('показывает "Отправлено" для sent', () => {

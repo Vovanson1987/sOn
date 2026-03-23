@@ -2,10 +2,43 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { InputBar } from '../InputBar';
 
+// Mock i18n to return proper Russian translations in test environment
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'chat.placeholder': 'Сообщение',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru',
+  setLocale: vi.fn(),
+}));
+
+// Mock api/client to prevent real WS calls
+vi.mock('@/api/client', () => ({
+  sendWS: vi.fn(),
+  disconnectWS: vi.fn(),
+}));
+
+// Mock fileUpload utilities
+vi.mock('@/utils/fileUpload', () => ({
+  createVoiceRecorder: vi.fn(),
+  uploadVoice: vi.fn(),
+}));
+
+// Mock stores
+vi.mock('@stores/messageStore', () => ({
+  useMessageStore: { getState: () => ({ addMessage: vi.fn() }) },
+}));
+
+vi.mock('@stores/authStore', () => ({
+  useAuthStore: { getState: () => ({ user: { id: 'u1', display_name: 'Test' } }) },
+}));
+
 describe('InputBar', () => {
   it('отображает placeholder', () => {
     render(<InputBar onSend={() => {}} />);
-    expect(screen.getByPlaceholderText('iMessage')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Сообщение')).toBeInTheDocument();
   });
 
   it('кастомный placeholder для секретных чатов', () => {

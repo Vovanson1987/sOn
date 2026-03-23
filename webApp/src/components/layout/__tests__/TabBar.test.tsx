@@ -2,6 +2,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TabBar } from '../TabBar';
 
+// Mock i18n to return proper Russian translations in test environment
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'nav.chats': 'Чаты',
+      'nav.calls': 'Звонки',
+      'nav.contacts': 'Контакты',
+      'nav.settings': 'Настройки',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru',
+  setLocale: vi.fn(),
+}));
+
 describe('TabBar', () => {
   it('отображает все 4 вкладки', () => {
     render(<TabBar activeTab="chats" onTabChange={() => {}} />);

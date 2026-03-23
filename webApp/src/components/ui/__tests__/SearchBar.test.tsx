@@ -2,6 +2,18 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SearchBar } from '../SearchBar';
 
+// Mock i18n to return proper Russian translations in test environment
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'chatList.search': 'Поиск',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru',
+  setLocale: vi.fn(),
+}));
+
 describe('SearchBar', () => {
   it('renders with placeholder', () => {
     render(<SearchBar value="" onChange={() => {}} placeholder="Поиск" />);
