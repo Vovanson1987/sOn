@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { AlertCircle, Check, CheckCheck, Clock } from 'lucide-react';
 import type { MessageStatus } from '@/types/message';
+import { t } from '@/i18n';
 
 interface DeliveryStatusProps {
   status: MessageStatus;
@@ -20,7 +21,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
     return (
       <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <Clock size={11} aria-hidden="true" />
-        Отправка...
+        {t('status.sending')}...
       </span>
     );
   }
@@ -28,7 +29,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
     return (
       <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <Check size={12} aria-hidden="true" />
-        Отправлено
+        {t('status.sent')}
       </span>
     );
   }
@@ -36,7 +37,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
     return (
       <span className="text-[11px] flex items-center gap-1" style={{ color: '#ABABAF' }} role="status" aria-live="polite">
         <CheckCheck size={12} aria-hidden="true" />
-        Доставлено
+        {t('status.delivered')}
       </span>
     );
   }
@@ -45,7 +46,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
     return (
       <span className="text-[11px] flex items-center gap-1" style={{ color: '#007AFF' }} role="status" aria-live="polite">
         <CheckCheck size={12} aria-hidden="true" />
-        Прочитано{dateStr}
+        {t('status.read')}{dateStr}
       </span>
     );
   }

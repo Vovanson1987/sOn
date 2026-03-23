@@ -1,4 +1,5 @@
 import { Search, X } from 'lucide-react';
+import { t } from '@/i18n';
 
 interface SearchBarProps {
   value: string;
@@ -6,7 +7,8 @@ interface SearchBarProps {
   placeholder?: string;
 }
 
-export function SearchBar({ value, onChange, placeholder = 'Поиск' }: SearchBarProps) {
+export function SearchBar({ value, onChange, placeholder }: SearchBarProps) {
+  const resolvedPlaceholder = placeholder ?? t('chatList.search');
   return (
     <div className="pb-1">
       <div
@@ -18,8 +20,8 @@ export function SearchBar({ value, onChange, placeholder = 'Поиск' }: Searc
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          aria-label={placeholder}
+          placeholder={resolvedPlaceholder}
+          aria-label={resolvedPlaceholder}
           className="bg-transparent text-[15px] text-white placeholder-[#ABABAF] outline-none w-full"
         />
         {value && (

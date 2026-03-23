@@ -1,4 +1,6 @@
 import { MessageSquare, Phone, Users, Settings } from 'lucide-react';
+import { t } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 
 export type TabId = 'chats' | 'calls' | 'contacts' | 'settings';
 
@@ -9,11 +11,11 @@ interface TabBarProps {
   missedCalls?: number;
 }
 
-const TABS: Array<{ id: TabId; label: string; icon: typeof MessageSquare }> = [
-  { id: 'chats', label: 'Чаты', icon: MessageSquare },
-  { id: 'calls', label: 'Звонки', icon: Phone },
-  { id: 'contacts', label: 'Контакты', icon: Users },
-  { id: 'settings', label: 'Настройки', icon: Settings },
+const TABS: Array<{ id: TabId; labelKey: TranslationKey; icon: typeof MessageSquare }> = [
+  { id: 'chats', labelKey: 'nav.chats', icon: MessageSquare },
+  { id: 'calls', labelKey: 'nav.calls', icon: Phone },
+  { id: 'contacts', labelKey: 'nav.contacts', icon: Users },
+  { id: 'settings', labelKey: 'nav.settings', icon: Settings },
 ];
 
 /** Нижний Tab Bar в стиле iOS (мобильная версия) */
@@ -32,16 +34,17 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
       role="tablist"
       aria-label="Навигация"
     >
-      {TABS.map(({ id, label, icon: Icon }) => {
+      {TABS.map(({ id, labelKey, icon: Icon }) => {
         const isActive = activeTab === id;
         const badge = id === 'chats' ? unreadChats : id === 'calls' ? missedCalls : 0;
+        const label = t(labelKey);
 
         return (
           <button
             key={id}
             role="tab"
             aria-selected={isActive}
-            aria-label={badge > 0 ? `${label}, ${badge} непрочитанных` : label}
+            aria-label={badge > 0 ? `${label}, ${badge}` : label}
             onClick={() => onTabChange(id)}
             className="flex flex-col items-center gap-[2px] relative min-w-[64px]"
           >

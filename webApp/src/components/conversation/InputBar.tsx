@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
+import { t } from '@/i18n';
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
 import { sendWS } from '@/api/client';
 import { createVoiceRecorder, uploadVoice } from '@/utils/fileUpload';
@@ -15,7 +16,8 @@ interface InputBarProps {
 }
 
 /** Панель ввода сообщения в стиле iMessage Mac */
-export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatId }: InputBarProps) {
+export function InputBar({ onSend, onAttachment, placeholder, chatId }: InputBarProps) {
+  const resolvedPlaceholder = placeholder ?? t('chat.placeholder');
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -177,7 +179,7 @@ export function InputBar({ onSend, onAttachment, placeholder = 'iMessage', chatI
           }}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           rows={1}
           aria-label="Написать сообщение"
           className="flex-1 bg-transparent text-[17px] text-white placeholder-[#ABABAF] outline-none resize-none leading-[1.3] focus:ring-1 focus:ring-[#007AFF] focus:rounded-[4px]"

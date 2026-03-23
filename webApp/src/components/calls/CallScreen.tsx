@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Mic, MicOff, Video, VideoOff, Volume2, PhoneOff, Phone } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import { useCallStore } from '@stores/callStore';
+import { t } from '@/i18n';
 
 /** Форматирование таймера "ММ:СС" */
 function formatDuration(ms: number): string {
@@ -56,7 +57,7 @@ export function CallScreen() {
       }}
       role="dialog"
       aria-modal="true"
-      aria-label={`${call.isVideo ? 'Видеозвонок' : 'Аудиозвонок'} — ${call.contactName}`}
+      aria-label={`${call.isVideo ? t('call.video') : t('call.audio')} — ${call.contactName}`}
     >
       {/* Верхняя часть: аватар + имя */}
       <div className="flex flex-col items-center">
@@ -86,12 +87,12 @@ export function CallScreen() {
         <h2 className="text-[28px] font-semibold text-white mt-6">{call.contactName}</h2>
         <p className="text-[16px] mt-1" style={{ color: '#ABABAF' }}>
           {isIncoming
-            ? `Входящий ${call.isVideo ? 'видеозвонок' : 'аудиозвонок'}...`
+            ? `${t('call.incoming')} ${call.isVideo ? t('call.video') : t('call.audio')}...`
             : isRinging
-              ? 'Вызов...'
+              ? `${t('call.outgoing')}...`
               : call.status === 'active'
                 ? formatDuration(elapsedValue)
-                : 'Завершён'}
+                : t('call.ended')}
         </p>
       </div>
 
@@ -164,22 +165,22 @@ export function CallScreen() {
                 onClick={handleEnd}
                 className="w-[64px] h-[64px] rounded-full flex items-center justify-center"
                 style={{ background: '#FF453A' }}
-                aria-label="Отклонить"
+                aria-label={t('call.decline')}
               >
                 <PhoneOff size={28} color="white" />
               </button>
-              <span className="text-[12px]" style={{ color: '#FF453A' }}>Отклонить</span>
+              <span className="text-[12px]" style={{ color: '#FF453A' }}>{t('call.decline')}</span>
             </div>
             <div className="flex flex-col items-center gap-2">
               <button
                 onClick={handleAccept}
                 className="w-[64px] h-[64px] rounded-full flex items-center justify-center"
                 style={{ background: '#30D158' }}
-                aria-label="Принять"
+                aria-label={t('call.accept')}
               >
                 <Phone size={28} color="white" />
               </button>
-              <span className="text-[12px]" style={{ color: '#30D158' }}>Принять</span>
+              <span className="text-[12px]" style={{ color: '#30D158' }}>{t('call.accept')}</span>
             </div>
           </div>
         ) : (

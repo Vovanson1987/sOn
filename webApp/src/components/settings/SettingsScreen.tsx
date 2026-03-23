@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   ChevronRight, User, Palette, Bell, Shield, HardDrive,
-  Lock, Info, LogOut, Check, X, Camera, KeyRound, Eye, EyeOff,
+  Lock, Info, LogOut, Check, X, Camera, KeyRound, Eye, EyeOff, Globe,
 } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import { useAuthStore } from '@stores/authStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { disconnectWS, updateProfile, uploadAvatar, changePassword } from '@/api/client';
+import { t, setLocale, getLocale } from '@/i18n';
+import type { Locale } from '@/i18n';
 
 
 // ==================== Вспомогательные компоненты ====================
@@ -369,6 +371,18 @@ export function SettingsScreen() {
     logout();
   }, [logout]);
 
+  // Язык / Locale
+  const LOCALE_ORDER: Locale[] = ['ru', 'en', 'kz'];
+  const LOCALE_LABELS: Record<Locale, string> = { ru: 'Русский', en: 'English', kz: 'Қазақша' };
+  const [currentLocale, setCurrentLocale] = useState<Locale>(getLocale());
+
+  const cycleLocale = useCallback(() => {
+    const idx = LOCALE_ORDER.indexOf(currentLocale);
+    const next = LOCALE_ORDER[(idx + 1) % LOCALE_ORDER.length];
+    setLocale(next);
+    setCurrentLocale(next);
+  }, [currentLocale]);
+
   return (
     <div className="flex flex-col h-full bg-black overflow-y-auto">
       {/* Профиль — редактирование */}
@@ -378,7 +392,7 @@ export function SettingsScreen() {
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<User size={20} color="#007AFF" aria-hidden="true" />}
-          label="Профиль"
+          label={t('settings.profile')}
           value="Изменить"
           onClick={() => {
             // Скроллим к верху страницы — редактирование уже там
@@ -388,17 +402,24 @@ export function SettingsScreen() {
         <Divider />
         <SettingsRow
           icon={<Palette size={20} color="#FF9500" aria-hidden="true" />}
-          label="Тема"
+          label={t('settings.theme')}
           value={THEME_LABELS[theme] || 'Тёмная'}
           onClick={cycleTheme}
         />
+        <Divider />
+        <SettingsRow
+          icon={<Globe size={20} color="#5856D6" aria-hidden="true" />}
+          label="Язык / Language"
+          value={LOCALE_LABELS[currentLocale]}
+          onClick={cycleLocale}
+        />
       </div>
 
-      <SectionHeader title="Уведомления" />
+      <SectionHeader title={t('settings.notifications')} />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
-          label="Уведомления"
+          label={t('settings.notifications')}
           value={notificationsEnabled ? 'Включены' : 'Выключены'}
           onClick={toggleNotifications}
         />
@@ -417,7 +438,7 @@ export function SettingsScreen() {
         />
       </div>
 
-      <SectionHeader title="Конфиденциальность" />
+      <SectionHeader title={t('settings.privacy')} />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<Shield size={20} color="#30D158" aria-hidden="true" />}
@@ -445,22 +466,22 @@ export function SettingsScreen() {
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<HardDrive size={20} color="#5856D6" aria-hidden="true" />}
-          label="Хранилище"
+          label={t('settings.storage')}
           value="Скоро"
         />
         <Divider />
         <SettingsRow
           icon={<Lock size={20} color="#30D158" aria-hidden="true" />}
-          label="Шифрование"
+          label={t('settings.encryption')}
           value="Signal Protocol"
         />
       </div>
 
-      <SectionHeader title="О приложении" />
+      <SectionHeader title={t('settings.about')} />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
         <SettingsRow
           icon={<Info size={20} color="#8E8E93" aria-hidden="true" />}
-          label="Версия"
+          label={t('settings.version')}
           value="1.0.0 (Sprint 6)"
         />
       </div>

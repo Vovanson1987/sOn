@@ -1,5 +1,6 @@
 import { SlidersHorizontal, SquarePen } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
+import { t } from '@/i18n';
 
 interface ChatListHeaderProps {
   onNewChat?: () => void;
@@ -12,7 +13,7 @@ export function ChatListHeader({ onNewChat, onFilter, filterActive }: ChatListHe
     <FrostedGlassBar className="px-4 pt-2 pb-0">
       <div className="flex items-end justify-between pb-2">
         <h1 className="text-[34px] font-bold text-white leading-none">
-          Сообщения
+          {t('nav.chats')}
         </h1>
         <div className="flex items-center gap-1 pb-1">
           <button
@@ -27,7 +28,7 @@ export function ChatListHeader({ onNewChat, onFilter, filterActive }: ChatListHe
           <button
             className="w-[44px] h-[44px] flex items-center justify-center"
             style={{ color: '#007AFF' }}
-            aria-label="Новое сообщение"
+            aria-label={t('chatList.newMessage')}
             onClick={onNewChat}
           >
             <SquarePen size={22} color="#007AFF" />
