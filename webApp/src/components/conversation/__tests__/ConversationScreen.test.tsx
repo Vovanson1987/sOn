@@ -60,10 +60,6 @@ vi.mock('@stores/secretChatStore', () => ({
   ),
 }));
 
-vi.mock('@hooks/useAutoReply', () => ({
-  useAutoReply: vi.fn(),
-}));
-
 // Мок scrollIntoView (отсутствует в jsdom)
 Element.prototype.scrollIntoView = vi.fn();
 

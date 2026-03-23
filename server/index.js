@@ -306,6 +306,46 @@ app.patch('/api/settings', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== Push Notifications ====================
+const webpush = require('web-push');
+webpush.setVapidDetails(
+  'mailto:admin@sonchat.uk',
+  process.env.VAPID_PUBLIC_KEY || '',
+  process.env.VAPID_PRIVATE_KEY || ''
+);
+
+/** POST /api/push/subscribe — register push subscription */
+app.post('/api/push/subscribe', authMiddleware, async (req, res) => {
+  try {
+    const { endpoint, keys } = req.body;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: 'Invalid subscription' });
+    }
+    await pool.query(
+      `INSERT INTO push_tokens (user_id, endpoint, p256dh, auth)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (endpoint) DO UPDATE SET user_id = $1, p256dh = $3, auth = $4`,
+      [req.user.id, endpoint, keys.p256dh, keys.auth]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Push subscription failed' });
+  }
+});
+
+/** DELETE /api/push/subscribe — unregister */
+app.delete('/api/push/subscribe', authMiddleware, async (req, res) => {
+  const { endpoint } = req.body;
+  await pool.query('DELETE FROM push_tokens WHERE endpoint = $1 AND user_id = $2', [endpoint, req.user.id]);
+  res.json({ ok: true });
+});
+
+/** GET /api/push/vapid-key — get public VAPID key */
+app.get('/api/push/vapid-key', (req, res) => {
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+});
+
 // ==================== Контакты ====================
 
 /** GET /api/contacts */
@@ -630,6 +670,8 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
 
     // Отправить через WebSocket всем участникам чата (кроме отправителя — у него уже есть optimistic update)
     broadcastToChat(chatId, { type: 'new_message', message: msg }, req.user.id);
+    // Push-уведомления для офлайн-пользователей
+    sendPushToOfflineMembers(req.params.chatId, req.user.id, content, req.user.display_name);
     res.status(201).json(msg);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1061,6 +1103,37 @@ async function broadcastToChat(chatId, data, excludeUserId = null) {
         if (ws.readyState === 1) ws.send(payload);
       }
     }
+  }
+}
+
+/** Send push notifications to offline chat members */
+async function sendPushToOfflineMembers(chatId, senderId, messageContent, senderName) {
+  try {
+    const members = await pool.query(
+      'SELECT cm.user_id FROM chat_members cm WHERE cm.chat_id = $1 AND cm.user_id != $2',
+      [chatId, senderId]
+    );
+    for (const member of members.rows) {
+      // Skip if user has active WS connections
+      if (connections.has(member.user_id) && connections.get(member.user_id).size > 0) continue;
+      // Get push tokens
+      const tokens = await pool.query('SELECT endpoint, p256dh, auth FROM push_tokens WHERE user_id = $1', [member.user_id]);
+      for (const token of tokens.rows) {
+        const subscription = { endpoint: token.endpoint, keys: { p256dh: token.p256dh, auth: token.auth } };
+        const payload = JSON.stringify({
+          title: senderName || 'sOn',
+          body: messageContent?.substring(0, 100) || 'Новое сообщение',
+          chat_id: chatId,
+        });
+        webpush.sendNotification(subscription, payload).catch((err) => {
+          if (err.statusCode === 410) {
+            pool.query('DELETE FROM push_tokens WHERE endpoint = $1', [token.endpoint]);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Push error:', err);
   }
 }
 

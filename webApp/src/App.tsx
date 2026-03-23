@@ -16,6 +16,7 @@ import { useCallStore } from '@stores/callStore';
 import { useAuthStore } from '@stores/authStore';
 import { connectWS, disconnectWS, onWS } from '@/api/client';
 import { handleSignaling } from '@/utils/webrtc';
+import { subscribeToPush } from '@/utils/pushNotifications';
 
 /** Хук для отслеживания онлайн/офлайн статуса */
 function useOnlineStatus() {
@@ -129,6 +130,7 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       connectWS();
+      subscribeToPush();
       fetchChats();
 
       // Слушать входящие события через WebSocket
