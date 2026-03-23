@@ -372,6 +372,66 @@ export function updateContact(id: string, data: { nickname?: string; is_favorite
   });
 }
 
+// ==================== CALL HISTORY ====================
+
+export interface CallHistoryEntry {
+  id: string;
+  chat_id: string | null;
+  caller_id: string;
+  callee_id: string;
+  is_video: boolean;
+  status: 'missed' | 'answered' | 'declined' | 'no_answer';
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number;
+  created_at: string;
+  caller_name: string;
+  caller_avatar: string | null;
+  callee_name: string;
+  callee_avatar: string | null;
+}
+
+export function getCallHistory() {
+  return request<{ calls: CallHistoryEntry[] }>('/api/calls/history');
+}
+
+export function logCall(data: {
+  chat_id?: string;
+  callee_id: string;
+  is_video?: boolean;
+  status?: string;
+  started_at?: string;
+  ended_at?: string;
+  duration_seconds?: number;
+}) {
+  return request<{ call: CallHistoryEntry }>('/api/calls/log', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// ==================== MESSAGE SEARCH ====================
+
+export function searchMessages(q: string, chatId?: string) {
+  const params = new URLSearchParams({ q });
+  if (chatId) params.set('chat_id', chatId);
+  return request<{ messages: Array<Record<string, unknown>> }>(`/api/messages/search?${params}`);
+}
+
+// ==================== BLOCKING ====================
+
+export function blockUser(userId: string) {
+  return request<{ ok: boolean }>(`/api/users/${userId}/block`, { method: 'POST' });
+}
+
+export function unblockUser(userId: string) {
+  return request<{ ok: boolean }>(`/api/users/${userId}/block`, { method: 'DELETE' });
+}
+
+export function getBlockedUsers() {
+  return request<{ blocked: Array<{ id: string; blocked_id: string; display_name: string; email: string; avatar_url: string | null; created_at: string }> }>('/api/users/blocked');
+}
+
 // ==================== REACTIONS ====================
 
 export function toggleReaction(chatId: string, messageId: string, emoji: string) {

@@ -153,6 +153,9 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const addReaction = useMessageStore((s) => s.addReaction);
   const deleteMessageFn = useMessageStore((s) => s.deleteMessage);
   const typingUsers = useMessageStore((s) => s.typingUsers);
+  const editingMessage = useMessageStore((s) => s.editingMessage);
+  const setEditingMessage = useMessageStore((s) => s.setEditingMessage);
+  const clearEditingMessage = useMessageStore((s) => s.clearEditingMessage);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   // Загрузить сообщения с сервера при открытии чата
@@ -469,6 +472,28 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
     }
   }, [chat.id, tapbackMessage, deleteMessageFn]);
 
+  const handleEdit = useCallback((msg: Message) => {
+    setEditingMessage(msg);
+    setTapbackMessage(null);
+  }, [setEditingMessage]);
+
+  // Forwarding state
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const allChats = useChatStore((s) => s.chats);
+
+  const handleForward = useCallback((msg: Message) => {
+    setTapbackMessage(null);
+    setForwardMessage(msg);
+  }, []);
+
+  const handleForwardToChat = useCallback((targetChatId: string) => {
+    if (forwardMessage) {
+      const prefix = `[Переслано от ${forwardMessage.senderName}]\n`;
+      sendMessage(targetChatId, prefix + forwardMessage.content);
+      setForwardMessage(null);
+    }
+  }, [forwardMessage, sendMessage]);
+
   return (
     <div className="flex flex-col h-full bg-black animate-slideInRight" style={{ animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}>
       {/* Анимация обмена ключами */}
@@ -656,6 +681,8 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
         onAttachment={handleAttachment}
         placeholder={chat.type === 'secret' ? 'Секретное сообщение...' : 'iMessage'}
         chatId={chat.id}
+        editingMessage={editingMessage}
+        onCancelEdit={clearEditingMessage}
       />
 
       {/* Tapback оверлей */}
@@ -667,8 +694,57 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           onReply={() => { setReplyTo(tapbackMessage); setTapbackMessage(null); }}
           onCopy={handleCopy}
           onDelete={handleDelete}
+          onEdit={handleEdit}
+          onForward={handleForward}
           onClose={() => setTapbackMessage(null)}
         />
+      )}
+
+      {/* Forward chat picker modal */}
+      {forwardMessage && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setForwardMessage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Переслать сообщение"
+        >
+          <div
+            className="w-full max-w-[400px] mx-4 rounded-[16px] overflow-hidden"
+            style={{ background: '#1C1C1E' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#38383A' }}>
+              <h2 className="text-[17px] font-semibold text-white">Переслать в чат</h2>
+              <button onClick={() => setForwardMessage(null)} aria-label="Закрыть" className="text-[#8E8E93] text-[20px]">&times;</button>
+            </div>
+            <div className="max-h-[300px] overflow-y-auto">
+              {allChats.filter((c) => c.id !== chat.id).length === 0 && (
+                <p className="text-center py-6 text-[14px]" style={{ color: '#ABABAF' }}>Нет доступных чатов</p>
+              )}
+              {allChats.filter((c) => c.id !== chat.id).map((c) => {
+                const otherMember = c.members.find((m) => m.id !== myUserId);
+                const displayName = c.name ?? otherMember?.displayName ?? 'Чат';
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => handleForwardToChat(c.id)}
+                    className="w-full flex items-center gap-3 px-4 py-[10px] hover:bg-[#2C2C2E] text-left"
+                  >
+                    <div className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-[16px] font-semibold text-white" style={{ background: '#636366' }}>
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-[15px] text-white font-medium">{displayName}</p>
+                      <p className="text-[13px]" style={{ color: '#ABABAF' }}>{c.type === 'group' ? 'Группа' : c.type === 'secret' ? 'Секретный' : 'Личный'}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* LO-12: Toast «Скопировано» */}

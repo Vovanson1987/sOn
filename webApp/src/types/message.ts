@@ -34,6 +34,7 @@ export interface Message {
   selfDestructAt?: string;
   isDestroyed: boolean;
   createdAt: string;
+  editedAt?: string;
   deliveredAt?: string;
   readAt?: string;
 }

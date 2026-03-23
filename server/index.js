@@ -592,8 +592,30 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
   }
 
   const result = await pool.query(query, params);
-  // Вернуть в хронологическом порядке (ASC)
-  res.json({ messages: result.rows.reverse(), has_more: result.rows.length === limit });
+  const messages = result.rows.reverse(); // Хронологический порядок (ASC)
+
+  // Загрузить реакции для всех сообщений одним запросом
+  let messagesWithReactions = messages;
+  if (messages.length > 0) {
+    const messageIds = messages.map((m) => m.id);
+    const reactionsResult = await pool.query(
+      'SELECT r.message_id, r.emoji, r.user_id FROM reactions r WHERE r.message_id = ANY($1::uuid[])',
+      [messageIds]
+    );
+    // Группировка: { messageId: { emoji: [userId, ...] } }
+    const reactionsMap = {};
+    for (const r of reactionsResult.rows) {
+      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = {};
+      if (!reactionsMap[r.message_id][r.emoji]) reactionsMap[r.message_id][r.emoji] = [];
+      reactionsMap[r.message_id][r.emoji].push(r.user_id);
+    }
+    messagesWithReactions = messages.map((m) => ({
+      ...m,
+      reactions: reactionsMap[m.id] || {},
+    }));
+  }
+
+  res.json({ messages: messagesWithReactions, has_more: result.rows.length === limit });
 });
 
 /** POST /api/chats/:chatId/messages */
@@ -611,6 +633,19 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
     return res.status(404).json({ error: 'Чат не найден' });
   }
   const chatType = chatResult.rows[0].type;
+
+  // Проверка блокировки: если отправитель заблокирован кем-то из участников (для direct чатов)
+  if (chatType === 'direct') {
+    const blocked = await pool.query(
+      `SELECT 1 FROM blocked_users bu
+       JOIN chat_members cm ON cm.user_id = bu.blocker_id AND cm.chat_id = $1
+       WHERE bu.blocked_id = $2 LIMIT 1`,
+      [chatId, req.user.id]
+    );
+    if (blocked.rows.length > 0) {
+      return res.status(403).json({ error: 'Вы не можете отправлять сообщения этому пользователю' });
+    }
+  }
 
   let dbContent = content;
   let e2eeNonce = null;
@@ -875,6 +910,49 @@ app.delete('/api/chats/:chatId/members/:userId', authMiddleware, chatMemberCheck
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка удаления участника' });
+  }
+});
+
+// ==================== ИСТОРИЯ ЗВОНКОВ ====================
+
+/** GET /api/calls/history — история звонков текущего пользователя */
+app.get('/api/calls/history', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT ch.*,
+        caller.display_name AS caller_name, caller.avatar_url AS caller_avatar,
+        callee.display_name AS callee_name, callee.avatar_url AS callee_avatar
+      FROM call_history ch
+      JOIN users caller ON caller.id = ch.caller_id
+      JOIN users callee ON callee.id = ch.callee_id
+      WHERE ch.caller_id = $1 OR ch.callee_id = $1
+      ORDER BY ch.created_at DESC
+      LIMIT 100
+    `, [req.user.id]);
+    res.json({ calls: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка загрузки истории звонков' });
+  }
+});
+
+/** POST /api/calls/log — записать звонок в историю */
+app.post('/api/calls/log', authMiddleware, async (req, res) => {
+  try {
+    const { chat_id, callee_id, is_video, status, started_at, ended_at, duration_seconds } = req.body;
+    if (!callee_id) return res.status(400).json({ error: 'callee_id обязателен' });
+    const allowedStatuses = ['missed', 'answered', 'declined', 'no_answer'];
+    const callStatus = allowedStatuses.includes(status) ? status : 'missed';
+    const result = await pool.query(
+      `INSERT INTO call_history (chat_id, caller_id, callee_id, is_video, status, started_at, ended_at, duration_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [chat_id || null, req.user.id, callee_id, !!is_video, callStatus, started_at || null, ended_at || null, duration_seconds || 0]
+    );
+    res.status(201).json({ call: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка записи звонка' });
   }
 });
 
@@ -1288,6 +1366,94 @@ app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Ошибка pre-signed URL:', err);
     res.status(500).json({ error: 'Ошибка генерации URL' });
+  }
+});
+
+// ==================== ПОИСК СООБЩЕНИЙ ====================
+
+/** GET /api/messages/search?q=text&chat_id=optional */
+app.get('/api/messages/search', authMiddleware, async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q || typeof q !== 'string' || q.length < 2) {
+      return res.status(400).json({ error: 'Минимум 2 символа для поиска' });
+    }
+    const chatId = req.query.chat_id;
+    let query, params;
+    if (chatId) {
+      // Search within specific chat (must be member)
+      const member = await pool.query('SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2', [chatId, req.user.id]);
+      if (member.rows.length === 0) return res.status(403).json({ error: 'Нет доступа' });
+      query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
+        FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
+        WHERE m.chat_id = $1 AND m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
+      params = [chatId, `%${q}%`];
+    } else {
+      // Search across all user's chats
+      query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
+        FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
+        JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $1
+        WHERE m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
+      params = [req.user.id, `%${q}%`];
+    }
+    const result = await pool.query(query, params);
+    res.json({ messages: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка поиска' });
+  }
+});
+
+// ==================== БЛОКИРОВКА ПОЛЬЗОВАТЕЛЕЙ ====================
+
+/** POST /api/users/:id/block — заблокировать пользователя */
+app.post('/api/users/:id/block', authMiddleware, async (req, res) => {
+  try {
+    const blockedId = req.params.id;
+    if (blockedId === req.user.id) return res.status(400).json({ error: 'Нельзя заблокировать себя' });
+    // Проверить что пользователь существует
+    const user = await pool.query('SELECT id FROM users WHERE id = $1', [blockedId]);
+    if (user.rows.length === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    await pool.query(
+      'INSERT INTO blocked_users (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT (blocker_id, blocked_id) DO NOTHING',
+      [req.user.id, blockedId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка блокировки' });
+  }
+});
+
+/** DELETE /api/users/:id/block — разблокировать пользователя */
+app.delete('/api/users/:id/block', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(
+      'DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка разблокировки' });
+  }
+});
+
+/** GET /api/users/blocked — список заблокированных */
+app.get('/api/users/blocked', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT b.id, b.blocked_id, b.created_at,
+        u.display_name, u.email, u.avatar_url
+      FROM blocked_users b
+      JOIN users u ON u.id = b.blocked_id
+      WHERE b.blocker_id = $1
+      ORDER BY b.created_at DESC
+    `, [req.user.id]);
+    res.json({ blocked: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка загрузки списка заблокированных' });
   }
 });
 

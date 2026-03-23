@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, lazy, S
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ChatList } from '@components/chat-list/ChatList';
 import { TabBar, type TabId } from '@components/layout/TabBar';
-import { Phone } from 'lucide-react';
 
 // Lazy-загрузка тяжёлых компонентов (code splitting)
 const ConversationScreen = lazy(() => import('@components/conversation/ConversationScreen').then(m => ({ default: m.ConversationScreen })));
 const CallScreen = lazy(() => import('@components/calls/CallScreen').then(m => ({ default: m.CallScreen })));
+const CallHistoryScreen = lazy(() => import('@components/calls/CallHistoryScreen'));
 const SettingsScreen = lazy(() => import('@components/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
 const ContactsScreen = lazy(() => import('@components/contacts/ContactsScreen'));
 const AuthScreen = lazy(() => import('@components/auth/AuthScreen').then(m => ({ default: m.AuthScreen })));
@@ -126,6 +126,13 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
+  // Запросить разрешение на уведомления после авторизации
+  useEffect(() => {
+    if (isAuthenticated && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [isAuthenticated]);
+
   // Подключить WebSocket и загрузить чаты при авторизации
   useEffect(() => {
     if (isAuthenticated) {
@@ -144,6 +151,18 @@ export default function App() {
           const myId = useAuthStore.getState().user?.id;
           if (m.sender_id === myId) return;
           void addServerMessage(m);
+
+          // Browser notification when tab is not focused
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            const senderName = (m.sender_name as string) || 'Новое сообщение';
+            const content = (m.content as string) || '';
+            const chatId = m.chat_id as string;
+            new Notification(senderName, {
+              body: content.substring(0, 100),
+              icon: '/icon-192.png',
+              tag: chatId,
+            });
+          }
         }
 
         // Удаление чатов от других пользователей
@@ -202,6 +221,17 @@ export default function App() {
               user_id as string,
               true, // skipApi — this is already persisted on the server
             );
+          }
+        }
+
+        // Message edited broadcasts
+        if (msg.type === 'message_edited') {
+          const chatId = msg.chat_id as string;
+          const messageId = msg.message_id as string;
+          const content = msg.content as string;
+          const editedAt = (msg.edited_at as string) || new Date().toISOString();
+          if (chatId && messageId && content !== undefined) {
+            useMessageStore.getState().updateMessageLocal(chatId, messageId, content, editedAt);
           }
         }
 
@@ -274,17 +304,9 @@ export default function App() {
               <ConversationScreen chat={activeChat} onBack={handleBack} />
             )}
             {activeTab === 'settings' && <SettingsScreen />}
+            {activeTab === 'calls' && <CallHistoryScreen />}
+            {activeTab === 'contacts' && <ContactsScreen />}
           </Suspense>
-          {activeTab === 'calls' && (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-              <Phone size={48} color="#636366" strokeWidth={1.5} aria-hidden="true" />
-              <p className="text-[17px] font-semibold text-white">Нет звонков</p>
-              <p className="text-[14px] text-center px-8" style={{ color: '#ABABAF' }}>
-                Здесь будет отображаться журнал ваших звонков
-              </p>
-            </div>
-          )}
-          {activeTab === 'contacts' && <ContactsScreen />}
         </main>
 
         {/* Tab bar (скрывается когда открыт чат) */}

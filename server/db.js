@@ -152,6 +152,32 @@ async function initDB() {
     EXCEPTION WHEN OTHERS THEN NULL;
     END $$;
 
+    -- История звонков
+    CREATE TABLE IF NOT EXISTS call_history (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
+      caller_id UUID REFERENCES users(id),
+      callee_id UUID REFERENCES users(id),
+      is_video BOOLEAN DEFAULT false,
+      status VARCHAR(20) DEFAULT 'missed',
+      started_at TIMESTAMPTZ,
+      ended_at TIMESTAMPTZ,
+      duration_seconds INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_call_history_users ON call_history(caller_id, callee_id);
+
+    -- Блокировка пользователей
+    CREATE TABLE IF NOT EXISTS blocked_users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      blocker_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(blocker_id, blocked_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_blocked_users_blocker ON blocked_users(blocker_id);
+    CREATE INDEX IF NOT EXISTS idx_blocked_users_blocked ON blocked_users(blocked_id);
+
     -- Push-уведомления: токены подписок
     CREATE TABLE IF NOT EXISTS push_tokens (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

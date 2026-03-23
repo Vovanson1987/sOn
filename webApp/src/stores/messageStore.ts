@@ -18,6 +18,8 @@ interface MessageStore {
   /** HI-37: Use Record instead of Set for Zustand serialization compatibility */
   loadedChats: Record<string, boolean>;
   fetchError: string | null;
+  /** Сообщение в режиме редактирования */
+  editingMessage: Message | null;
 
   /** Получить сообщения чата */
   getMessages: (chatId: string) => Message[];
@@ -39,11 +41,25 @@ interface MessageStore {
   setTyping: (chatId: string, userName: string) => void;
   /** Убрать "печатает..." */
   clearTyping: (chatId: string, userName: string) => void;
+  /** Установить сообщение для редактирования */
+  setEditingMessage: (message: Message) => void;
+  /** Очистить редактируемое сообщение */
+  clearEditingMessage: () => void;
+  /** Редактировать сообщение (API + локально) */
+  updateMessage: (chatId: string, messageId: string, content: string) => Promise<void>;
+  /** Обновить сообщение локально (для WS event) */
+  updateMessageLocal: (chatId: string, messageId: string, content: string, editedAt: string) => void;
 }
 
 const SECRET_LOCKED_PREVIEW = '🔒 Зашифрованное сообщение';
 
 function mapApiMessageBase(raw: Record<string, unknown>): Message {
+  // Map reactions from API response: { "emoji": ["userId1", "userId2"] }
+  const rawReactions = raw.reactions as Record<string, string[]> | undefined;
+  const reactions: Record<string, string[]> = rawReactions && typeof rawReactions === 'object'
+    ? rawReactions
+    : {};
+
   return {
     id: raw.id as string,
     chatId: raw.chat_id as string,
@@ -52,9 +68,10 @@ function mapApiMessageBase(raw: Record<string, unknown>): Message {
     content: (raw.content as string) || '',
     type: (raw.type as Message['type']) || 'text',
     status: (raw.status as Message['status']) || 'sent',
-    reactions: {},
+    reactions,
     isDestroyed: false,
     selfDestructAt: raw.self_destruct_at as string | undefined,
+    editedAt: raw.edited_at as string | undefined,
     createdAt: raw.created_at as string,
   };
 }
@@ -116,6 +133,7 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   typingUsers: {},
   loadedChats: {},
   fetchError: null,
+  editingMessage: null,
 
   getMessages: (chatId) => {
     return get().messages[chatId] ?? [];
@@ -132,9 +150,6 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       for (const raw of data.messages as Array<Record<string, unknown>>) {
         msgs.push(await mapServerMessage(raw, myUserId));
       }
-      // TODO: Messages loaded from API may not include reactions yet.
-      // Once the backend returns reactions in the message query, map them
-      // into each Message.reactions (Record<emoji, userId[]>) here.
       // HI-38: Always mark chat as loaded after successful fetch (even if empty)
       set((s) => ({
         messages: { ...s.messages, [chatId]: msgs },
@@ -320,6 +335,44 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       typingUsers: {
         ...s.typingUsers,
         [chatId]: (s.typingUsers[chatId] ?? []).filter((n) => n !== userName),
+      },
+    }));
+  },
+
+  setEditingMessage: (message) => {
+    set({ editingMessage: message });
+  },
+
+  clearEditingMessage: () => {
+    set({ editingMessage: null });
+  },
+
+  updateMessage: async (chatId, messageId, content) => {
+    // Optimistic update
+    const editedAt = new Date().toISOString();
+    set((s) => ({
+      editingMessage: null,
+      messages: {
+        ...s.messages,
+        [chatId]: (s.messages[chatId] ?? []).map((m) =>
+          m.id === messageId ? { ...m, content, editedAt } : m,
+        ),
+      },
+    }));
+    try {
+      await api.editMessage(chatId, messageId, content);
+    } catch (err) {
+      console.error('Ошибка редактирования сообщения:', err);
+    }
+  },
+
+  updateMessageLocal: (chatId, messageId, content, editedAt) => {
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatId]: (s.messages[chatId] ?? []).map((m) =>
+          m.id === messageId ? { ...m, content, editedAt } : m,
+        ),
       },
     }));
   },

@@ -138,6 +138,9 @@ export const MessageBubble = memo(function MessageBubble({
           <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
             {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" aria-hidden="true" />}
             {message.content}
+            {message.editedAt && (
+              <span className="text-[11px] ml-1 opacity-50" aria-label="Отредактировано">(ред.)</span>
+            )}
           </p>
         )}
       </div>

@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
-import { Plus, AudioLines, ArrowUp, Smile } from 'lucide-react';
+import { Plus, AudioLines, ArrowUp, Smile, X, Pencil } from 'lucide-react';
 import { t } from '@/i18n';
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
+import EmojiPicker from '@components/media/EmojiPicker';
 import { sendWS } from '@/api/client';
 import { createVoiceRecorder, uploadVoice } from '@/utils/fileUpload';
 import { useMessageStore } from '@stores/messageStore';
@@ -13,18 +14,35 @@ interface InputBarProps {
   onAttachment?: (type: 'camera' | 'photo' | 'document' | 'location') => void;
   placeholder?: string;
   chatId?: string;
+  editingMessage?: Message | null;
+  onCancelEdit?: () => void;
 }
 
 /** Панель ввода сообщения в стиле iMessage Mac */
-export function InputBar({ onSend, onAttachment, placeholder, chatId }: InputBarProps) {
+export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMessage, onCancelEdit }: InputBarProps) {
   const resolvedPlaceholder = placeholder ?? t('chat.placeholder');
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isTypingRef = useRef(false);
   const recorderRef = useRef<ReturnType<typeof createVoiceRecorder> | null>(null);
+  const updateMessage = useMessageStore((s) => s.updateMessage);
+
+  // Pre-fill input when editing a message
+  useEffect(() => {
+    if (editingMessage) {
+      setText(editingMessage.content);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        // Trigger auto-resize
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
+      }
+    }
+  }, [editingMessage]);
 
   // ME-16: Очистить таймер typing при размонтировании
   useEffect(() => {
@@ -45,12 +63,18 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId }: InputBar
       isTypingRef.current = false;
       clearTimeout(typingTimeoutRef.current);
     }
-    onSend(trimmed);
+    // If editing — call updateMessage instead of onSend
+    if (editingMessage && chatId) {
+      updateMessage(chatId, editingMessage.id, trimmed);
+      onCancelEdit?.();
+    } else {
+      onSend(trimmed);
+    }
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [text, onSend, chatId]);
+  }, [text, onSend, chatId, editingMessage, updateMessage, onCancelEdit]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -122,17 +146,69 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId }: InputBar
     }
   }, [isRecording, chatId]);
 
+  /** Insert emoji at cursor position (or append) */
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    const el = textareaRef.current;
+    if (el) {
+      const start = el.selectionStart ?? text.length;
+      const end = el.selectionEnd ?? text.length;
+      const newText = text.slice(0, start) + emoji + text.slice(end);
+      setText(newText);
+      // Restore cursor position after emoji
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = start + emoji.length;
+        el.focus();
+      });
+    } else {
+      setText((prev) => prev + emoji);
+    }
+    setShowEmojiPicker(false);
+  }, [text]);
+
+  const handleCancelEdit = useCallback(() => {
+    onCancelEdit?.();
+    setText('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [onCancelEdit]);
+
   const hasText = text.trim().length > 0;
 
   return (
     <footer
-      className="flex items-end gap-2 px-3 py-2 border-t"
+      className="relative flex flex-col border-t"
       style={{
         borderColor: '#38383A',
         background: '#000',
         paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
       }}
     >
+      {/* Editing banner */}
+      {editingMessage && (
+        <div
+          className="flex items-center gap-2 px-3 py-[6px]"
+          style={{ borderBottom: '0.5px solid #38383A', background: '#1C1C1E' }}
+        >
+          <Pencil size={14} color="#007AFF" />
+          <div className="flex-1 min-w-0">
+            <span className="text-[12px] font-medium" style={{ color: '#007AFF' }}>Редактирование</span>
+            <p className="text-[13px] truncate" style={{ color: '#ABABAF' }}>
+              {editingMessage.content}
+            </p>
+          </div>
+          <button
+            onClick={handleCancelEdit}
+            className="w-[28px] h-[28px] flex items-center justify-center rounded-full"
+            style={{ background: '#2C2C2E' }}
+            aria-label="Отменить редактирование"
+          >
+            <X size={14} color="#ABABAF" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2 px-3 py-2">
       {/* Кнопка вложений */}
       <button
         onClick={() => setShowAttachments(true)}
@@ -208,12 +284,22 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId }: InputBar
       )}
 
       {/* Эмодзи */}
-      <button
-        className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
-        aria-label="Эмодзи"
-      >
-        <Smile size={22} color="#8E8E93" />
-      </button>
+      <div className="relative">
+        <button
+          onClick={() => setShowEmojiPicker((v) => !v)}
+          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
+          aria-label="Эмодзи"
+        >
+          <Smile size={22} color={showEmojiPicker ? '#007AFF' : '#8E8E93'} />
+        </button>
+        {showEmojiPicker && (
+          <EmojiPicker
+            onSelect={handleEmojiSelect}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        )}
+      </div>
+      </div>
     </footer>
   );
 }

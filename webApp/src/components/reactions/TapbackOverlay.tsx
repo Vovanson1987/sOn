@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useFocusTrap } from '@hooks/useFocusTrap';
-import { Reply, Copy, Trash2 } from 'lucide-react';
+import { Reply, Copy, Trash2, Pencil, Share2 } from 'lucide-react';
 import type { Message } from '@/types/message';
 
 /** Допустимые Tapback-реакции (как в iMessage) */
@@ -14,6 +14,8 @@ interface TapbackOverlayProps {
   onReply: () => void;
   onCopy: () => void;
   onDelete: () => void;
+  onEdit?: (message: Message) => void;
+  onForward?: (message: Message) => void;
   onClose: () => void;
 }
 
@@ -25,6 +27,8 @@ export function TapbackOverlay({
   onReply,
   onCopy,
   onDelete,
+  onEdit,
+  onForward,
   onClose,
 }: TapbackOverlayProps) {
   const focusTrapRef = useFocusTrap();
@@ -135,6 +139,19 @@ export function TapbackOverlay({
             <Reply size={18} color="#fff" aria-hidden="true" />
             <span className="text-[15px] text-white">Ответить</span>
           </button>
+          {isOwn && onEdit && message.type === 'text' && (
+            <>
+              <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
+              <button
+                onClick={() => onEdit(message)}
+                className="w-full flex items-center gap-3 px-4 py-[12px] text-left active:bg-[#2C2C2E] focus-visible:bg-[#2C2C2E] focus-visible:outline-none"
+                role="menuitem"
+              >
+                <Pencil size={18} color="#fff" aria-hidden="true" />
+                <span className="text-[15px] text-white">Редактировать</span>
+              </button>
+            </>
+          )}
           <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
           <button
             onClick={onCopy}
@@ -144,6 +161,19 @@ export function TapbackOverlay({
             <Copy size={18} color="#fff" aria-hidden="true" />
             <span className="text-[15px] text-white">Копировать</span>
           </button>
+          {onForward && (
+            <>
+              <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
+              <button
+                onClick={() => onForward(message)}
+                className="w-full flex items-center gap-3 px-4 py-[12px] text-left active:bg-[#2C2C2E] focus-visible:bg-[#2C2C2E] focus-visible:outline-none"
+                role="menuitem"
+              >
+                <Share2 size={18} color="#fff" aria-hidden="true" />
+                <span className="text-[15px] text-white">Переслать</span>
+              </button>
+            </>
+          )}
           <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.1)', marginLeft: '44px' }} />
           <button
             onClick={onDelete}
