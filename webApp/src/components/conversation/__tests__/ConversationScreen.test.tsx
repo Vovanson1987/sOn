@@ -23,6 +23,22 @@ const mockFetchMessages = vi.fn();
 const mockAddReaction = vi.fn();
 const mockDeleteMessage = vi.fn();
 
+vi.mock('@/i18n', () => ({
+  t: (key: string) => {
+    const map: Record<string, string> = {
+      'chat.placeholder': 'Сообщение',
+      'chat.secret_placeholder': 'Секретное сообщение...',
+      'status.sending': 'Отправка',
+      'status.sent': 'Отправлено',
+      'status.delivered': 'Доставлено',
+      'status.read': 'Прочитано',
+    };
+    return map[key] || key;
+  },
+  getLocale: () => 'ru' as const,
+  setLocale: vi.fn(),
+}));
+
 vi.mock('@stores/messageStore', () => ({
   useMessageStore: vi.fn((selector) => {
     const state = {
@@ -31,6 +47,10 @@ vi.mock('@stores/messageStore', () => ({
       fetchMessages: mockFetchMessages,
       addReaction: mockAddReaction,
       deleteMessage: mockDeleteMessage,
+      updateMessage: vi.fn(),
+      editingMessage: null,
+      clearEditingMessage: vi.fn(),
+      setEditingMessage: vi.fn(),
       typingUsers: {},
     };
     return selector(state);

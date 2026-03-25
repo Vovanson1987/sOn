@@ -261,6 +261,8 @@ describe('GET /api/chats/:chatId/messages', () => {
         { id: 'msg-1', content: 'Привет', sender_id: 'user-1', sender_name: 'Тест', created_at: new Date().toISOString() },
       ],
     });
+    // reactions query
+    mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .get('/api/chats/chat-1/messages')
@@ -288,6 +290,8 @@ describe('POST /api/chats/:chatId/messages', () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
     // Тип чата
     mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
+    // Проверка блокировки (direct чат)
+    mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const now = new Date().toISOString();
     mockClient.query
@@ -299,6 +303,8 @@ describe('POST /api/chats/:chatId/messages', () => {
 
     // broadcastToChat — SELECT chat_members
     mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-2' }] });
+    // sendPushToOfflineMembers — SELECT chat_members
+    mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .post('/api/chats/chat-1/messages')

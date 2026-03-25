@@ -28,7 +28,13 @@ vi.mock('@/utils/fileUpload', () => ({
 
 // Mock stores
 vi.mock('@stores/messageStore', () => ({
-  useMessageStore: { getState: () => ({ addMessage: vi.fn() }) },
+  useMessageStore: Object.assign(
+    vi.fn((selector: any) => {
+      const state = { addMessage: vi.fn(), updateMessage: vi.fn(), editingMessage: null, clearEditingMessage: vi.fn() };
+      return typeof selector === 'function' ? selector(state) : state;
+    }),
+    { getState: () => ({ addMessage: vi.fn(), updateMessage: vi.fn() }) },
+  ),
 }));
 
 vi.mock('@stores/authStore', () => ({
