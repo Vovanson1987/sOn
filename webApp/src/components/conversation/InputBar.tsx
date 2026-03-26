@@ -32,15 +32,24 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
   const updateMessage = useMessageStore((s) => s.updateMessage);
 
   // Pre-fill input when editing a message
-  useEffect(() => {
-    if (editingMessage) {
+  const prevEditingRef = useRef(editingMessage);
+  if (editingMessage && editingMessage !== prevEditingRef.current) {
+    prevEditingRef.current = editingMessage;
+    // Use flushSync-free approach: set text during render
+    if (text !== editingMessage.content) {
       setText(editingMessage.content);
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        // Trigger auto-resize
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
-      }
+    }
+  }
+  if (!editingMessage && prevEditingRef.current) {
+    prevEditingRef.current = null;
+  }
+
+  // Focus textarea when editing starts
+  useEffect(() => {
+    if (editingMessage && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
     }
   }, [editingMessage]);
 

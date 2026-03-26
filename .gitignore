@@ -19,3 +19,9 @@ docs/ngrok_recovery_codes.txt
 PROMPT-REMAINING-AUDIT.md
 PROMPT-SETTINGS.md
 CREDENTIALS.md
+
+# Claude Code настройки
+.claude/settings.json
+
+# Бэкапы
+backups/

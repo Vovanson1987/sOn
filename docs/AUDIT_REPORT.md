@@ -1,5 +1,11 @@
 # sOn Messenger — Audit Report
 
+## Актуальный operational-аудит
+
+Последний аудит готовности к production:
+
+- `docs/PRODUCTION_READINESS_AUDIT_2026-03-24.md`
+
 **Дата:** 2026-03-18
 **Аудиторы:** 8 параллельных AI-агентов (code-reviewer)
 
