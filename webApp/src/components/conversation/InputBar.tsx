@@ -30,21 +30,16 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
   const isTypingRef = useRef(false);
   const recorderRef = useRef<ReturnType<typeof createVoiceRecorder> | null>(null);
   const updateMessage = useMessageStore((s) => s.updateMessage);
-
-  // Pre-fill input when editing a message
-  const prevEditingRef = useRef(editingMessage);
-  if (editingMessage && editingMessage !== prevEditingRef.current) {
-    prevEditingRef.current = editingMessage;
-    // Use flushSync-free approach: set text during render
-    if (text !== editingMessage.content) {
+  // Синхронизировать поле ввода при начале/конце редактирования
+  const [prevEditing, setPrevEditing] = useState<Message | null | undefined>(null);
+  if (editingMessage !== prevEditing) {
+    setPrevEditing(editingMessage);
+    if (editingMessage) {
       setText(editingMessage.content);
     }
   }
-  if (!editingMessage && prevEditingRef.current) {
-    prevEditingRef.current = null;
-  }
 
-  // Focus textarea when editing starts
+  // Фокус textarea при редактировании
   useEffect(() => {
     if (editingMessage && textareaRef.current) {
       textareaRef.current.focus();
@@ -52,6 +47,7 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
     }
   }, [editingMessage]);
+
 
   // ME-16: Очистить таймер typing при размонтировании
   useEffect(() => {
