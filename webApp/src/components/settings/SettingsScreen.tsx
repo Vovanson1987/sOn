@@ -372,13 +372,13 @@ export function SettingsScreen() {
   }, [logout]);
 
   // Язык / Locale
-  const LOCALE_ORDER: Locale[] = ['ru', 'en', 'kz'];
   const LOCALE_LABELS: Record<Locale, string> = { ru: 'Русский', en: 'English', kz: 'Қазақша' };
   const [currentLocale, setCurrentLocale] = useState<Locale>(getLocale());
 
   const cycleLocale = useCallback(() => {
-    const idx = LOCALE_ORDER.indexOf(currentLocale);
-    const next = LOCALE_ORDER[(idx + 1) % LOCALE_ORDER.length];
+    const localeOrder: Locale[] = ['ru', 'en', 'kz'];
+    const idx = localeOrder.indexOf(currentLocale);
+    const next = localeOrder[(idx + 1) % localeOrder.length];
     setLocale(next);
     setCurrentLocale(next);
   }, [currentLocale]);

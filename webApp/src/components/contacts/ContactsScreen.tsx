@@ -244,8 +244,9 @@ function ContactRow({ contact, onToggleFavorite, onDelete, onSelect }: ContactRo
 
   // Cleanup long-press timer
   useEffect(() => {
+    const timer = longPressTimerRef.current;
     return () => {
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
