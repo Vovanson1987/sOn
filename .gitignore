@@ -25,3 +25,12 @@ CREDENTIALS.md
 
 # Бэкапы
 backups/
+.aider*
+
+# Tauri build artifacts (не коммитить — может весить больше 1 GB)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Локальные файлы хуков/настроек Claude Code
+.claude/hookify.*.local.md
+.claude/*.local.md
