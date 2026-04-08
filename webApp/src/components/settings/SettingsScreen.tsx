@@ -4,11 +4,13 @@ import {
   Lock, Info, LogOut, Check, X, Camera, KeyRound, Eye, EyeOff, Globe,
 } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
+import { McpIntegrationCard } from '@components/settings/McpIntegrationCard';
 import { useAuthStore } from '@stores/authStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { disconnectWS, updateProfile, uploadAvatar, changePassword } from '@/api/client';
 import { t, setLocale, getLocale } from '@/i18n';
 import type { Locale } from '@/i18n';
+import { isDesktopRuntime } from '@/utils/desktopMcp';
 
 
 // ==================== Вспомогательные компоненты ====================
@@ -310,6 +312,7 @@ function ProfileEditor() {
 /** Экран настроек в стиле iOS */
 export function SettingsScreen() {
   const logout = useAuthStore((s) => s.logout);
+  const showDesktopMcp = isDesktopRuntime();
 
   // Настройки из стора
   const theme = useSettingsStore((s) => s.theme);
@@ -476,6 +479,13 @@ export function SettingsScreen() {
           value="Signal Protocol"
         />
       </div>
+
+      {showDesktopMcp && (
+        <>
+          <SectionHeader title="MCP Gateway" />
+          <McpIntegrationCard />
+        </>
+      )}
 
       <SectionHeader title={t('settings.about')} />
       <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
