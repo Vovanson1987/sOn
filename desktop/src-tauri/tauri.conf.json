@@ -6,11 +6,10 @@
   "build": {
     "frontendDist": "../../webApp/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd ../../webApp && npm run dev",
-    "beforeBuildCommand": "cd ../../webApp && npm run build"
+    "beforeDevCommand": "cd ../webApp && VITE_API_URL=${SON_DESKTOP_API_URL:-https://chat.sonchat.uk} VITE_WS_URL=${SON_DESKTOP_WS_URL:-wss://chat.sonchat.uk/ws} VITE_MCP_URL=${SON_DESKTOP_MCP_URL:-https://chat.sonchat.uk/mcp} npm run dev",
+    "beforeBuildCommand": "cd ../webApp && VITE_API_URL=${SON_DESKTOP_API_URL:-https://chat.sonchat.uk} VITE_WS_URL=${SON_DESKTOP_WS_URL:-wss://chat.sonchat.uk/ws} VITE_MCP_URL=${SON_DESKTOP_MCP_URL:-https://chat.sonchat.uk/mcp} npm run build"
   },
   "app": {
-    "title": "sOn Messenger",
     "windows": [
       {
         "title": "sOn Messenger",
@@ -25,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: https://chat.sonchat.uk; connect-src 'self' https://chat.sonchat.uk wss://chat.sonchat.uk"
     }
   }
 }
