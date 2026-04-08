@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+vi.mock('@/api/client', () => ({
+  setUnauthorizedHandler: vi.fn(),
+  setToken: vi.fn(),
+  removeToken: vi.fn(),
+}));
+
 import { useAuthStore } from '../authStore';
+import { setToken, removeToken } from '@/api/client';
 
 // Мок localStorage
 const localStorageMock = (() => {
@@ -46,6 +53,7 @@ describe('authStore', () => {
     const user = { id: 'u1', email: 'test@test.com', display_name: 'Тест' };
     useAuthStore.getState().login('jwt-token', user);
 
+    expect(setToken).toHaveBeenCalledWith('jwt-token');
     expect(localStorageMock.setItem).toHaveBeenCalledWith('son-token', 'jwt-token');
     expect(localStorageMock.setItem).toHaveBeenCalledWith('son-user', JSON.stringify(user));
   });
@@ -64,6 +72,7 @@ describe('authStore', () => {
     useAuthStore.getState().login('jwt-token', { id: 'u1', email: 'e', display_name: 'n' });
     useAuthStore.getState().logout();
 
+    expect(removeToken).toHaveBeenCalled();
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-token');
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-user');
   });
@@ -76,6 +85,7 @@ describe('authStore', () => {
     const result = useAuthStore.getState().restore();
     expect(result).toBe(true);
 
+    expect(setToken).toHaveBeenCalledWith('saved-token');
     const state = useAuthStore.getState();
     expect(state.token).toBe('saved-token');
     expect(state.user).toEqual(user);

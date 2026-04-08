@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SettingsScreen } from '../SettingsScreen';
 
 // Mock i18n to return proper Russian translations in test environment
@@ -22,6 +22,18 @@ vi.mock('@/i18n', () => ({
 }));
 
 const mockLogout = vi.fn();
+const mockSetMcpConfig = vi.fn();
+const mockSetMcpLastProbe = vi.fn();
+const mockResetMcpConfig = vi.fn();
+const mockProbeMcpConnection = vi.fn().mockResolvedValue({
+  ok: true,
+  status: 200,
+  backend: 'claude',
+  toolCount: 24,
+  serverName: 'bridge',
+  serverVersion: '0.2.0',
+  message: 'ok',
+});
 
 vi.mock('@stores/authStore', () => ({
   useAuthStore: vi.fn((selector) => {
@@ -64,7 +76,31 @@ vi.mock('@stores/settingsStore', () => ({
   }),
 }));
 
+vi.mock('@stores/mcpStore', () => ({
+  useMcpStore: vi.fn((selector) => {
+    const state = {
+      url: 'https://chat.sonchat.uk/mcp',
+      token: 'mcp-token',
+      backend: 'claude',
+      lastProbe: null,
+      setConfig: mockSetMcpConfig,
+      setLastProbe: mockSetMcpLastProbe,
+      resetConfig: mockResetMcpConfig,
+    };
+    return selector(state);
+  }),
+}));
+
+vi.mock('@/utils/desktopMcp', () => ({
+  isDesktopRuntime: () => true,
+  probeMcpConnection: (...args: unknown[]) => mockProbeMcpConnection(...args),
+}));
+
 describe('SettingsScreen', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('отображает имя пользователя из authStore', () => {
     render(<SettingsScreen />);
     expect(screen.getByText('Тестов')).toBeInTheDocument();
@@ -112,6 +148,44 @@ describe('SettingsScreen', () => {
   it('отображает кнопку "Выйти"', () => {
     render(<SettingsScreen />);
     expect(screen.getByText('Выйти')).toBeInTheDocument();
+  });
+
+  it('отображает desktop секцию MCP integration', () => {
+    render(<SettingsScreen />);
+    expect(screen.getByText('MCP Gateway')).toBeInTheDocument();
+    expect(screen.getByText('MCP integration')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://chat.sonchat.uk/mcp')).toBeInTheDocument();
+  });
+
+  it('сохраняет MCP конфиг по кнопке', () => {
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByText('Сохранить'));
+    expect(mockSetMcpConfig).toHaveBeenCalledWith({
+      url: 'https://chat.sonchat.uk/mcp',
+      token: 'mcp-token',
+      backend: 'claude',
+    });
+  });
+
+  it('запускает native MCP probe по кнопке проверки', async () => {
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByText('Проверить соединение'));
+
+    await waitFor(() => {
+      expect(mockProbeMcpConnection).toHaveBeenCalledWith({
+        url: 'https://chat.sonchat.uk/mcp',
+        token: 'mcp-token',
+        backend: 'claude',
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockSetMcpLastProbe).toHaveBeenCalledWith(expect.objectContaining({
+        ok: true,
+        toolCount: 24,
+        backend: 'claude',
+      }));
+    });
   });
 
   it('вызывает logout при клике на "Выйти"', () => {

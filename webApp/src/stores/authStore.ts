@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { setUnauthorizedHandler } from '@/api/client';
+import { removeToken, setToken, setUnauthorizedHandler } from '@/api/client';
 
 interface AuthUser {
   id: string;
@@ -27,12 +27,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isAuthenticated: false,
 
   login: (token, user) => {
+    setToken(token);
     localStorage.setItem('son-token', token);
     localStorage.setItem('son-user', JSON.stringify(user));
     set({ token, user, isAuthenticated: true });
   },
 
   logout: () => {
+    removeToken();
     localStorage.removeItem('son-token');
     localStorage.removeItem('son-user');
     set({ token: null, user: null, isAuthenticated: false });
@@ -44,6 +46,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr);
+        setToken(token);
         set({ token, user, isAuthenticated: true });
         return true;
       } catch {

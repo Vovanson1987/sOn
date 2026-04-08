@@ -7,14 +7,12 @@ let memoryToken: string | null = null;
 
 /** Получить JWT токен (из памяти — только для WebSocket auth) */
 export function getToken(): string | null {
-  return memoryToken;
+  return memoryToken || localStorage.getItem('son-token');
 }
 
 /** Сохранить JWT токен в памяти */
 export function setToken(token: string): void {
   memoryToken = token;
-  // Миграция: убрать из localStorage если остался
-  localStorage.removeItem('son-token');
 }
 
 /** Удалить токен из памяти */
@@ -42,6 +40,7 @@ function handleUnauthorized(): never {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const token = getToken();
 
   let res: Response;
   try {
@@ -53,7 +52,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         'Content-Type': 'application/json',
         // HI-18: HTTP авторизация через httpOnly cookie (credentials: 'include').
         // Authorization header используется только как fallback для обратной совместимости.
-        ...(memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
