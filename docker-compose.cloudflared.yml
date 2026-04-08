@@ -1,0 +1,33 @@
+## Override-файл для подключения Cloudflare Tunnel.
+##
+## Запускается поверх docker-compose.prod.yml:
+##   docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml \
+##     up -d postgres redis minio api web coturn cloudflared
+##
+## Переменные в .env:
+##   CLOUDFLARE_TUNNEL_TOKEN=eyJhIjo...
+##
+## Cloudflared работает в host network mode и проксирует запросы
+## из Cloudflare Tunnel к локальному web-контейнеру (localhost:${WEB_PORT}).
+## Публикация наружу происходит через Cloudflare, поэтому порты 80/443
+## на VPS открывать не нужно.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: son-cloudflared
+    restart: always
+    network_mode: host
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set}
+    depends_on:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "3"
