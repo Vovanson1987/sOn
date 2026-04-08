@@ -1,0 +1,11 @@
+[Unit]
+Description=MCP Bridge and multi-backend wrapper watchdog
+After=network-online.target pm2-son.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__ROOT_DIR__
+Environment=ROOT_DIR=__ROOT_DIR__
+ExecStart=/bin/bash __ROOT_DIR__/scripts/mcp/watchdog.sh

@@ -1,0 +1,18 @@
+{
+  "name": "son-mcp-bridge",
+  "version": "1.0.0",
+  "description": "Streamable HTTP MCP bridge for Desktop/Msty with dual Claude/Codex legacy SSE wrapper",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "start:wrapper": "node multi-backend-wrapper.js",
+    "start:claude-wrapper": "node multi-backend-wrapper.js",
+    "smoke": "node smoke-test.mjs",
+    "e2e": "node e2e-test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

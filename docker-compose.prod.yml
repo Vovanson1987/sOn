@@ -125,6 +125,52 @@ services:
     networks:
       - son-internal
 
+  # ====== MCP Bridge (Msty Studio -> multi-backend wrapper) ======
+  mcp-bridge:
+    build: ./mcp-bridge
+    container_name: son-mcp-bridge
+    restart: always
+    environment:
+      PORT: "${MCP_BRIDGE_PORT:-4100}"
+      BRIDGE_HOST: "0.0.0.0"
+      MCP_PATH: "/mcp"
+      HEALTH_PATH: "/health"
+      MCP_BACKEND_DEFAULT: "${MCP_BACKEND_DEFAULT:-claude}"
+      LOG_LEVEL: "${MCP_BRIDGE_LOG_LEVEL:-info}"
+
+      BRIDGE_AUTH_TOKEN: "${MCP_BRIDGE_AUTH_TOKEN:-change-me}"
+      ALLOWED_ORIGINS: "${MCP_BRIDGE_ALLOWED_ORIGINS:-https://studio.msty.app}"
+      STRICT_ORIGIN_CHECK: "${MCP_BRIDGE_STRICT_ORIGIN_CHECK:-false}"
+
+      REQUEST_TIMEOUT_MS: "${MCP_BRIDGE_REQUEST_TIMEOUT_MS:-120000}"
+      MAX_BODY_BYTES: "${MCP_BRIDGE_MAX_BODY_BYTES:-1048576}"
+      SESSION_TTL_MS: "${MCP_BRIDGE_SESSION_TTL_MS:-1800000}"
+      SESSION_CLEANUP_INTERVAL_MS: "${MCP_BRIDGE_SESSION_CLEANUP_INTERVAL_MS:-60000}"
+      CONNECT_TIMEOUT_MS: "${MCP_BRIDGE_CONNECT_TIMEOUT_MS:-15000}"
+
+      UPSTREAM_TRANSPORT: "${MCP_BRIDGE_UPSTREAM_TRANSPORT:-legacy-sse}"
+      UPSTREAM_SSE_URL: "${MCP_BRIDGE_UPSTREAM_SSE_URL:-http://host.docker.internal:8790/sse}"
+      UPSTREAM_HTTP_URL: "${MCP_BRIDGE_UPSTREAM_HTTP_URL:-http://host.docker.internal:8791/mcp}"
+      UPSTREAM_AUTH_BEARER: "${MCP_BRIDGE_UPSTREAM_AUTH_BEARER:-}"
+      UPSTREAM_HEADERS_JSON: "${MCP_BRIDGE_UPSTREAM_HEADERS_JSON:-}"
+      UPSTREAM_INSECURE_TLS: "${MCP_BRIDGE_UPSTREAM_INSECURE_TLS:-false}"
+    ports:
+      - "${MCP_BRIDGE_PORT:-4100}:${MCP_BRIDGE_PORT:-4100}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "3"
+    networks:
+      - son-internal
+
   # ====== Frontend (nginx + SPA) ======
   web:
     build:
