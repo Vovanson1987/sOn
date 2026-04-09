@@ -1088,7 +1088,9 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      handleWsMessage(user, ws, msg);
+      handleWsMessage(user, ws, msg).catch((err) => {
+        console.error('Ошибка обработки WS:', err);
+      });
     } catch (err) {
       console.error('Ошибка обработки WS:', err);
     }
@@ -1115,71 +1117,116 @@ function registerConnection(ws, user) {
   pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
 }
 
+/**
+ * Проверить, что user является участником указанного чата.
+ * Возвращает true/false, никогда не выбрасывает (при ошибке БД — false).
+ */
+async function isChatMember(userId, chatId) {
+  if (!userId || !chatId || typeof chatId !== 'string') return false;
+  try {
+    const r = await pool.query(
+      'SELECT 1 FROM chat_members WHERE user_id = $1 AND chat_id = $2 LIMIT 1',
+      [userId, chatId]
+    );
+    return r.rows.length > 0;
+  } catch (err) {
+    console.error('[isChatMember] DB error', { userId, chatId, message: err?.message });
+    return false;
+  }
+}
+
+/**
+ * Проверить, что два пользователя входят в общий чат.
+ * Используется для авторизации WebRTC signaling — нельзя звонить
+ * произвольному пользователю по user_id, только тем, с кем есть общий чат.
+ */
+async function haveSharedChat(userA, userB) {
+  if (!userA || !userB || userA === userB) return false;
+  try {
+    const r = await pool.query(
+      `SELECT 1 FROM chat_members cm1
+       JOIN chat_members cm2 ON cm1.chat_id = cm2.chat_id
+       WHERE cm1.user_id = $1 AND cm2.user_id = $2
+       LIMIT 1`,
+      [userA, userB]
+    );
+    return r.rows.length > 0;
+  } catch (err) {
+    console.error('[haveSharedChat] DB error', { userA, userB, message: err?.message });
+    return false;
+  }
+}
+
 /** Обработка WebSocket сообщений */
-function handleWsMessage(user, ws, msg) {
+async function handleWsMessage(user, ws, msg) {
   switch (msg.type) {
     case 'typing':
-      broadcastToChat(msg.chat_id, { type: 'typing', user_id: user.id, display_name: user.display_name }, user.id);
-      break;
     case 'stop_typing':
-      broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id, display_name: user.display_name }, user.id);
+    case 'read': {
+      // SEC: убеждаемся, что отправитель реально в этом чате
+      if (!(await isChatMember(user.id, msg.chat_id))) return;
+      if (msg.type === 'typing') {
+        broadcastToChat(msg.chat_id, { type: 'typing', user_id: user.id, display_name: user.display_name }, user.id);
+      } else if (msg.type === 'stop_typing') {
+        broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id, display_name: user.display_name }, user.id);
+      } else {
+        broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);
+      }
       break;
-    case 'read':
-      broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);
-      break;
+    }
 
     // ==================== WebRTC Signaling ====================
 
     case 'call_offer':
-      // Переслать SDP offer целевому пользователю
-      sendToUser(msg.target_user_id, {
-        type: 'call_offer',
-        caller_id: user.id,
-        caller_name: user.display_name,
-        chat_id: msg.chat_id,
-        sdp: msg.sdp,
-        is_video: msg.is_video || false,
-      });
-      break;
-
     case 'call_answer':
-      // Переслать SDP answer вызывающему
-      sendToUser(msg.target_user_id, {
-        type: 'call_answer',
-        answerer_id: user.id,
-        chat_id: msg.chat_id,
-        sdp: msg.sdp,
-      });
-      break;
-
     case 'ice_candidate':
-      // Переслать ICE candidate другой стороне
-      sendToUser(msg.target_user_id, {
-        type: 'ice_candidate',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-        candidate: msg.candidate,
-      });
-      break;
-
     case 'call_end':
-      // Уведомить собеседника о завершении звонка
-      sendToUser(msg.target_user_id, {
-        type: 'call_end',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-        reason: msg.reason || 'ended',
-      });
-      break;
+    case 'call_reject': {
+      // SEC-4: проверяем, что target_user_id входит в общий чат с отправителем.
+      // Без этого любой аутентифицированный пользователь может звонить/слать SDP
+      // произвольному пользователю по user_id (harassment + DoS через signaling).
+      if (!msg.target_user_id || typeof msg.target_user_id !== 'string') return;
+      if (!(await haveSharedChat(user.id, msg.target_user_id))) return;
 
-    case 'call_reject':
-      // Уведомить о отклонении звонка
-      sendToUser(msg.target_user_id, {
-        type: 'call_reject',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-      });
+      if (msg.type === 'call_offer') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_offer',
+          caller_id: user.id,
+          caller_name: user.display_name,
+          chat_id: msg.chat_id,
+          sdp: msg.sdp,
+          is_video: msg.is_video || false,
+        });
+      } else if (msg.type === 'call_answer') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_answer',
+          answerer_id: user.id,
+          chat_id: msg.chat_id,
+          sdp: msg.sdp,
+        });
+      } else if (msg.type === 'ice_candidate') {
+        sendToUser(msg.target_user_id, {
+          type: 'ice_candidate',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+          candidate: msg.candidate,
+        });
+      } else if (msg.type === 'call_end') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_end',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+          reason: msg.reason || 'ended',
+        });
+      } else if (msg.type === 'call_reject') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_reject',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+        });
+      }
       break;
+    }
   }
 }
 
