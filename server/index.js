@@ -443,14 +443,19 @@ app.get('/api/users/search', authMiddleware, async (req, res) => {
 async function chatMemberCheck(req, res, next) {
   const chatId = req.params.chatId;
   const userId = req.user.id;
-  const result = await pool.query(
-    'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-    [chatId, userId]
-  );
-  if (result.rows.length === 0) {
-    return res.status(403).json({ error: 'Нет доступа к этому чату' });
+  try {
+    const result = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к этому чату' });
+    }
+    next();
+  } catch (err) {
+    console.error('[chatMemberCheck] DB error', { chatId, userId, message: err?.message });
+    res.status(503).json({ error: 'Сервис временно недоступен' });
   }
-  next();
 }
 
 function isPlainObject(value) {
@@ -1470,6 +1475,39 @@ app.get('/health', async (_, res) => {
   }
   const allOk = checks.postgres === 'ok';
   res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', ...checks });
+});
+
+// ==================== Global Error Handlers ====================
+
+// Express error-handling middleware — ловит async rejections из route handlers
+// и middleware (Express 5 автоматически передаёт их сюда через next(err)).
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  const reqId = req.headers['x-request-id'] || '';
+  console.error('[express error]', {
+    reqId,
+    method: req.method,
+    path: req.path,
+    userId: req.user?.id,
+    message: err?.message,
+    code: err?.code,
+  });
+  if (res.headersSent) return;
+  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+});
+
+// Safety net на уровне процесса — не даём процессу умереть от rejected
+// promises, которые не попали в route handlers (например из WS callback'ов).
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[unhandledRejection]', {
+    message: reason?.message || String(reason),
+    stack: reason?.stack,
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', { message: err?.message, stack: err?.stack });
+  // Не выходим — пусть процесс дожмёт запросы, а потом систем-ди перезапустит
 });
 
 // ==================== START ====================
