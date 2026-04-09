@@ -93,8 +93,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
       - run: npm ci
-      - name: Jest тесты
-        run: npm test
+      - name: Jest тесты с покрытием
+        run: npx jest --forceExit --detectOpenHandles --coverage
         env:
           NODE_ENV: test
 
@@ -117,5 +117,5 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ matrix.dir }}/package-lock.json
       - run: npm ci
-      - name: npm audit
-        run: npm audit --audit-level=high || true
+      - name: npm audit (P1.9: без || true — уязвимости блокируют CI)
+        run: npm audit --audit-level=high
