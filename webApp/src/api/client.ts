@@ -187,6 +187,7 @@ export async function sendMessage(
   type = 'text',
   selfDestructSeconds?: number,
   secretPayload?: SecretPayloadForSend,
+  attachment?: { url: string; fileName: string; fileSize: number; mimeType: string },
 ) {
   return request<unknown>(`/api/chats/${chatId}/messages`, {
     method: 'POST',
@@ -195,6 +196,7 @@ export async function sendMessage(
       type,
       ...(selfDestructSeconds ? { self_destruct_seconds: selfDestructSeconds } : {}),
       ...(secretPayload ? { e2ee: secretPayload } : {}),
+      ...(attachment ? { attachment } : {}),
     }),
   });
 }

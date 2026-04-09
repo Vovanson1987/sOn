@@ -20,6 +20,7 @@ import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAuthStore } from '@stores/authStore';
 import { useChatStore } from '@stores/chatStore';
 import { uploadImage, uploadFile } from '@/utils/fileUpload';
+import { sendMessage } from '@/api/client';
 import { PinnedBanner } from './PinnedBanner';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
@@ -88,6 +89,7 @@ function MessageRow({
   const contentRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef(0);
 
+  // C-F5: Явные зависимости вместо вызова на каждый рендер
   useEffect(() => {
     if (contentRef.current) {
       const h = contentRef.current.offsetHeight;
@@ -96,7 +98,7 @@ function MessageRow({
         setRowHeight(index, h);
       }
     }
-  });
+  }, [index, setRowHeight]);
 
   // Typing indicator (виртуальная строка после всех сообщений)
   if (index >= grouped.length) {
@@ -312,32 +314,11 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           if (!file) return;
           try {
             const result = await uploadImage(file);
-            const store = useMessageStore.getState();
-            const auth = useAuthStore.getState();
-            const userId = auth.user?.id || 'user-me';
-            const userName = auth.user?.display_name || 'Я';
-            const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const msg: Message = {
-              id: tempId,
-              chatId: chat.id,
-              senderId: userId,
-              senderName: userName,
-              content: result.url,
-              type: 'image',
-              status: 'sent',
-              reactions: {},
-              isDestroyed: false,
-              createdAt: new Date().toISOString(),
-              attachment: {
-                id: result.objectName,
-                type: file.type.startsWith('video/') ? 'video' : 'image',
-                fileName: file.name,
-                fileSize: result.size,
-                mimeType: result.mimeType,
-                url: result.url,
-              },
-            };
-            store.addMessage(chat.id, msg);
+            // C-F6: Отправляем на сервер через API (не только локально)
+            const msgType = file.type.startsWith('video/') ? 'video' : 'image';
+            await sendMessage(chat.id, result.url, msgType, undefined, undefined, {
+              url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
+            });
           } catch (err) {
             console.error('Ошибка загрузки изображения:', err);
           }
@@ -352,32 +333,10 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           if (!file) return;
           try {
             const result = await uploadFile(file);
-            const store = useMessageStore.getState();
-            const auth = useAuthStore.getState();
-            const userId = auth.user?.id || 'user-me';
-            const userName = auth.user?.display_name || 'Я';
-            const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const msg: Message = {
-              id: tempId,
-              chatId: chat.id,
-              senderId: userId,
-              senderName: userName,
-              content: file.name,
-              type: 'file',
-              status: 'sent',
-              reactions: {},
-              isDestroyed: false,
-              createdAt: new Date().toISOString(),
-              attachment: {
-                id: result.objectName,
-                type: 'file',
-                fileName: file.name,
-                fileSize: result.size,
-                mimeType: result.mimeType,
-                url: result.url,
-              },
-            };
-            store.addMessage(chat.id, msg);
+            // C-F6: Отправляем на сервер через API
+            await sendMessage(chat.id, file.name, 'file', undefined, undefined, {
+              url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
+            });
           } catch (err) {
             console.error('Ошибка загрузки файла:', err);
           }
@@ -406,32 +365,10 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           if (!blob) return;
           const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
           const result = await uploadImage(file);
-          const store = useMessageStore.getState();
-          const auth = useAuthStore.getState();
-          const userId = auth.user?.id || 'user-me';
-          const userName = auth.user?.display_name || 'Я';
-          const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          const msg: Message = {
-            id: tempId,
-            chatId: chat.id,
-            senderId: userId,
-            senderName: userName,
-            content: result.url,
-            type: 'image',
-            status: 'sent',
-            reactions: {},
-            isDestroyed: false,
-            createdAt: new Date().toISOString(),
-            attachment: {
-              id: result.objectName,
-              type: 'image',
-              fileName: file.name,
-              fileSize: result.size,
-              mimeType: result.mimeType,
-              url: result.url,
-            },
-          };
-          store.addMessage(chat.id, msg);
+          // C-F6: Отправляем на сервер через API
+          await sendMessage(chat.id, result.url, 'image', undefined, undefined, {
+            url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
+          });
         } catch (err) {
           console.error('Ошибка камеры:', err);
         }

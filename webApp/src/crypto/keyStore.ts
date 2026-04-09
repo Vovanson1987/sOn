@@ -47,6 +47,13 @@ export async function initMasterKeyFromPassword(password: string): Promise<void>
   // Убрать старый незащищённый мастер-ключ если он есть
   localStorage.removeItem(MK_KEY);
 
+  // C-F4: Сохранить masterKey в sessionStorage для cookie-restore (переживает F5, но не закрытие вкладки)
+  try {
+    sessionStorage.setItem('son-mk-session', toBase64(cachedMasterKey));
+  } catch {
+    // sessionStorage может быть недоступен
+  }
+
   // Мигрировать данные если нужно — перешифровать IndexedDB
   await migrateFromLegacyKey();
 }
@@ -60,7 +67,17 @@ async function getMasterKey(): Promise<Uint8Array> {
 
   await ensureSodium();
 
-  // Убран legacy-ключ из localStorage и fallback — секретные чаты требуют вызова initMasterKeyFromPassword
+  // C-F4: Попытка восстановить masterKey из sessionStorage (после F5 при cookie-auth)
+  try {
+    const sessionKey = sessionStorage.getItem('son-mk-session');
+    if (sessionKey) {
+      cachedMasterKey = fromBase64(sessionKey);
+      return cachedMasterKey;
+    }
+  } catch {
+    // sessionStorage недоступен
+  }
+
   throw new Error('Мастер-ключ не инициализирован. Вызовите initMasterKeyFromPassword после логина.');
 }
 

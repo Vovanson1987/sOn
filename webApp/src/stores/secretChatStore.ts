@@ -68,6 +68,8 @@ const OPK_BATCH_SIZE = 20;
  * создаёт одинаковый messageNumber → Double Ratchet desynchronises.
  */
 const encryptLocks: Record<string, Promise<unknown>> = {};
+// C-F2: Мьютекс для decryptReceived — защита от race condition при параллельных WS-сообщениях
+const decryptLocks: Record<string, Promise<unknown>> = {};
 
 export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   sessions: {},
@@ -235,11 +237,12 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   getSession: (chatId) => get().sessions[chatId],
 
   encryptForSend: async (chatId, plaintext) => {
-    // C5: сериализуем encrypt через per-chat мьютекс, чтобы параллельные
-    // вызовы не читали один и тот же ratchetState.
+    // C-F1: Безопасный мьютекс — resolve инициализируется в конструкторе Promise,
+    // гарантируя что finally всегда разблокирует lock.
     const prev = encryptLocks[chatId] ?? Promise.resolve();
-    let resolve: () => void;
-    encryptLocks[chatId] = new Promise<void>((r) => { resolve = r; });
+    let resolveLock!: () => void;
+    const lock = new Promise<void>((r) => { resolveLock = r; });
+    encryptLocks[chatId] = lock;
 
     await prev;
 
@@ -263,22 +266,26 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
       return { encrypted, header };
     } finally {
-      resolve!();
+      resolveLock();
     }
   },
 
   decryptReceived: async (chatId, encrypted, header) => {
-    const session = get().sessions[chatId];
-    if (!session) return null;
+    // C-F2: Мьютекс для decrypt — защита от race condition при параллельных WS-сообщениях
+    const prev = decryptLocks[chatId] ?? Promise.resolve();
+    let resolveLock!: () => void;
+    const lock = new Promise<void>((r) => { resolveLock = r; });
+    decryptLocks[chatId] = lock;
+
+    await prev;
 
     try {
-      // Получить ключ через DH/симметричный рэтчет
-      const { messageKey, state: newState } = await ratchetDecrypt(session.ratchetState, header);
+      const session = get().sessions[chatId];
+      if (!session) return null;
 
-      // Дешифрация контента
+      const { messageKey, state: newState } = await ratchetDecrypt(session.ratchetState, header);
       const plaintext = await decryptMessage(encrypted, messageKey);
 
-      // Обновить состояние (используем свежую сессию из store)
       set((s) => ({
         sessions: {
           ...s.sessions,
@@ -286,24 +293,22 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
         },
       }));
 
-      // HI-11: Persist updated ratchet state
       saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch((err) => {
         console.error(`[secretChat] saveRatchetState(${chatId}) failed`, err);
       });
 
       return plaintext;
     } catch (err) {
-      // ERR-3: не глотаем ошибку дешифровки. Poly1305 auth fail означает
-      // возможный MITM или рассинхрон ratchet — пользователь должен знать.
       console.error(`[secretChat] decryptReceived(${chatId}) failed`, err);
       try {
-        // Ленивый импорт чтобы не создавать циклическую зависимость
         const { useMessageStore } = await import('./messageStore');
         useMessageStore.getState().reportDecryptError?.(chatId, String(err));
       } catch {
-        // messageStore может не поддерживать reportDecryptError — это ок
+        // messageStore может не поддерживать reportDecryptError
       }
       return null;
+    } finally {
+      resolveLock();
     }
   },
 

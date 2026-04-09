@@ -46,8 +46,7 @@ export async function fetchIceConfig(): Promise<RTCConfiguration> {
   return cachedIceConfig;
 }
 
-// Для обратной совместимости (до добавления /api/calls/turn-credentials на бэке)
-const ICE_CONFIG = BASE_ICE_CONFIG;
+// C-F3: убран static ICE_CONFIG — теперь fetchIceConfig() вызывается перед каждым звонком
 
 /** Состояние звонка */
 export interface CallSession {
@@ -80,9 +79,9 @@ async function getMediaStream(isVideo: boolean): Promise<MediaStream> {
   });
 }
 
-/** Создать RTCPeerConnection */
-function createPeerConnection(chatId: string, targetUserId: string): RTCPeerConnection {
-  const pc = new RTCPeerConnection(ICE_CONFIG);
+/** Создать RTCPeerConnection с динамическими TURN credentials */
+function createPeerConnection(chatId: string, targetUserId: string, iceConfig: RTCConfiguration): RTCPeerConnection {
+  const pc = new RTCPeerConnection(iceConfig);
 
   // Отправлять ICE candidates через WebSocket
   pc.onicecandidate = (event) => {
@@ -123,11 +122,12 @@ function createPeerConnection(chatId: string, targetUserId: string): RTCPeerConn
 export async function startCall(chatId: string, targetUserId: string, isVideo: boolean): Promise<void> {
   if (activeSession) endCall();
 
+  // C-F3: Получить TURN credentials перед созданием PeerConnection
+  const iceConfig = await fetchIceConfig();
   const localStream = await getMediaStream(isVideo);
-  const pc = createPeerConnection(chatId, targetUserId);
+  const pc = createPeerConnection(chatId, targetUserId, iceConfig);
   const remoteStream = new MediaStream();
 
-  // Добавить локальные треки в PeerConnection
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
   activeSession = { peerConnection: pc, localStream, remoteStream, chatId, targetUserId, isVideo };
@@ -152,8 +152,10 @@ export async function startCall(chatId: string, targetUserId: string, isVideo: b
 export async function acceptCall(chatId: string, callerUserId: string, offer: RTCSessionDescriptionInit, isVideo: boolean): Promise<void> {
   if (activeSession) endCall();
 
+  // C-F3: Получить TURN credentials перед созданием PeerConnection
+  const iceConfig = await fetchIceConfig();
   const localStream = await getMediaStream(isVideo);
-  const pc = createPeerConnection(chatId, callerUserId);
+  const pc = createPeerConnection(chatId, callerUserId, iceConfig);
   const remoteStream = new MediaStream();
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
