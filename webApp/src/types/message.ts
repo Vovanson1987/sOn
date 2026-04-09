@@ -37,4 +37,10 @@ export interface Message {
   editedAt?: string;
   deliveredAt?: string;
   readAt?: string;
+  /** P2.3: Forwarded messages */
+  forwardedFromId?: string;
+  forwardedFromChatName?: string;
+  forwardedFromSenderName?: string;
+  /** P2.6: @mentions */
+  mentionedUserIds?: string[];
 }

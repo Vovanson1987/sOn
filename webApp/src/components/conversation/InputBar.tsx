@@ -7,6 +7,7 @@ import { sendWS } from '@/api/client';
 import { createVoiceRecorder, uploadVoice } from '@/utils/fileUpload';
 import { useMessageStore } from '@stores/messageStore';
 import { useAuthStore } from '@stores/authStore';
+import { MentionSuggestions } from './MentionSuggestions';
 import type { Message } from '@/types/message';
 
 interface InputBarProps {
@@ -25,6 +26,8 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
   const [showAttachments, setShowAttachments] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  // P2.6: @mentions
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isTypingRef = useRef(false);
@@ -180,6 +183,28 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
 
   const hasText = text.trim().length > 0;
 
+  // P2.6: вставка @mention в текст
+  const handleMentionSelect = useCallback((user: { id: string; display_name: string }) => {
+    const textarea = textareaRef.current;
+    const cursor = textarea?.selectionStart ?? text.length;
+    const before = text.slice(0, cursor);
+    const atIdx = before.lastIndexOf('@');
+    if (atIdx >= 0) {
+      const replacement = `@${user.display_name} `;
+      const newText = text.slice(0, atIdx) + replacement + text.slice(cursor);
+      setText(newText);
+      setMentionQuery(null);
+      // Переместить курсор после вставленного mention
+      setTimeout(() => {
+        if (textarea) {
+          const pos = atIdx + replacement.length;
+          textarea.setSelectionRange(pos, pos);
+          textarea.focus();
+        }
+      }, 0);
+    }
+  }, [text]);
+
   return (
     <footer
       className="relative flex flex-col border-t"
@@ -189,6 +214,16 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
         paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
       }}
     >
+      {/* P2.6: @mentions dropdown */}
+      {mentionQuery && chatId && (
+        <MentionSuggestions
+          chatId={chatId}
+          query={mentionQuery}
+          onSelect={handleMentionSelect}
+          onClose={() => setMentionQuery(null)}
+        />
+      )}
+
       {/* Editing banner */}
       {editingMessage && (
         <div
@@ -240,7 +275,22 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
           ref={textareaRef}
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
+            const val = e.target.value;
+            setText(val);
+            // P2.6: @mentions — ищем @ перед курсором
+            const cursor = e.target.selectionStart ?? val.length;
+            const before = val.slice(0, cursor);
+            const atIdx = before.lastIndexOf('@');
+            if (atIdx >= 0 && (atIdx === 0 || before[atIdx - 1] === ' ')) {
+              const query = before.slice(atIdx + 1);
+              if (query.length >= 1 && !query.includes(' ')) {
+                setMentionQuery(query);
+              } else {
+                setMentionQuery(null);
+              }
+            } else {
+              setMentionQuery(null);
+            }
             // ME-16: Отправить typing event
             if (chatId && e.target.value.trim()) {
               if (!isTypingRef.current) {
