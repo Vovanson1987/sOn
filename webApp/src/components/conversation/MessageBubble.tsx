@@ -7,7 +7,8 @@ import { VoiceMessage } from '@components/media/VoiceMessage';
 import { ImageViewer } from '@components/media/ImageViewer';
 import { MarkdownText } from './MarkdownText';
 import { ForwardedHeader } from './ForwardedHeader';
-import { UrlPreviewCard, extractFirstUrl } from './UrlPreviewCard';
+import { UrlPreviewCard } from './UrlPreviewCard';
+import { extractFirstUrl } from '@/utils/urlUtils';
 
 interface MessageBubbleProps {
   message: Message;

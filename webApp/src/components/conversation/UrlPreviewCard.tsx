@@ -17,14 +17,6 @@ interface OgData {
   site_name: string | null;
 }
 
-// Простой regex для обнаружения URL в тексте
-const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/;
-
-export function extractFirstUrl(text: string): string | null {
-  const match = text.match(URL_REGEX);
-  return match ? match[0] : null;
-}
-
 export const UrlPreviewCard = memo(function UrlPreviewCard({ url }: UrlPreviewCardProps) {
   const [og, setOg] = useState<OgData | null>(null);
   const [loading, setLoading] = useState(true);

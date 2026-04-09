@@ -27,16 +27,15 @@ export const StoriesBar = memo(function StoriesBar({ onAddStory, onViewStory }: 
   const [users, setUsers] = useState<StoryUser[]>([]);
   const myId = useAuthStore((s) => s.user?.id);
 
-  const fetchStories = useCallback(async () => {
-    try {
-      const data = await getStories();
-      setUsers(data.users as unknown as StoryUser[]);
-    } catch {
-      // Не критично
-    }
+  useEffect(() => {
+    let cancelled = false;
+    getStories()
+      .then((data) => {
+        if (!cancelled) setUsers(data.users as unknown as StoryUser[]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => { fetchStories(); }, [fetchStories]);
 
   const handleTap = useCallback((user: StoryUser) => {
     // Отметить все непросмотренные как viewed
