@@ -1174,22 +1174,50 @@ function sendToUser(userId, data) {
   }
 }
 
-/** Отправить сообщение всем участникам чата */
+/**
+ * Отправить сообщение всем участникам чата.
+ * Функция не выбрасывает ошибок — при любом сбое БД/сериализации
+ * пишет лог и возвращает void, чтобы вызывающий код не должен был
+ * оборачивать каждый вызов в try/catch. Критично для доставки сообщений.
+ */
 async function broadcastToChat(chatId, data, excludeUserId = null) {
-  const members = await pool.query('SELECT user_id FROM chat_members WHERE chat_id = $1', [chatId]);
-  const payload = JSON.stringify(data);
-  for (const row of members.rows) {
-    if (row.user_id === excludeUserId) continue;
-    const userConns = connections.get(row.user_id);
-    if (userConns) {
+  try {
+    const members = await pool.query(
+      'SELECT user_id FROM chat_members WHERE chat_id = $1',
+      [chatId]
+    );
+    const payload = JSON.stringify(data);
+    for (const row of members.rows) {
+      if (row.user_id === excludeUserId) continue;
+      const userConns = connections.get(row.user_id);
+      if (!userConns) continue;
       for (const ws of userConns) {
-        if (ws.readyState === 1) ws.send(payload);
+        if (ws.readyState !== 1) continue;
+        try {
+          ws.send(payload);
+        } catch (sendErr) {
+          console.error('[broadcastToChat] ws.send failed', {
+            chatId,
+            userId: row.user_id,
+            message: sendErr?.message,
+          });
+        }
       }
     }
+  } catch (err) {
+    console.error('[broadcastToChat] failed', {
+      chatId,
+      dataType: data?.type,
+      message: err?.message,
+    });
   }
 }
 
-/** Send push notifications to offline chat members */
+/**
+ * Отправить push-уведомления офлайн-участникам чата.
+ * Никогда не выбрасывает ошибок — все сбои логируются.
+ * Поскольку вызывается после res.json(201), она не должна ронять запрос.
+ */
 async function sendPushToOfflineMembers(chatId, senderId, messageContent, senderName) {
   try {
     const members = await pool.query(
@@ -1199,24 +1227,60 @@ async function sendPushToOfflineMembers(chatId, senderId, messageContent, sender
     for (const member of members.rows) {
       // Skip if user has active WS connections
       if (connections.has(member.user_id) && connections.get(member.user_id).size > 0) continue;
-      // Get push tokens
-      const tokens = await pool.query('SELECT endpoint, p256dh, auth FROM push_tokens WHERE user_id = $1', [member.user_id]);
+      let tokens;
+      try {
+        tokens = await pool.query(
+          'SELECT endpoint, p256dh, auth FROM push_tokens WHERE user_id = $1',
+          [member.user_id]
+        );
+      } catch (dbErr) {
+        console.error('[push] failed to load tokens', {
+          userId: member.user_id,
+          message: dbErr?.message,
+        });
+        continue;
+      }
       for (const token of tokens.rows) {
-        const subscription = { endpoint: token.endpoint, keys: { p256dh: token.p256dh, auth: token.auth } };
+        const subscription = {
+          endpoint: token.endpoint,
+          keys: { p256dh: token.p256dh, auth: token.auth },
+        };
         const payload = JSON.stringify({
           title: senderName || 'sOn',
           body: messageContent?.substring(0, 100) || 'Новое сообщение',
           chat_id: chatId,
         });
-        webpush.sendNotification(subscription, payload).catch((err) => {
-          if (err.statusCode === 410) {
-            pool.query('DELETE FROM push_tokens WHERE endpoint = $1', [token.endpoint]);
-          }
-        });
+        webpush
+          .sendNotification(subscription, payload)
+          .catch(async (err) => {
+            if (err?.statusCode === 410) {
+              // Подписка умерла — удаляем, но не роняем ничего при ошибке delete
+              try {
+                await pool.query(
+                  'DELETE FROM push_tokens WHERE endpoint = $1',
+                  [token.endpoint]
+                );
+              } catch (delErr) {
+                console.error('[push] failed to delete expired token', {
+                  endpoint: token.endpoint,
+                  message: delErr?.message,
+                });
+              }
+            } else {
+              console.error('[push] sendNotification failed', {
+                statusCode: err?.statusCode,
+                message: err?.message,
+              });
+            }
+          });
       }
     }
   } catch (err) {
-    console.error('Push error:', err);
+    console.error('[sendPushToOfflineMembers] failed', {
+      chatId,
+      senderId,
+      message: err?.message,
+    });
   }
 }
 
