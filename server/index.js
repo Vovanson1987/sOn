@@ -75,9 +75,28 @@ app.set('trust proxy', 1);
 // включая те что дальше падают на CORS или rate-limit.
 app.use(httpLogger);
 
-// Заголовки безопасности (CSP, HSTS, X-Frame-Options и т.д.)
+// P1.10: Заголовки безопасности через helmet.
+// API-сервер отдаёт только JSON (HTML страницы — через nginx в web-контейнере),
+// поэтому CSP здесь максимально жёсткий: default-src 'none'.
+// Основной CSP для SPA задаётся в webApp/nginx.conf.
 app.use(helmet({
-  contentSecurityPolicy: false, // CSP управляется через nginx
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  // HSTS — Cloudflare Tunnel уже добавляет, но для прямого доступа тоже нужен.
+  strictTransportSecurity: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: false, // preload не ставим — домен может измениться
+  },
+  // Запрещаем MIME sniffing и embedding.
+  xContentTypeOptions: true,
+  xFrameOptions: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  // Не раскрываем Express в заголовке X-Powered-By (helmet убирает по умолчанию).
 }));
 
 // CORS — только разрешённые домены
