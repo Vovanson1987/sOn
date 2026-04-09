@@ -72,6 +72,13 @@ jest.mock('web-push', () => ({
   sendNotification: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('livekit-server-sdk', () => ({
+  AccessToken: jest.fn().mockImplementation(() => ({
+    addGrant: jest.fn(),
+    toJwt: jest.fn().mockResolvedValue('mock-livekit-jwt'),
+  })),
+}));
+
 jest.mock('otplib', () => ({
   authenticator: {
     generateSecret: jest.fn().mockReturnValue('JBSWY3DPEHPK3PXP'),
