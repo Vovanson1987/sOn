@@ -2093,6 +2093,196 @@ app.post('/api/media/upload-url', authMiddleware, uploadLimiter, async (req, res
   }
 });
 
+// ==================== POLLS (P2.9) ====================
+
+/** POST /api/chats/:chatId/polls — создать опрос (как сообщение type='poll') */
+app.post('/api/chats/:chatId/polls', authMiddleware, messageLimiter, chatMemberCheck, async (req, res) => {
+  try {
+    const { question, options, is_multiple_choice = false, is_anonymous = false, expires_hours } = req.body;
+    if (!question || typeof question !== 'string' || question.length < 1 || question.length > 300) {
+      return res.status(400).json({ error: 'Вопрос от 1 до 300 символов' });
+    }
+    if (!Array.isArray(options) || options.length < 2 || options.length > 10) {
+      return res.status(400).json({ error: 'От 2 до 10 вариантов ответа' });
+    }
+    for (const opt of options) {
+      if (typeof opt !== 'string' || opt.length < 1 || opt.length > 200) {
+        return res.status(400).json({ error: 'Каждый вариант от 1 до 200 символов' });
+      }
+    }
+    const chatId = req.params.chatId;
+    const expiresAt = expires_hours
+      ? new Date(Date.now() + Number(expires_hours) * 3600000).toISOString()
+      : null;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Создаём сообщение с type='poll'
+      const msgResult = await client.query(
+        `INSERT INTO messages (chat_id, sender_id, content, type) VALUES ($1, $2, $3, 'poll') RETURNING *`,
+        [chatId, req.user.id, question]
+      );
+      const msg = msgResult.rows[0];
+      msg.sender_name = req.user.display_name;
+
+      // Создаём poll
+      const pollResult = await client.query(
+        `INSERT INTO polls (message_id, question, is_multiple_choice, is_anonymous, expires_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [msg.id, question, is_multiple_choice, is_anonymous, expiresAt]
+      );
+      const poll = pollResult.rows[0];
+
+      // Создаём варианты
+      const pollOptions = [];
+      for (let i = 0; i < options.length; i++) {
+        const optResult = await client.query(
+          `INSERT INTO poll_options (poll_id, text, sort_order) VALUES ($1, $2, $3) RETURNING *`,
+          [poll.id, options[i], i]
+        );
+        pollOptions.push({ ...optResult.rows[0], votes: 0, voted: false });
+      }
+
+      // Обновить last_message_at
+      await client.query('UPDATE chats SET last_message_at = $1 WHERE id = $2', [msg.created_at, chatId]);
+      await client.query(
+        'UPDATE chat_members SET unread_count = unread_count + 1 WHERE chat_id = $1 AND user_id != $2',
+        [chatId, req.user.id]
+      );
+      await client.query('COMMIT');
+
+      const fullMsg = {
+        ...msg,
+        poll: { ...poll, options: pollOptions, total_votes: 0 },
+      };
+      broadcastToChat(chatId, { type: 'new_message', message: fullMsg }, req.user.id);
+      res.status(201).json(fullMsg);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[poll create]', err?.message);
+    res.status(500).json({ error: 'Ошибка создания опроса' });
+  }
+});
+
+/** POST /api/polls/:pollId/vote — проголосовать */
+app.post('/api/polls/:pollId/vote', authMiddleware, async (req, res) => {
+  try {
+    const { option_id } = req.body;
+    if (!option_id) return res.status(400).json({ error: 'option_id обязателен' });
+    const pollId = req.params.pollId;
+
+    // Проверить что poll существует и user — участник чата
+    const pollCheck = await pool.query(`
+      SELECT p.id, p.is_multiple_choice, p.expires_at, m.chat_id
+      FROM polls p JOIN messages m ON m.id = p.message_id
+      WHERE p.id = $1
+    `, [pollId]);
+    if (pollCheck.rows.length === 0) return res.status(404).json({ error: 'Опрос не найден' });
+    const poll = pollCheck.rows[0];
+
+    if (poll.expires_at && new Date(poll.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Опрос завершён' });
+    }
+
+    // Проверить membership
+    const member = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [poll.chat_id, req.user.id]
+    );
+    if (member.rows.length === 0) return res.status(403).json({ error: 'Нет доступа' });
+
+    // Проверить что option принадлежит poll'у
+    const optCheck = await pool.query(
+      'SELECT 1 FROM poll_options WHERE id = $1 AND poll_id = $2',
+      [option_id, pollId]
+    );
+    if (optCheck.rows.length === 0) return res.status(400).json({ error: 'Вариант не найден' });
+
+    // Если не multiple_choice — удалить предыдущие голоса
+    if (!poll.is_multiple_choice) {
+      await pool.query(
+        'DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2',
+        [pollId, req.user.id]
+      );
+    }
+
+    // Toggle: если голос уже есть — убрать, иначе добавить
+    const existing = await pool.query(
+      'SELECT id FROM poll_votes WHERE poll_id = $1 AND option_id = $2 AND user_id = $3',
+      [pollId, option_id, req.user.id]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM poll_votes WHERE id = $1', [existing.rows[0].id]);
+    } else {
+      await pool.query(
+        'INSERT INTO poll_votes (poll_id, option_id, user_id) VALUES ($1, $2, $3)',
+        [pollId, option_id, req.user.id]
+      );
+    }
+
+    // Получить обновлённые результаты
+    const results = await pool.query(`
+      SELECT po.id, po.text, po.sort_order,
+        COUNT(pv.id)::int as votes,
+        BOOL_OR(pv.user_id = $2) as voted
+      FROM poll_options po
+      LEFT JOIN poll_votes pv ON pv.option_id = po.id
+      WHERE po.poll_id = $1
+      GROUP BY po.id
+      ORDER BY po.sort_order
+    `, [pollId, req.user.id]);
+    const totalVotes = results.rows.reduce((sum, r) => sum + r.votes, 0);
+
+    broadcastToChat(poll.chat_id, {
+      type: 'poll_updated',
+      poll_id: pollId,
+      options: results.rows,
+      total_votes: totalVotes,
+    });
+
+    res.json({ options: results.rows, total_votes: totalVotes });
+  } catch (err) {
+    console.error('[poll vote]', err?.message);
+    res.status(500).json({ error: 'Ошибка голосования' });
+  }
+});
+
+/** GET /api/polls/:pollId — результаты опроса */
+app.get('/api/polls/:pollId', authMiddleware, async (req, res) => {
+  try {
+    const pollId = req.params.pollId;
+    const poll = await pool.query('SELECT * FROM polls WHERE id = $1', [pollId]);
+    if (poll.rows.length === 0) return res.status(404).json({ error: 'Опрос не найден' });
+
+    const results = await pool.query(`
+      SELECT po.id, po.text, po.sort_order,
+        COUNT(pv.id)::int as votes,
+        BOOL_OR(pv.user_id = $2) as voted
+      FROM poll_options po
+      LEFT JOIN poll_votes pv ON pv.option_id = po.id
+      WHERE po.poll_id = $1
+      GROUP BY po.id
+      ORDER BY po.sort_order
+    `, [pollId, req.user.id]);
+    const totalVotes = results.rows.reduce((sum, r) => sum + r.votes, 0);
+
+    res.json({
+      ...poll.rows[0],
+      options: results.rows,
+      total_votes: totalVotes,
+    });
+  } catch (err) {
+    console.error('[poll get]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
 // ==================== ПОИСК СООБЩЕНИЙ ====================
 
 /** GET /api/messages/search?q=text&chat_id=optional */
