@@ -586,6 +586,22 @@ export function deleteStory(storyId: string) {
   return request<{ ok: boolean }>(`/api/stories/${storyId}`, { method: 'DELETE' });
 }
 
+// ==================== P2.12: LiveKit Group Calls ====================
+
+export function getLiveKitToken(chatId: string, isVideo = false) {
+  return request<{ token: string; url: string; room: string }>('/api/calls/token', {
+    method: 'POST',
+    body: JSON.stringify({ chat_id: chatId, is_video: isVideo }),
+  });
+}
+
+export function startGroupCall(chatId: string, isVideo = false) {
+  return request<{ ok: boolean; room: string }>('/api/calls/group-start', {
+    method: 'POST',
+    body: JSON.stringify({ chat_id: chatId, is_video: isVideo }),
+  });
+}
+
 // ==================== P2.8: Stickers ====================
 
 export function getStickerPacks() {

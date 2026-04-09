@@ -1455,6 +1455,77 @@ app.get('/api/chats/:chatId/members', authMiddleware, chatMemberCheck, async (re
   }
 });
 
+// ==================== LIVEKIT GROUP CALLS (P2.12) ====================
+
+const { AccessToken } = require('livekit-server-sdk');
+
+const LK_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
+const LK_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+const LK_URL = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+
+/** POST /api/calls/token — получить LiveKit room token */
+app.post('/api/calls/token', authMiddleware, async (req, res) => {
+  try {
+    const { chat_id, is_video = false } = req.body;
+    if (!chat_id) return res.status(400).json({ error: 'chat_id обязателен' });
+
+    // Проверить membership
+    const member = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chat_id, req.user.id]
+    );
+    if (member.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к этому чату' });
+    }
+
+    // Room name = chat_id (один room на чат)
+    const roomName = `chat-${chat_id}`;
+
+    const token = new AccessToken(LK_API_KEY, LK_API_SECRET, {
+      identity: req.user.id,
+      name: req.user.display_name,
+      metadata: JSON.stringify({ chat_id, is_video }),
+    });
+
+    token.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    const jwt = await token.toJwt();
+    res.json({ token: jwt, url: LK_URL, room: roomName });
+  } catch (err) {
+    console.error('[livekit token]', err?.message);
+    res.status(500).json({ error: 'Ошибка генерации токена' });
+  }
+});
+
+/** POST /api/calls/group-start — инициировать групповой звонок (broadcast WS) */
+app.post('/api/calls/group-start', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { is_video = false } = req.body;
+    const chatId = req.params.chatId || req.body.chat_id;
+    if (!chatId) return res.status(400).json({ error: 'chat_id обязателен' });
+
+    // Broadcast WS event всем участникам
+    broadcastToChat(chatId, {
+      type: 'group_call_started',
+      chat_id: chatId,
+      caller_id: req.user.id,
+      caller_name: req.user.display_name,
+      is_video,
+    }, req.user.id);
+
+    res.json({ ok: true, room: `chat-${chatId}` });
+  } catch (err) {
+    console.error('[group call start]', err?.message);
+    res.status(500).json({ error: 'Ошибка запуска звонка' });
+  }
+});
+
 // ==================== ИСТОРИЯ ЗВОНКОВ ====================
 
 /** GET /api/calls/history — история звонков текущего пользователя */
