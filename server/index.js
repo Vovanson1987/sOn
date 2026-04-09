@@ -528,17 +528,45 @@ async function chatMemberCheck(req, res, next) {
   const userId = req.user.id;
   try {
     const result = await pool.query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      'SELECT role, permissions FROM chat_members WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
     if (result.rows.length === 0) {
       return res.status(403).json({ error: 'Нет доступа к этому чату' });
     }
+    // P2.2: сохраняем роль и права на объект запроса для downstream handlers
+    req.chatRole = result.rows[0].role || 'member';
+    req.chatPermissions = result.rows[0].permissions || {};
     next();
   } catch (err) {
     console.error('[chatMemberCheck] DB error', { chatId, userId, message: err?.message });
     res.status(503).json({ error: 'Сервис временно недоступен' });
   }
+}
+
+/**
+ * P2.2: проверка прав на действие в группе.
+ * owner — всегда разрешено. admin — если право в дефолтах или permissions.
+ * member — только если право явно выдано в permissions.
+ */
+const ADMIN_DEFAULT_PERMISSIONS = new Set([
+  'can_pin', 'can_delete_messages', 'can_invite', 'can_change_info',
+]);
+
+function hasPermission(role, permissions, action) {
+  if (role === 'admin' && ADMIN_DEFAULT_PERMISSIONS.has(action)) return true;
+  if (role === 'owner') return true;
+  return permissions?.[action] === true;
+}
+
+/** Middleware-фабрика: проверяет конкретное право после chatMemberCheck */
+function requirePermission(action) {
+  return (req, res, next) => {
+    if (!hasPermission(req.chatRole, req.chatPermissions, action)) {
+      return res.status(403).json({ error: 'Недостаточно прав для этого действия' });
+    }
+    next();
+  };
 }
 
 function isPlainObject(value) {
@@ -879,7 +907,7 @@ app.delete('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, re
 });
 
 /** PATCH /api/chats/:chatId — обновить группу (имя, описание, аватар) */
-app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res) => {
+app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, requirePermission('can_change_info'), async (req, res) => {
   try {
     const { name, description, avatar_url } = req.body;
     // Только для групп
@@ -975,7 +1003,7 @@ app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, as
 // ==================== INVITE LINKS (P2.1) ====================
 
 /** POST /api/chats/:chatId/invite — создать invite link (только admin) */
-app.post('/api/chats/:chatId/invite', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/invite', authMiddleware, chatMemberCheck, requirePermission('can_invite'), async (req, res) => {
   try {
     const chatId = req.params.chatId;
     // Только group чаты
@@ -1124,7 +1152,7 @@ app.get('/api/chats/:chatId/invites', authMiddleware, chatMemberCheck, async (re
 // ==================== PINNED MESSAGES (P2.4) ====================
 
 /** POST /api/chats/:chatId/pin — закрепить сообщение */
-app.post('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, requirePermission('can_pin'), async (req, res) => {
   try {
     const { message_id } = req.body;
     if (!message_id) return res.status(400).json({ error: 'message_id обязателен' });
@@ -1359,6 +1387,71 @@ app.delete('/api/chats/:chatId/members/:userId', authMiddleware, chatMemberCheck
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка удаления участника' });
+  }
+});
+
+// ==================== RBAC (P2.2) ====================
+
+/** PATCH /api/chats/:chatId/members/:userId/role — изменить роль участника */
+app.patch('/api/chats/:chatId/members/:userId/role', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { role, permissions } = req.body;
+    const VALID_ROLES = ['admin', 'member'];
+    if (!role || !VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: 'Роль должна быть admin или member' });
+    }
+    // Только owner может менять роли
+    if (req.chatRole !== 'owner') {
+      return res.status(403).json({ error: 'Только создатель группы может менять роли' });
+    }
+    // Нельзя менять роль себе
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя изменить свою роль' });
+    }
+    // Проверяем что целевой пользователь в чате
+    const target = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [req.params.chatId, req.params.userId]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден в этом чате' });
+    }
+    const safePerms = typeof permissions === 'object' && permissions !== null ? permissions : {};
+    await pool.query(
+      'UPDATE chat_members SET role = $1, permissions = $2 WHERE chat_id = $3 AND user_id = $4',
+      [role, JSON.stringify(safePerms), req.params.chatId, req.params.userId]
+    );
+    broadcastToChat(req.params.chatId, {
+      type: 'member_role_changed',
+      chat_id: req.params.chatId,
+      user_id: req.params.userId,
+      role,
+      changed_by: req.user.id,
+    });
+    res.json({ ok: true, role, permissions: safePerms });
+  } catch (err) {
+    console.error('[role change]', err?.message);
+    res.status(500).json({ error: 'Ошибка изменения роли' });
+  }
+});
+
+/** GET /api/chats/:chatId/members — список участников с ролями */
+app.get('/api/chats/:chatId/members', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cm.user_id, cm.role, cm.permissions, cm.joined_at,
+             u.display_name, u.avatar_url, u.is_online
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1
+      ORDER BY
+        CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+        u.display_name
+    `, [req.params.chatId]);
+    res.json({ members: result.rows });
+  } catch (err) {
+    console.error('[members list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
   }
 });
 
@@ -1997,6 +2090,270 @@ app.post('/api/media/upload-url', authMiddleware, uploadLimiter, async (req, res
   } catch (err) {
     console.error('[upload-url]', err?.message);
     res.status(500).json({ error: 'Ошибка генерации URL' });
+  }
+});
+
+// ==================== POLLS (P2.9) ====================
+
+/** POST /api/chats/:chatId/polls — создать опрос (как сообщение type='poll') */
+app.post('/api/chats/:chatId/polls', authMiddleware, messageLimiter, chatMemberCheck, async (req, res) => {
+  try {
+    const { question, options, is_multiple_choice = false, is_anonymous = false, expires_hours } = req.body;
+    if (!question || typeof question !== 'string' || question.length < 1 || question.length > 300) {
+      return res.status(400).json({ error: 'Вопрос от 1 до 300 символов' });
+    }
+    if (!Array.isArray(options) || options.length < 2 || options.length > 10) {
+      return res.status(400).json({ error: 'От 2 до 10 вариантов ответа' });
+    }
+    for (const opt of options) {
+      if (typeof opt !== 'string' || opt.length < 1 || opt.length > 200) {
+        return res.status(400).json({ error: 'Каждый вариант от 1 до 200 символов' });
+      }
+    }
+    const chatId = req.params.chatId;
+    const expiresAt = expires_hours
+      ? new Date(Date.now() + Number(expires_hours) * 3600000).toISOString()
+      : null;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Создаём сообщение с type='poll'
+      const msgResult = await client.query(
+        `INSERT INTO messages (chat_id, sender_id, content, type) VALUES ($1, $2, $3, 'poll') RETURNING *`,
+        [chatId, req.user.id, question]
+      );
+      const msg = msgResult.rows[0];
+      msg.sender_name = req.user.display_name;
+
+      // Создаём poll
+      const pollResult = await client.query(
+        `INSERT INTO polls (message_id, question, is_multiple_choice, is_anonymous, expires_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [msg.id, question, is_multiple_choice, is_anonymous, expiresAt]
+      );
+      const poll = pollResult.rows[0];
+
+      // Создаём варианты
+      const pollOptions = [];
+      for (let i = 0; i < options.length; i++) {
+        const optResult = await client.query(
+          `INSERT INTO poll_options (poll_id, text, sort_order) VALUES ($1, $2, $3) RETURNING *`,
+          [poll.id, options[i], i]
+        );
+        pollOptions.push({ ...optResult.rows[0], votes: 0, voted: false });
+      }
+
+      // Обновить last_message_at
+      await client.query('UPDATE chats SET last_message_at = $1 WHERE id = $2', [msg.created_at, chatId]);
+      await client.query(
+        'UPDATE chat_members SET unread_count = unread_count + 1 WHERE chat_id = $1 AND user_id != $2',
+        [chatId, req.user.id]
+      );
+      await client.query('COMMIT');
+
+      const fullMsg = {
+        ...msg,
+        poll: { ...poll, options: pollOptions, total_votes: 0 },
+      };
+      broadcastToChat(chatId, { type: 'new_message', message: fullMsg }, req.user.id);
+      res.status(201).json(fullMsg);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[poll create]', err?.message);
+    res.status(500).json({ error: 'Ошибка создания опроса' });
+  }
+});
+
+/** POST /api/polls/:pollId/vote — проголосовать */
+app.post('/api/polls/:pollId/vote', authMiddleware, async (req, res) => {
+  try {
+    const { option_id } = req.body;
+    if (!option_id) return res.status(400).json({ error: 'option_id обязателен' });
+    const pollId = req.params.pollId;
+
+    // Проверить что poll существует и user — участник чата
+    const pollCheck = await pool.query(`
+      SELECT p.id, p.is_multiple_choice, p.expires_at, m.chat_id
+      FROM polls p JOIN messages m ON m.id = p.message_id
+      WHERE p.id = $1
+    `, [pollId]);
+    if (pollCheck.rows.length === 0) return res.status(404).json({ error: 'Опрос не найден' });
+    const poll = pollCheck.rows[0];
+
+    if (poll.expires_at && new Date(poll.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Опрос завершён' });
+    }
+
+    // Проверить membership
+    const member = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [poll.chat_id, req.user.id]
+    );
+    if (member.rows.length === 0) return res.status(403).json({ error: 'Нет доступа' });
+
+    // Проверить что option принадлежит poll'у
+    const optCheck = await pool.query(
+      'SELECT 1 FROM poll_options WHERE id = $1 AND poll_id = $2',
+      [option_id, pollId]
+    );
+    if (optCheck.rows.length === 0) return res.status(400).json({ error: 'Вариант не найден' });
+
+    // Если не multiple_choice — удалить предыдущие голоса
+    if (!poll.is_multiple_choice) {
+      await pool.query(
+        'DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2',
+        [pollId, req.user.id]
+      );
+    }
+
+    // Toggle: если голос уже есть — убрать, иначе добавить
+    const existing = await pool.query(
+      'SELECT id FROM poll_votes WHERE poll_id = $1 AND option_id = $2 AND user_id = $3',
+      [pollId, option_id, req.user.id]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM poll_votes WHERE id = $1', [existing.rows[0].id]);
+    } else {
+      await pool.query(
+        'INSERT INTO poll_votes (poll_id, option_id, user_id) VALUES ($1, $2, $3)',
+        [pollId, option_id, req.user.id]
+      );
+    }
+
+    // Получить обновлённые результаты
+    const results = await pool.query(`
+      SELECT po.id, po.text, po.sort_order,
+        COUNT(pv.id)::int as votes,
+        BOOL_OR(pv.user_id = $2) as voted
+      FROM poll_options po
+      LEFT JOIN poll_votes pv ON pv.option_id = po.id
+      WHERE po.poll_id = $1
+      GROUP BY po.id
+      ORDER BY po.sort_order
+    `, [pollId, req.user.id]);
+    const totalVotes = results.rows.reduce((sum, r) => sum + r.votes, 0);
+
+    broadcastToChat(poll.chat_id, {
+      type: 'poll_updated',
+      poll_id: pollId,
+      options: results.rows,
+      total_votes: totalVotes,
+    });
+
+    res.json({ options: results.rows, total_votes: totalVotes });
+  } catch (err) {
+    console.error('[poll vote]', err?.message);
+    res.status(500).json({ error: 'Ошибка голосования' });
+  }
+});
+
+/** GET /api/polls/:pollId — результаты опроса */
+app.get('/api/polls/:pollId', authMiddleware, async (req, res) => {
+  try {
+    const pollId = req.params.pollId;
+    const poll = await pool.query('SELECT * FROM polls WHERE id = $1', [pollId]);
+    if (poll.rows.length === 0) return res.status(404).json({ error: 'Опрос не найден' });
+
+    const results = await pool.query(`
+      SELECT po.id, po.text, po.sort_order,
+        COUNT(pv.id)::int as votes,
+        BOOL_OR(pv.user_id = $2) as voted
+      FROM poll_options po
+      LEFT JOIN poll_votes pv ON pv.option_id = po.id
+      WHERE po.poll_id = $1
+      GROUP BY po.id
+      ORDER BY po.sort_order
+    `, [pollId, req.user.id]);
+    const totalVotes = results.rows.reduce((sum, r) => sum + r.votes, 0);
+
+    res.json({
+      ...poll.rows[0],
+      options: results.rows,
+      total_votes: totalVotes,
+    });
+  } catch (err) {
+    console.error('[poll get]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+// ==================== URL PREVIEW (P2.10) ====================
+
+const ogs = require('open-graph-scraper');
+const crypto = require('crypto');
+
+// Защита от SSRF: только публичные URL с http/https
+function isPublicUrl(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname;
+    // Блокируем приватные IP и localhost
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.')) return false;
+    if (hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** GET /api/og?url= — получить OpenGraph preview для URL */
+app.get('/api/og', authMiddleware, async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url || typeof url !== 'string' || url.length > 2000) {
+      return res.status(400).json({ error: 'URL обязателен (до 2000 символов)' });
+    }
+    if (!isPublicUrl(url)) {
+      return res.status(400).json({ error: 'Недопустимый URL' });
+    }
+    // Проверяем кэш (SHA-256 хэш URL → og_cache)
+    const urlHash = crypto.createHash('sha256').update(url).digest('hex');
+    const cached = await pool.query(
+      "SELECT * FROM og_cache WHERE url_hash = $1 AND fetched_at > NOW() - INTERVAL '1 hour'",
+      [urlHash]
+    );
+    if (cached.rows.length > 0) {
+      const c = cached.rows[0];
+      return res.json({ title: c.title, description: c.description, image: c.image_url, site_name: c.site_name, url });
+    }
+
+    // Fetch OG tags с таймаутом
+    const { result } = await ogs({
+      url,
+      timeout: 5000,
+      fetchOptions: { headers: { 'User-Agent': 'sOn-Bot/1.0' } },
+    });
+
+    const ogData = {
+      title: result.ogTitle?.substring(0, 500) || null,
+      description: result.ogDescription?.substring(0, 1000) || null,
+      image: result.ogImage?.[0]?.url || null,
+      site_name: result.ogSiteName?.substring(0, 200) || null,
+    };
+
+    // Сохранить в кэш (upsert)
+    await pool.query(`
+      INSERT INTO og_cache (url_hash, url, title, description, image_url, site_name)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (url_hash) DO UPDATE SET
+        title = EXCLUDED.title, description = EXCLUDED.description,
+        image_url = EXCLUDED.image_url, site_name = EXCLUDED.site_name,
+        fetched_at = NOW()
+    `, [urlHash, url, ogData.title, ogData.description, ogData.image, ogData.site_name]);
+
+    res.json({ ...ogData, url });
+  } catch (err) {
+    // Ошибка fetch — возвращаем пустой preview (не 500)
+    console.error('[og]', err?.message);
+    res.json({ title: null, description: null, image: null, site_name: null, url: req.query.url });
   }
 });
 
