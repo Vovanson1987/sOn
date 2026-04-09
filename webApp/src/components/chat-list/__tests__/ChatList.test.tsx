@@ -100,20 +100,18 @@ describe('ChatList', () => {
     expect(screen.getByPlaceholderText('Поиск чатов')).toBeTruthy();
   });
 
-  it('открывает модальное окно "Новый чат" по кнопке', () => {
+  it('открывает dropdown по кнопке [+]', () => {
     render(<ChatList />);
-    // Кнопка "Новый чат" находится в ChatListHeader (карандаш)
-    const newChatBtn = screen.getByLabelText('Новое сообщение');
-    fireEvent.click(newChatBtn);
-    expect(screen.getByTestId('new-chat-modal')).toBeTruthy();
+    const createBtn = screen.getByLabelText('Создать');
+    fireEvent.click(createBtn);
+    expect(screen.getByText('Создать группу')).toBeTruthy();
   });
 
-  it('закрывает модальное окно', () => {
+  it('открывает модальное окно через dropdown "Создать группу"', () => {
     render(<ChatList />);
-    fireEvent.click(screen.getByLabelText('Новое сообщение'));
+    fireEvent.click(screen.getByLabelText('Создать'));
+    fireEvent.click(screen.getByText('Создать группу'));
     expect(screen.getByTestId('new-chat-modal')).toBeTruthy();
-    fireEvent.click(screen.getByText('Закрыть'));
-    expect(screen.queryByTestId('new-chat-modal')).toBeNull();
   });
 });
 

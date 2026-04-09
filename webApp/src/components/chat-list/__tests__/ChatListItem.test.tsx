@@ -94,7 +94,7 @@ describe('ChatListItem', () => {
   it('applies active styling when isActive is true', () => {
     render(<ChatListItem chat={mockDirectChat} isActive={true} onSelect={() => {}} />);
     const item = screen.getByRole('button');
-    expect(item).toHaveStyle({ background: '#007AFF' });
+    expect(item).toHaveStyle({ borderLeft: '3px solid #5B5FC7' });
   });
 
   it('renders group chat name correctly', () => {

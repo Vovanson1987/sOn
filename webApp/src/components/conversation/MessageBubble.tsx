@@ -53,12 +53,12 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // Цвет фона пузыря
+  // Цвет фона пузыря (MAX theme "Космос")
   let bg: string;
   if (isOwn) {
-    bg = isSecret ? '#30D158' : '#007AFF';
+    bg = isSecret ? '#30D158' : '#5B5FC7';
   } else {
-    bg = isSecret ? '#1E1E22' : '#3A3A3C';
+    bg = isSecret ? '#1E2E1E' : '#282840';
   }
 
   // Скругления: овальные пузыри (18px), группировка (4px на прилегающей стороне)

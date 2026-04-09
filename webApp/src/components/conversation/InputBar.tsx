@@ -212,8 +212,8 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
     <footer
       className="relative flex flex-col border-t"
       style={{
-        borderColor: '#38383A',
-        background: '#000',
+        borderColor: 'rgba(255,255,255,0.06)',
+        background: '#1e1e2e',
         paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
       }}
     >
@@ -231,11 +231,11 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
       {editingMessage && (
         <div
           className="flex items-center gap-2 px-3 py-[6px]"
-          style={{ borderBottom: '0.5px solid #38383A', background: '#1C1C1E' }}
+          style={{ borderBottom: '0.5px solid #38383A', background: '#232338' }}
         >
-          <Pencil size={14} color="#007AFF" />
+          <Pencil size={14} color="#5B5FC7" />
           <div className="flex-1 min-w-0">
-            <span className="text-[12px] font-medium" style={{ color: '#007AFF' }}>Редактирование</span>
+            <span className="text-[12px] font-medium" style={{ color: '#5B5FC7' }}>Редактирование</span>
             <p className="text-[13px] truncate" style={{ color: '#ABABAF' }}>
               {editingMessage.content}
             </p>
@@ -243,7 +243,7 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
           <button
             onClick={handleCancelEdit}
             className="w-[28px] h-[28px] flex items-center justify-center rounded-full"
-            style={{ background: '#2C2C2E' }}
+            style={{ background: '#282840' }}
             aria-label="Отменить редактирование"
           >
             <X size={14} color="#ABABAF" />
@@ -256,7 +256,7 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
       <button
         onClick={() => setShowAttachments(true)}
         className="w-[44px] h-[44px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
-        style={{ background: '#636366' }}
+        style={{ background: '#3a3a5c' }}
         aria-label="Вложения"
       >
         <Plus size={18} color="white" />
@@ -272,7 +272,7 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
       {/* Поле ввода */}
       <div
         className="flex-1 flex items-end rounded-[18px] px-3 py-[6px]"
-        style={{ background: '#1C1C1E', border: '0.5px solid #38383A' }}
+        style={{ background: '#232338', border: '1px solid rgba(255,255,255,0.08)' }}
       >
         <textarea
           ref={textareaRef}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useCallback, useState, type CSSProperties, type ReactElement } from 'react';
 import { List, useDynamicRowHeight, useListRef, type RowComponentProps } from 'react-window';
-import { ChevronLeft, Video, Shield, Timer } from 'lucide-react';
+import { Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
 import { MessageBubble } from './MessageBubble';
@@ -144,7 +144,8 @@ function MessageRow({
 }
 
 /** Экран переписки в стиле iMessage Mac */
-export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
+export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreenProps) {
+  void _onBack; // Используется в мобильной версии
   // LO-16: Виртуализация сообщений
   const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: 60, key: chat.id });
   const listRef = useListRef(null);
@@ -502,7 +503,7 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   }, [forwardMessage, sendMessage]);
 
   return (
-    <div className="flex flex-col h-full bg-black animate-slideInRight" style={{ animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}>
+    <div className="flex flex-col h-full" style={{ background: '#141420', animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}>
       {/* Анимация обмена ключами */}
       {showKeyExchange && isSecret && (
         <KeyExchangeAnimation
@@ -564,31 +565,24 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
         />
       )}
 
-      {/* Шапка */}
+      {/* Шапка — стиль MAX (горизонтальный: аватар + имя слева, поиск справа) */}
       <FrostedGlassBar
         as="header"
-        className="flex items-center px-2 relative"
+        className="flex items-center px-4 relative"
         style={{
-          paddingTop: 'max(8px, env(safe-area-inset-top))',
-          paddingBottom: '8px',
-          borderBottom: '0.5px solid rgba(255,255,255,0.1)',
+          height: '60px',
+          background: '#1e1e2e',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
-        <div className="w-[60px] flex items-center">
-          <button
-            onClick={onBack}
-            className="w-[44px] h-[44px] flex items-center"
-            style={{ color: '#007AFF' }}
-            aria-label="Назад к списку чатов"
-          >
-            <ChevronLeft size={28} color="#007AFF" strokeWidth={2.5} />
-          </button>
-        </div>
-        <div className="flex-1 flex flex-col items-center">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
           <Avatar size={40} name={chatName} src={other?.avatarUrl} />
-          <span className="text-[17px] font-semibold text-white mt-[2px]">{chatName}</span>
+          <div className="min-w-0">
+            <span className="text-[17px] font-semibold text-white block truncate">{chatName}</span>
+            <span className="text-[13px] block" style={{ color: isSecret ? '#30D158' : 'rgba(255,255,255,0.45)' }}>{chatSubtype}</span>
+          </div>
           <div className="flex items-center gap-1">
-            <span className="text-[12px]" style={{ color: isSecret ? '#30D158' : '#ABABAF' }}>{chatSubtype}</span>
+            <span className="text-[12px]" style={{ color: isSecret ? '#30D158' : 'rgba(255,255,255,0.35)' }}></span>
             {isSecret && secretSession?.isVerified && (
               <span className="text-[12px]" style={{ color: '#30D158' }}>✓ Проверено</span>
             )}
