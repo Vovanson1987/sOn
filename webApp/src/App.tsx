@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { MessageSquare } from 'lucide-react';
 import { ChatList } from '@components/chat-list/ChatList';
+import { Sidebar, type SidebarTab } from '@components/layout/Sidebar';
 import { TabBar, type TabId } from '@components/layout/TabBar';
 
 // Lazy-загрузка тяжёлых компонентов (code splitting)
@@ -9,6 +11,7 @@ const CallScreen = lazy(() => import('@components/calls/CallScreen').then(m => (
 const CallHistoryScreen = lazy(() => import('@components/calls/CallHistoryScreen'));
 const SettingsScreen = lazy(() => import('@components/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
 const ContactsScreen = lazy(() => import('@components/contacts/ContactsScreen'));
+const ChannelsScreen = lazy(() => import('@components/channels/ChannelsScreen').then(m => ({ default: m.ChannelsScreen })));
 const AuthScreen = lazy(() => import('@components/auth/AuthScreen').then(m => ({ default: m.AuthScreen })));
 import { useChatStore } from '@stores/chatStore';
 import { useMessageStore } from '@stores/messageStore';
@@ -327,41 +330,69 @@ export default function App() {
     );
   }
 
-  // Desktop/Tablet: двухколоночный layout
+  // Desktop/Tablet: 3-колоночный layout в стиле MAX/Telegram Desktop
+  // [Sidebar 68px] [List ~360px] [Content — flex-1]
   return (
-    <div className="flex flex-col h-full w-full bg-black">
+    <div className="flex h-full w-full" style={{ background: '#1a1a2e' }}>
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-black focus:text-white">Перейти к контенту</a>
+
+      {/* Offline banner */}
       {!isOnline && (
-        <div role="alert" className="w-full text-center text-[13px] font-semibold text-white py-1" style={{ background: '#FF453A' }}>
+        <div role="alert" className="fixed top-0 left-0 right-0 z-50 text-center text-[13px] font-semibold text-white py-1" style={{ background: '#FF453A' }}>
           Нет соединения
         </div>
       )}
+
       {/* Экран звонка поверх всего */}
       <Suspense fallback={null}>
         {activeCall && <CallScreen />}
       </Suspense>
 
-      <div className="flex flex-1 overflow-hidden">
-      {/* Sidebar — список чатов */}
-      <div className="w-[340px] flex-shrink-0 h-full">
-        <ChatList />
+      {/* Колонка 1: Sidebar (иконки навигации) */}
+      <Sidebar
+        activeTab={activeTab as SidebarTab}
+        onTabChange={(tab) => setActiveTab(tab as TabId)}
+        unreadChats={unreadChats}
+      />
+
+      {/* Колонка 2: Список (чаты/каналы/контакты/звонки/настройки) */}
+      <div
+        className="flex-shrink-0 h-full overflow-hidden"
+        style={{
+          width: '360px',
+          background: '#1e1e2e',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        {activeTab === 'chats' && <ChatList />}
+        <Suspense fallback={<div className="flex items-center justify-center h-full" style={{ background: '#1e1e2e' }}><span className="text-white/30">Загрузка...</span></div>}>
+          {activeTab === 'settings' && <SettingsScreen />}
+          {activeTab === 'calls' && <CallHistoryScreen />}
+          {activeTab === 'contacts' && <ContactsScreen />}
+          {activeTab === 'channels' && <ChannelsScreen />}
+        </Suspense>
       </div>
 
-      {/* Область чата */}
-      <main className="flex-1 h-full" id="main-content">
-        <Suspense fallback={<div className="flex items-center justify-center h-full bg-black" role="status"><span className="sr-only">Загрузка...</span></div>}>
-        {activeChat ? (
-          <ConversationScreen chat={activeChat} onBack={handleBack} />
-        ) : (
-          <div className="flex items-center justify-center h-full" style={{ backgroundColor: '#000' }}>
-            <p className="text-[15px]" style={{ color: '#ABABAF' }}>
-              Выберите чат
-            </p>
-          </div>
-        )}
+      {/* Колонка 3: Контент (чат/канал/детали настроек) */}
+      <main className="flex-1 h-full overflow-hidden" id="main-content">
+        <Suspense fallback={<div className="flex items-center justify-center h-full" style={{ background: '#141420' }}><span className="text-white/30">Загрузка...</span></div>}>
+          {activeTab === 'chats' && activeChat ? (
+            <ConversationScreen chat={activeChat} onBack={handleBack} />
+          ) : activeTab === 'chats' ? (
+            <div className="flex items-center justify-center h-full" style={{ background: '#141420' }}>
+              <div className="flex flex-col items-center gap-3">
+                <MessageSquare size={48} className="text-white/10" />
+                <p className="text-[15px] text-white/30">Выберите чат</p>
+              </div>
+            </div>
+          ) : (
+            /* Для настроек/каналов — правая панель пока пустая (детали будут позже) */
+            <div className="flex items-center justify-center h-full" style={{ background: '#141420' }}>
+              <p className="text-[15px] text-white/20"></p>
+            </div>
+          )}
         </Suspense>
       </main>
-      </div>
     </div>
   );
 }

@@ -1,13 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatListHeader } from '../ChatListHeader';
 
-// Mock i18n to return proper Russian translations in test environment
 vi.mock('@/i18n', () => ({
   t: (key: string) => {
     const map: Record<string, string> = {
       'nav.chats': 'Чаты',
-      'chatList.newMessage': 'Новое сообщение',
     };
     return map[key] || key;
   },
@@ -15,23 +13,21 @@ vi.mock('@/i18n', () => ({
   setLocale: vi.fn(),
 }));
 
-describe('ChatListHeader', () => {
-  it('renders filter button', () => {
+describe('ChatListHeader (MAX redesign)', () => {
+  it('отображает заголовок "Чаты"', () => {
     render(<ChatListHeader />);
-    expect(screen.getByLabelText('Фильтр')).toBeInTheDocument();
+    expect(screen.getByText('Чаты')).toBeInTheDocument();
   });
 
-  it('renders new message button', () => {
+  it('отображает кнопку [+] для создания', () => {
     render(<ChatListHeader />);
-    expect(screen.getByLabelText('Новое сообщение')).toBeInTheDocument();
+    expect(screen.getByLabelText('Создать')).toBeInTheDocument();
   });
 
-  it('buttons are accessible', () => {
+  it('показывает dropdown при клике на [+]', () => {
     render(<ChatListHeader />);
-    const buttons = screen.getAllByRole('button');
-    expect(buttons.length).toBe(2);
-    buttons.forEach((btn) => {
-      expect(btn).toHaveAttribute('aria-label');
-    });
+    fireEvent.click(screen.getByLabelText('Создать'));
+    expect(screen.getByText('Создать группу')).toBeInTheDocument();
+    expect(screen.getByText('Создать приватный канал')).toBeInTheDocument();
   });
 });

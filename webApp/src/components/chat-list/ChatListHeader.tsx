@@ -1,40 +1,108 @@
-import { SlidersHorizontal, SquarePen } from 'lucide-react';
-import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
+/**
+ * Redesign: ChatListHeader в стиле MAX — заголовок "Чаты" + кнопка [+] с dropdown.
+ */
+
+import { useState, useRef, useEffect } from 'react';
+import { Plus, Users, Hash, Phone, Search, Link2 } from 'lucide-react';
 import { t } from '@/i18n';
 
 interface ChatListHeaderProps {
   onNewChat?: () => void;
+  onNewChannel?: () => void;
+  onNewGroupCall?: () => void;
+  onFindByNumber?: () => void;
+  onInviteByLink?: () => void;
   onFilter?: () => void;
   filterActive?: boolean;
 }
 
-export function ChatListHeader({ onNewChat, onFilter, filterActive }: ChatListHeaderProps) {
+const MENU_ITEMS = [
+  { id: 'group', label: 'Создать группу', icon: Users },
+  { id: 'channel', label: 'Создать приватный канал', icon: Hash },
+  { id: 'call', label: 'Создать групповой звонок', icon: Phone },
+  { id: 'find', label: 'Найти по номеру', icon: Search },
+  { id: 'invite', label: 'Пригласить по ссылке', icon: Link2 },
+] as const;
+
+export function ChatListHeader({
+  onNewChat,
+  onNewChannel,
+  onNewGroupCall,
+  onFindByNumber,
+  onInviteByLink,
+}: ChatListHeaderProps) {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Закрыть dropdown по клику вне
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu]);
+
+  const handleAction = (id: string) => {
+    setShowMenu(false);
+    switch (id) {
+      case 'group': onNewChat?.(); break;
+      case 'channel': onNewChannel?.(); break;
+      case 'call': onNewGroupCall?.(); break;
+      case 'find': onFindByNumber?.(); break;
+      case 'invite': onInviteByLink?.(); break;
+    }
+  };
+
   return (
-    <FrostedGlassBar className="px-4 pt-2 pb-0">
-      <div className="flex items-end justify-between pb-2">
-        <h1 className="text-[34px] font-bold text-white leading-none">
-          {t('nav.chats')}
-        </h1>
-        <div className="flex items-center gap-1 pb-1">
-          <button
-            className="w-[44px] h-[44px] flex items-center justify-center"
-            style={{ color: filterActive ? '#007AFF' : '#ABABAF' }}
-            aria-label="Фильтр"
-            aria-pressed={filterActive ?? false}
-            onClick={onFilter}
+    <div
+      className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+    >
+      <h1 className="text-[22px] font-bold text-white">
+        {t('nav.chats')}
+      </h1>
+
+      {/* Кнопка [+] с dropdown */}
+      <div className="relative" ref={menuRef}>
+        <button
+          onClick={() => setShowMenu(!showMenu)}
+          className="w-[36px] h-[36px] rounded-full flex items-center justify-center transition-colors"
+          style={{ background: '#5B5FC7' }}
+          aria-label="Создать"
+          aria-expanded={showMenu}
+        >
+          <Plus size={18} color="white" />
+        </button>
+
+        {showMenu && (
+          <div
+            className="absolute right-0 top-[calc(100%+8px)] z-50 rounded-xl overflow-hidden shadow-2xl"
+            style={{
+              background: '#282840',
+              border: '1px solid rgba(255,255,255,0.08)',
+              minWidth: '240px',
+            }}
           >
-            <SlidersHorizontal size={20} color={filterActive ? '#007AFF' : '#8E8E93'} />
-          </button>
-          <button
-            className="w-[44px] h-[44px] flex items-center justify-center"
-            style={{ color: '#007AFF' }}
-            aria-label={t('chatList.newMessage')}
-            onClick={onNewChat}
-          >
-            <SquarePen size={22} color="#007AFF" />
-          </button>
-        </div>
+            {MENU_ITEMS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => handleAction(id)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
+                style={{ color: '#fff' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <Icon size={18} style={{ color: 'rgba(255,255,255,0.5)' }} />
+                <span className="text-[14px]">{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </FrostedGlassBar>
+    </div>
   );
 }

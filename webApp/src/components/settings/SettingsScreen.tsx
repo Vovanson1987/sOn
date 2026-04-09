@@ -1,7 +1,14 @@
+/**
+ * Redesign: SettingsScreen в стиле MAX.
+ * Список разделов с иконками (как в MAX Настройки).
+ * Показывается в List Panel (360px).
+ */
+
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  ChevronRight, User, Palette, Bell, Shield, HardDrive,
-  Lock, Info, LogOut, Check, X, Camera, KeyRound, Eye, EyeOff, Globe,
+  ChevronRight, Shield, Monitor, Palette, Globe, Keyboard,
+  HelpCircle, Info, LogOut, Link2, Lock, Bell, Eye,
+  Check, X, Camera,
 } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
 import { McpIntegrationCard } from '@components/settings/McpIntegrationCard';
@@ -12,498 +19,321 @@ import { t, setLocale, getLocale } from '@/i18n';
 import type { Locale } from '@/i18n';
 import { isDesktopRuntime } from '@/utils/desktopMcp';
 
+// ==================== Вспомогательные ====================
 
-// ==================== Вспомогательные компоненты ====================
+const THEME_ORDER = ['dark', 'light', 'system'] as const;
+// THEME_LABELS используется в MenuItem через cycleTheme (label показывается inline)
+const LOCALE_LABELS: Record<Locale, string> = { ru: 'Русский', en: 'English', kz: 'Қазақша' };
 
-interface SettingRow {
+interface MenuItemProps {
   icon: React.ReactNode;
   label: string;
-  value?: string;
-  color?: string;
+  isActive?: boolean;
   onClick?: () => void;
 }
 
-function SettingsRow({ icon, label, value, onClick }: SettingRow) {
+function MenuItem({ icon, label, isActive, onClick }: MenuItemProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-[11px] text-left"
+      className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
+      style={{
+        background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
+        color: isActive ? '#fff' : 'rgba(255,255,255,0.8)',
+      }}
+      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
     >
       {icon}
-      <span className="flex-1 text-[15px] text-white">{label}</span>
-      {value && <span className="text-[14px]" style={{ color: '#ABABAF' }}>{value}</span>}
-      <ChevronRight size={16} color="#636366" aria-hidden="true" />
+      <span className="text-[15px] flex-1">{label}</span>
+      <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.2)' }} />
     </button>
   );
 }
 
-function Divider() {
-  return <div style={{ height: '0.5px', background: '#38383A', marginLeft: '52px' }} />;
+function Separator() {
+  return <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />;
 }
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <p className="px-4 pt-5 pb-2 text-[12px] font-semibold uppercase" style={{ color: '#ABABAF' }}>
-      {title}
-    </p>
-  );
-}
-
-// ==================== Маппинги для отображения ====================
-
-const THEME_LABELS: Record<string, string> = {
-  dark: 'Тёмная',
-  light: 'Светлая',
-  system: 'Системная',
-};
-
-const THEME_ORDER: Array<'dark' | 'light' | 'system'> = ['dark', 'light', 'system'];
-
-const PREVIEW_LABELS: Record<string, string> = {
-  always: 'Всегда',
-  contacts: 'Контакты',
-  never: 'Никогда',
-};
-
-const PREVIEW_ORDER: Array<'always' | 'contacts' | 'never'> = ['always', 'contacts', 'never'];
-
-const ONLINE_LABELS: Record<string, string> = {
-  everyone: 'Все',
-  contacts: 'Контакты',
-  nobody: 'Никто',
-};
-
-const ONLINE_ORDER: Array<'everyone' | 'contacts' | 'nobody'> = ['everyone', 'contacts', 'nobody'];
-
-// ==================== Секция редактирования профиля ====================
+// ==================== Profile Editor (inline) ====================
 
 function ProfileEditor() {
   const user = useAuthStore((s) => s.user);
   const loginAction = useAuthStore((s) => s.login);
   const token = useAuthStore((s) => s.token);
 
-  const displayName = user?.display_name || 'Пользователь';
-  const email = user?.email || '';
-
-  // Режимы редактирования
   const [editingName, setEditingName] = useState(false);
-  const [nameValue, setNameValue] = useState(displayName);
+  const [nameValue, setNameValue] = useState(user?.display_name || '');
   const [nameSaving, setNameSaving] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
-  const [editingPassword, setEditingPassword] = useState(false);
-  const [currentPwd, setCurrentPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
-  const [showNewPwd, setShowNewPwd] = useState(false);
-  const [pwdSaving, setPwdSaving] = useState(false);
-  const [pwdError, setPwdError] = useState('');
-  const [pwdSuccess, setPwdSuccess] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState('');
 
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingName && nameInputRef.current) nameInputRef.current.focus();
+  }, [editingName]);
 
-  // Сохранить имя
   const handleSaveName = useCallback(async () => {
     const trimmed = nameValue.trim();
-    if (!trimmed || trimmed === displayName) {
-      setEditingName(false);
-      return;
-    }
+    if (!trimmed || trimmed === user?.display_name) { setEditingName(false); return; }
     setNameSaving(true);
     try {
       const updated = await updateProfile({ display_name: trimmed });
-      // H22: обновить профиль в store даже при cookie-auth (token=null)
       loginAction(token || '', {
-        id: updated.id,
-        email: updated.email,
+        id: updated.id, email: updated.email,
         display_name: updated.display_name,
         avatar_url: updated.avatar_url ?? undefined,
       });
       setEditingName(false);
     } catch (err) {
-      console.error('Ошибка обновления имени:', err);
+      console.error('[settings] save name failed', err);
     } finally {
       setNameSaving(false);
     }
-  }, [nameValue, displayName, token, loginAction]);
+  }, [nameValue, user?.display_name, token, loginAction]);
 
-  // Загрузить аватар
   const handleAvatarChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setAvatarUploading(true);
     try {
       const result = await uploadAvatar(file);
-      if (token && user) {
-        loginAction(token, {
-          ...user,
-          avatar_url: result.avatar_url,
-        });
+      if (user) {
+        loginAction(token || '', { ...user, avatar_url: result.avatar_url });
       }
     } catch (err) {
-      console.error('Ошибка загрузки аватара:', err);
-    } finally {
-      setAvatarUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      console.error('[settings] avatar upload failed', err);
     }
-  }, [token, user, loginAction]);
+  }, [user, token, loginAction]);
 
-  // Сменить пароль
   const handleChangePassword = useCallback(async () => {
-    setPwdError('');
-    setPwdSuccess('');
-    if (!currentPwd || !newPwd) {
-      setPwdError('Заполните оба поля');
-      return;
-    }
-    if (newPwd.length < 6) {
-      setPwdError('Минимум 6 символов');
-      return;
-    }
-    setPwdSaving(true);
+    if (!currentPassword || !newPassword) return;
     try {
-      await changePassword(currentPwd, newPwd);
-      setPwdSuccess('Пароль изменён');
-      setCurrentPwd('');
-      setNewPwd('');
-      setTimeout(() => {
-        setEditingPassword(false);
-        setPwdSuccess('');
-      }, 1500);
+      await changePassword(currentPassword, newPassword);
+      setPasswordMsg('Пароль изменён');
+      setCurrentPassword('');
+      setNewPassword('');
+      setShowPassword(false);
+      setTimeout(() => setPasswordMsg(''), 3000);
     } catch (err) {
-      setPwdError(err instanceof Error ? err.message : 'Ошибка смены пароля');
-    } finally {
-      setPwdSaving(false);
+      setPasswordMsg(err instanceof Error ? err.message : 'Ошибка');
     }
-  }, [currentPwd, newPwd]);
+  }, [currentPassword, newPassword]);
 
   return (
-    <div className="flex flex-col items-center py-6 px-4">
-      {/* Аватар с кнопкой смены */}
-      <div className="relative">
-        <Avatar size={120} name={displayName} src={user?.avatar_url} />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={avatarUploading}
-          className="absolute bottom-0 right-0 w-9 h-9 rounded-full flex items-center justify-center border-2 border-black"
-          style={{ background: '#007AFF' }}
-          aria-label="Сменить аватар"
-        >
-          {avatarUploading ? (
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+    <div className="px-4 py-4">
+      {/* Профиль — аватар + имя + email */}
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <Avatar size={56} name={user?.display_name || ''} src={user?.avatar_url} />
+          <label
+            className="absolute -bottom-1 -right-1 w-[22px] h-[22px] rounded-full flex items-center justify-center cursor-pointer"
+            style={{ background: '#5B5FC7' }}
+          >
+            <Camera size={12} color="white" />
+            <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+          </label>
+        </div>
+        <div className="flex-1 min-w-0">
+          {editingName ? (
+            <div className="flex items-center gap-2">
+              <input
+                ref={nameInputRef}
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                className="bg-transparent text-[17px] font-semibold text-white outline-none border-b"
+                style={{ borderColor: '#5B5FC7' }}
+                disabled={nameSaving}
+              />
+              <button onClick={handleSaveName} disabled={nameSaving}>
+                <Check size={18} color="#5B5FC7" />
+              </button>
+              <button onClick={() => { setEditingName(false); setNameValue(user?.display_name || ''); }}>
+                <X size={18} color="rgba(255,255,255,0.4)" />
+              </button>
+            </div>
           ) : (
-            <Camera size={16} color="white" />
+            <button onClick={() => setEditingName(true)} className="text-left">
+              <span className="text-[17px] font-semibold text-white block">{user?.display_name}</span>
+              <span className="text-[13px] block" style={{ color: 'rgba(255,255,255,0.45)' }}>{user?.email}</span>
+            </button>
           )}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleAvatarChange}
-        />
+        </div>
+        <ChevronRight size={18} style={{ color: 'rgba(255,255,255,0.2)' }} />
       </div>
 
-      {/* Имя */}
-      {editingName ? (
-        <div className="flex items-center gap-2 mt-3">
-          <input
-            value={nameValue}
-            onChange={(e) => setNameValue(e.target.value)}
-            className="bg-transparent text-white text-[17px] font-semibold text-center border-b border-blue-500 outline-none px-2 py-1"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveName();
-              if (e.key === 'Escape') { setEditingName(false); setNameValue(displayName); }
-            }}
-          />
-          <button onClick={handleSaveName} disabled={nameSaving} aria-label="Сохранить имя">
-            <Check size={20} color="#30D158" />
-          </button>
-          <button onClick={() => { setEditingName(false); setNameValue(displayName); }} aria-label="Отмена">
-            <X size={20} color="#FF453A" />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => { setNameValue(displayName); setEditingName(true); }}
-          className="flex items-center gap-2 mt-3 group"
-        >
-          <h2 className="text-[17px] font-semibold text-white">{displayName}</h2>
-          <span className="text-[12px] opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ color: '#007AFF' }}>
-            изменить
-          </span>
-        </button>
-      )}
-
-      <p className="text-[14px] mt-1" style={{ color: '#ABABAF' }}>{email}</p>
-
-      {/* Кнопка смены пароля */}
-      <button
-        onClick={() => { setEditingPassword(!editingPassword); setPwdError(''); setPwdSuccess(''); }}
-        className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-lg text-[13px]"
-        style={{ background: '#1C1C1E', color: '#007AFF' }}
-      >
-        <KeyRound size={14} />
-        Сменить пароль
+      {/* Пригласить друзей */}
+      <button className="flex items-center gap-2 mt-4 text-left" style={{ color: '#5B5FC7' }}>
+        <Link2 size={16} />
+        <span className="text-[14px] font-medium">Пригласить друзей</span>
       </button>
 
-      {/* Форма смены пароля */}
-      {editingPassword && (
-        <div className="w-full max-w-[320px] mt-3 flex flex-col gap-2">
-          <div className="relative">
+      {/* Смена пароля (скрытая секция) */}
+      {showPassword ? (
+        <div className="mt-4 p-3 rounded-xl" style={{ background: '#282840' }}>
+          <div className="flex flex-col gap-2">
             <input
-              type={showCurrentPwd ? 'text' : 'password'}
-              value={currentPwd}
-              onChange={(e) => setCurrentPwd(e.target.value)}
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="Текущий пароль"
-              className="w-full bg-transparent text-white text-[14px] border rounded-lg px-3 py-2 pr-10 outline-none focus:border-blue-500"
-              style={{ borderColor: '#38383A' }}
+              className="bg-transparent text-[14px] text-white outline-none px-3 py-2 rounded-lg"
+              style={{ background: '#1e1e2e', border: '1px solid rgba(255,255,255,0.08)' }}
             />
-            <button
-              type="button"
-              onClick={() => setShowCurrentPwd(!showCurrentPwd)}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              aria-label={showCurrentPwd ? 'Скрыть пароль' : 'Показать пароль'}
-            >
-              {showCurrentPwd ? <EyeOff size={16} color="#636366" /> : <Eye size={16} color="#636366" />}
-            </button>
-          </div>
-          <div className="relative">
             <input
-              type={showNewPwd ? 'text' : 'password'}
-              value={newPwd}
-              onChange={(e) => setNewPwd(e.target.value)}
-              placeholder="Новый пароль (мин. 6 символов)"
-              className="w-full bg-transparent text-white text-[14px] border rounded-lg px-3 py-2 pr-10 outline-none focus:border-blue-500"
-              style={{ borderColor: '#38383A' }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword(); }}
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Новый пароль"
+              className="bg-transparent text-[14px] text-white outline-none px-3 py-2 rounded-lg"
+              style={{ background: '#1e1e2e', border: '1px solid rgba(255,255,255,0.08)' }}
             />
-            <button
-              type="button"
-              onClick={() => setShowNewPwd(!showNewPwd)}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              aria-label={showNewPwd ? 'Скрыть пароль' : 'Показать пароль'}
-            >
-              {showNewPwd ? <EyeOff size={16} color="#636366" /> : <Eye size={16} color="#636366" />}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleChangePassword} className="text-[13px] font-medium px-3 py-1.5 rounded-lg" style={{ background: '#5B5FC7', color: '#fff' }}>
+                Сохранить
+              </button>
+              <button onClick={() => setShowPassword(false)} className="text-[13px] px-3 py-1.5 rounded-lg" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Отмена
+              </button>
+            </div>
+            {passwordMsg && <span className="text-[12px]" style={{ color: passwordMsg === 'Пароль изменён' ? '#30D158' : '#FF453A' }}>{passwordMsg}</span>}
           </div>
-          {pwdError && <p className="text-[12px]" style={{ color: '#FF453A' }}>{pwdError}</p>}
-          {pwdSuccess && <p className="text-[12px]" style={{ color: '#30D158' }}>{pwdSuccess}</p>}
-          <button
-            onClick={handleChangePassword}
-            disabled={pwdSaving}
-            className="py-2 rounded-lg text-[14px] font-semibold"
-            style={{ background: '#007AFF', color: 'white', opacity: pwdSaving ? 0.5 : 1 }}
-          >
-            {pwdSaving ? 'Сохранение...' : 'Сохранить пароль'}
-          </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
+// ==================== Main Settings Screen ====================
 
-// ==================== Главный экран ====================
-
-/** Экран настроек в стиле iOS */
 export function SettingsScreen() {
   const logout = useAuthStore((s) => s.logout);
   const showDesktopMcp = isDesktopRuntime();
 
-  // Настройки из стора
   const theme = useSettingsStore((s) => s.theme);
   const notificationsEnabled = useSettingsStore((s) => s.notifications_enabled);
-  const notificationPreview = useSettingsStore((s) => s.notification_preview);
-  const showOnlineStatus = useSettingsStore((s) => s.show_online_status);
   const readReceipts = useSettingsStore((s) => s.read_receipts);
   const appLock = useSettingsStore((s) => s.app_lock);
-  const notificationSound = useSettingsStore((s) => s.notification_sound);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   const updateSetting = useSettingsStore((s) => s.updateSetting);
   const loaded = useSettingsStore((s) => s.loaded);
+  const [currentLocale, setCurrentLocaleState] = useState<Locale>(getLocale());
 
-  // Загрузить настройки при монтировании
-  useEffect(() => {
-    if (!loaded) {
-      fetchSettings();
-    }
-  }, [loaded, fetchSettings]);
+  useEffect(() => { if (!loaded) fetchSettings(); }, [loaded, fetchSettings]);
 
-  // Циклическое переключение темы
   const cycleTheme = useCallback(() => {
-    const idx = THEME_ORDER.indexOf(theme);
+    const idx = THEME_ORDER.indexOf(theme as typeof THEME_ORDER[number]);
     const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
     updateSetting('theme', next);
   }, [theme, updateSetting]);
 
-  // Уведомления вкл/выкл
-  const toggleNotifications = useCallback(() => {
-    updateSetting('notifications_enabled', !notificationsEnabled);
-  }, [notificationsEnabled, updateSetting]);
-
-  // Циклическое переключение предпросмотра
-  const cyclePreview = useCallback(() => {
-    const idx = PREVIEW_ORDER.indexOf(notificationPreview);
-    const next = PREVIEW_ORDER[(idx + 1) % PREVIEW_ORDER.length];
-    updateSetting('notification_preview', next);
-  }, [notificationPreview, updateSetting]);
-
-  // Циклическое переключение онлайн-статуса
-  const cycleOnline = useCallback(() => {
-    const idx = ONLINE_ORDER.indexOf(showOnlineStatus);
-    const next = ONLINE_ORDER[(idx + 1) % ONLINE_ORDER.length];
-    updateSetting('show_online_status', next);
-  }, [showOnlineStatus, updateSetting]);
-
-  // Отчёты о прочтении
-  const toggleReadReceipts = useCallback(() => {
-    updateSetting('read_receipts', !readReceipts);
-  }, [readReceipts, updateSetting]);
-
-  // Блокировка приложения
-  const toggleAppLock = useCallback(() => {
-    updateSetting('app_lock', !appLock);
-  }, [appLock, updateSetting]);
+  const cycleLocale = useCallback(() => {
+    const order: Locale[] = ['ru', 'en', 'kz'];
+    const idx = order.indexOf(currentLocale);
+    const next = order[(idx + 1) % order.length];
+    setLocale(next);
+    setCurrentLocaleState(next);
+  }, [currentLocale]);
 
   const handleLogout = useCallback(() => {
     disconnectWS();
     logout();
   }, [logout]);
 
-  // Язык / Locale
-  const LOCALE_LABELS: Record<Locale, string> = { ru: 'Русский', en: 'English', kz: 'Қазақша' };
-  const [currentLocale, setCurrentLocale] = useState<Locale>(getLocale());
-
-  const cycleLocale = useCallback(() => {
-    const localeOrder: Locale[] = ['ru', 'en', 'kz'];
-    const idx = localeOrder.indexOf(currentLocale);
-    const next = localeOrder[(idx + 1) % localeOrder.length];
-    setLocale(next);
-    setCurrentLocale(next);
-  }, [currentLocale]);
-
   return (
-    <div className="flex flex-col h-full bg-black overflow-y-auto">
-      {/* Профиль — редактирование */}
+    <div className="flex flex-col h-full overflow-y-auto" style={{ background: '#1e1e2e' }}>
+      {/* Заголовок */}
+      <div className="px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <h1 className="text-[22px] font-bold text-white">{t('nav.settings')}</h1>
+      </div>
+
+      {/* Профиль */}
       <ProfileEditor />
 
-      {/* Основные настройки */}
-      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
-        <SettingsRow
-          icon={<User size={20} color="#007AFF" aria-hidden="true" />}
-          label={t('settings.profile')}
-          value="Изменить"
+      <Separator />
+
+      {/* Разделы настроек — как MAX */}
+      <div className="flex-1">
+        <MenuItem
+          icon={<Shield size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Безопасность"
           onClick={() => {
-            // Скроллим к верху страницы — редактирование уже там
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            updateSetting('app_lock', !appLock);
           }}
         />
-        <Divider />
-        <SettingsRow
-          icon={<Palette size={20} color="#FF9500" aria-hidden="true" />}
-          label={t('settings.theme')}
-          value={THEME_LABELS[theme] || 'Тёмная'}
+        <MenuItem
+          icon={<Monitor size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Устройства"
+        />
+        <MenuItem
+          icon={<Bell size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label={t('settings.notifications')}
+          onClick={() => {
+            updateSetting('notifications_enabled', !notificationsEnabled);
+          }}
+        />
+        <MenuItem
+          icon={<Eye size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Приватность"
+          onClick={() => {
+            updateSetting('read_receipts', !readReceipts);
+          }}
+        />
+
+        <Separator />
+
+        <MenuItem
+          icon={<Palette size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Оформление"
           onClick={cycleTheme}
         />
-        <Divider />
-        <SettingsRow
-          icon={<Globe size={20} color="#5856D6" aria-hidden="true" />}
-          label="Язык / Language"
-          value={LOCALE_LABELS[currentLocale]}
+        <MenuItem
+          icon={<Globe size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label={`Язык: ${LOCALE_LABELS[currentLocale]}`}
           onClick={cycleLocale}
         />
-      </div>
+        <MenuItem
+          icon={<Keyboard size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Сочетания клавиш"
+        />
 
-      <SectionHeader title={t('settings.notifications')} />
-      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
-        <SettingsRow
-          icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
-          label={t('settings.notifications')}
-          value={notificationsEnabled ? 'Включены' : 'Выключены'}
-          onClick={toggleNotifications}
-        />
-        <Divider />
-        <SettingsRow
-          icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
-          label="Звук"
-          value={notificationSound === 'default' ? 'По умолчанию' : notificationSound}
-        />
-        <Divider />
-        <SettingsRow
-          icon={<Bell size={20} color="#FF453A" aria-hidden="true" />}
-          label="Предпросмотр"
-          value={PREVIEW_LABELS[notificationPreview] || 'Всегда'}
-          onClick={cyclePreview}
-        />
-      </div>
+        <Separator />
 
-      <SectionHeader title={t('settings.privacy')} />
-      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
-        <SettingsRow
-          icon={<Shield size={20} color="#30D158" aria-hidden="true" />}
-          label="Онлайн-статус"
-          value={ONLINE_LABELS[showOnlineStatus] || 'Все'}
-          onClick={cycleOnline}
-        />
-        <Divider />
-        <SettingsRow
-          icon={<Shield size={20} color="#30D158" aria-hidden="true" />}
-          label="Отчёты о прочтении"
-          value={readReceipts ? 'Включены' : 'Выключены'}
-          onClick={toggleReadReceipts}
-        />
-        <Divider />
-        <SettingsRow
-          icon={<Lock size={20} color="#30D158" aria-hidden="true" />}
-          label="Блокировка приложения"
-          value={appLock ? 'Вкл' : 'Выкл'}
-          onClick={toggleAppLock}
-        />
-      </div>
+        {showDesktopMcp && (
+          <>
+            <McpIntegrationCard />
+            <Separator />
+          </>
+        )}
 
-      <SectionHeader title="Данные" />
-      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
-        <SettingsRow
-          icon={<HardDrive size={20} color="#5856D6" aria-hidden="true" />}
-          label={t('settings.storage')}
-          value="Скоро"
-        />
-        <Divider />
-        <SettingsRow
-          icon={<Lock size={20} color="#30D158" aria-hidden="true" />}
+        <MenuItem
+          icon={<Lock size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label={t('settings.encryption')}
-          value="Signal Protocol"
+        />
+        <MenuItem
+          icon={<HelpCircle size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Помощь"
+        />
+        <MenuItem
+          icon={<Info size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="О приложении"
         />
       </div>
 
-      {showDesktopMcp && (
-        <>
-          <SectionHeader title="MCP Gateway" />
-          <McpIntegrationCard />
-        </>
-      )}
-
-      <SectionHeader title={t('settings.about')} />
-      <div className="rounded-[10px] mx-4 overflow-hidden" style={{ background: '#1C1C1E' }}>
-        <SettingsRow
-          icon={<Info size={20} color="#8E8E93" aria-hidden="true" />}
-          label={t('settings.version')}
-          value="1.0.0 (Sprint 6)"
-        />
-      </div>
-
-      {/* Кнопка выхода */}
-      <div className="mx-4 mt-6 mb-8">
+      {/* Кнопка выхода — внизу */}
+      <div className="px-4 py-4 flex-shrink-0">
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 py-[12px] rounded-[10px] text-[16px] font-semibold"
-          style={{ background: '#1C1C1E', color: '#FF453A' }}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[15px] font-medium transition-colors"
+          style={{ background: 'rgba(255,69,58,0.1)', color: '#FF453A' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,69,58,0.2)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,69,58,0.1)'; }}
         >
-          <LogOut size={18} color="#FF453A" aria-hidden="true" />
-          Выйти
+          <LogOut size={18} />
+          Выйти из профиля
         </button>
       </div>
     </div>

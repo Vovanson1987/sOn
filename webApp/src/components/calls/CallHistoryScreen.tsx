@@ -117,7 +117,7 @@ export default function CallHistoryScreen() {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#000' }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: '#141420' }}>
       {/* Header */}
       <div className="flex items-center justify-center px-4 pt-4 pb-2">
         <h1 className="text-[20px] font-bold text-white">Звонки</h1>
@@ -137,7 +137,7 @@ export default function CallHistoryScreen() {
               key={call.id}
               onClick={() => handleCallTap(call)}
               className="w-full flex items-center gap-3 px-4 py-3 active:opacity-70 transition-opacity"
-              style={{ borderBottom: '0.5px solid #2C2C2E' }}
+              style={{ borderBottom: '0.5px solid #282840' }}
               aria-label={`Позвонить ${contactName}`}
             >
               {/* Avatar */}
@@ -175,9 +175,9 @@ export default function CallHistoryScreen() {
                   {formatCallDate(call.created_at)}
                 </span>
                 {call.is_video ? (
-                  <Video size={18} color="#007AFF" strokeWidth={1.5} />
+                  <Video size={18} color="#5B5FC7" strokeWidth={1.5} />
                 ) : (
-                  <Phone size={18} color="#007AFF" strokeWidth={1.5} />
+                  <Phone size={18} color="#5B5FC7" strokeWidth={1.5} />
                 )}
               </div>
             </button>

@@ -107,13 +107,13 @@ function AddContactModal({ onClose, onContactAdded }: AddContactModalProps) {
     >
       <div
         className="w-full max-w-[400px] mx-4 rounded-[16px] overflow-hidden"
-        style={{ background: '#1C1C1E' }}
+        style={{ background: '#1e1e2e' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Заголовок */}
         <div
           className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: '#38383A' }}
+          style={{ borderColor: 'rgba(255,255,255,0.06)' }}
         >
           <h2 className="text-[17px] font-semibold text-white">Добавить контакт</h2>
           <button onClick={onClose} aria-label="Закрыть">
@@ -125,7 +125,7 @@ function AddContactModal({ onClose, onContactAdded }: AddContactModalProps) {
         <div className="px-4 py-2">
           <div
             className="flex items-center gap-2 px-3 py-[8px] rounded-[10px]"
-            style={{ background: '#2C2C2E' }}
+            style={{ background: '#282840' }}
           >
             <Search size={16} color="#8E8E93" />
             <input
@@ -159,14 +159,14 @@ function AddContactModal({ onClose, onContactAdded }: AddContactModalProps) {
               key={user.id}
               onClick={() => handleAdd(user)}
               disabled={addingId === user.id}
-              className="w-full flex items-center gap-3 px-4 py-[10px] hover:bg-[#2C2C2E] text-left disabled:opacity-50"
+              className="w-full flex items-center gap-3 px-4 py-[10px] hover:bg-[#282840] text-left disabled:opacity-50"
             >
               <div className="relative">
                 <Avatar size={40} name={user.display_name} src={user.avatar_url} />
                 {user.is_online && (
                   <div
                     className="absolute bottom-0 right-0 w-[10px] h-[10px] rounded-full"
-                    style={{ background: '#30D158', border: '2px solid #1C1C1E' }}
+                    style={{ background: '#30D158', border: '2px solid #1e1e2e' }}
                   />
                 )}
               </div>
@@ -181,7 +181,7 @@ function AddContactModal({ onClose, onContactAdded }: AddContactModalProps) {
                   ...
                 </span>
               ) : (
-                <UserPlus size={18} color="#007AFF" aria-hidden="true" />
+                <UserPlus size={18} color="#5B5FC7" aria-hidden="true" />
               )}
             </button>
           ))}
@@ -303,7 +303,7 @@ function ContactRow({ contact, onToggleFavorite, onDelete, onSelect }: ContactRo
           {contact.is_online && (
             <div
               className="absolute bottom-0 right-0 w-[12px] h-[12px] rounded-full"
-              style={{ background: '#30D158', border: '2px solid #1C1C1E' }}
+              style={{ background: '#30D158', border: '2px solid #1e1e2e' }}
             />
           )}
         </div>
@@ -323,7 +323,7 @@ function ContactRow({ contact, onToggleFavorite, onDelete, onSelect }: ContactRo
       </button>
 
       {/* Разделитель */}
-      <div style={{ height: '0.5px', background: '#38383A', marginLeft: '68px' }} />
+      <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.06)', marginLeft: '68px' }} />
     </div>
   );
 }
@@ -335,7 +335,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
     <div className="flex flex-col items-center justify-center flex-1 gap-4 px-6">
       <div
         className="w-[80px] h-[80px] rounded-full flex items-center justify-center"
-        style={{ background: '#2C2C2E' }}
+        style={{ background: '#282840' }}
       >
         <Users size={36} color="#636366" aria-hidden="true" />
       </div>
@@ -345,7 +345,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <button
         onClick={onAdd}
         className="px-5 min-h-[44px] rounded-[10px] text-[15px] font-medium text-white"
-        style={{ background: '#007AFF' }}
+        style={{ background: '#5B5FC7' }}
       >
         Добавить первый контакт
       </button>
@@ -457,17 +457,17 @@ export default function ContactsScreen() {
   // ---------- Render ----------
 
   return (
-    <div className="flex flex-col h-full bg-black">
+    <div className="flex flex-col h-full bg-[#141420]">
       {/* Заголовок */}
       <div className="flex items-center justify-between px-4 py-3">
         <h1 className="text-[22px] font-bold text-white">Контакты</h1>
         <button
           onClick={() => setShowAddModal(true)}
           className="w-[34px] h-[34px] rounded-full flex items-center justify-center"
-          style={{ background: '#2C2C2E' }}
+          style={{ background: '#282840' }}
           aria-label="Добавить контакт"
         >
-          <UserPlus size={18} color="#007AFF" aria-hidden="true" />
+          <UserPlus size={18} color="#5B5FC7" aria-hidden="true" />
         </button>
       </div>
 
@@ -487,16 +487,16 @@ export default function ContactsScreen() {
             <div key={i} className="flex items-center gap-3 px-4 py-[10px] animate-pulse">
               <div
                 className="w-[44px] h-[44px] rounded-full flex-shrink-0"
-                style={{ background: '#2C2C2E' }}
+                style={{ background: '#282840' }}
               />
               <div className="flex-1 space-y-2">
                 <div
                   className="h-[14px] rounded"
-                  style={{ background: '#2C2C2E', width: '50%' }}
+                  style={{ background: '#282840', width: '50%' }}
                 />
                 <div
                   className="h-[12px] rounded"
-                  style={{ background: '#2C2C2E', width: '30%' }}
+                  style={{ background: '#282840', width: '30%' }}
                 />
               </div>
             </div>
@@ -510,7 +510,7 @@ export default function ContactsScreen() {
           <button
             onClick={loadContacts}
             className="px-5 min-h-[44px] rounded-[10px] text-[15px] font-medium text-white"
-            style={{ background: '#007AFF' }}
+            style={{ background: '#5B5FC7' }}
           >
             Повторить
           </button>

@@ -17,23 +17,23 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Привет!')).toBeInTheDocument();
   });
 
-  it('синий фон для исходящих iMessage', () => {
+  it('фиолетовый фон для исходящих (MAX theme)', () => {
     const { container } = render(
       <MessageBubble message={ownMsg} isOwn isFirstInGroup isLastInGroup chatType="direct" />,
     );
     const bubble = container.querySelector('[style*="background"]');
     const style = bubble?.getAttribute('style') ?? '';
     // jsdom может конвертировать hex в rgb
-    expect(style.includes('#007AFF') || style.includes('rgb(0, 122, 255)')).toBe(true);
+    expect(style.includes('#5B5FC7') || style.includes('rgb(91, 95, 199)')).toBe(true);
   });
 
-  it('серый фон для входящих', () => {
+  it('тёмный фон для входящих (MAX theme)', () => {
     const { container } = render(
       <MessageBubble message={baseMsg} isOwn={false} isFirstInGroup isLastInGroup chatType="direct" />,
     );
     const bubble = container.querySelector('[style*="background"]');
     const style = bubble?.getAttribute('style') ?? '';
-    expect(style.includes('#3A3A3C') || style.includes('rgb(58, 58, 60)')).toBe(true);
+    expect(style.includes('#282840') || style.includes('rgb(40, 40, 64)')).toBe(true);
   });
 
   it('зелёный фон для секретных исходящих', () => {
