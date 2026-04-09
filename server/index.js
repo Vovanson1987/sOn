@@ -2283,6 +2283,80 @@ app.get('/api/polls/:pollId', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== URL PREVIEW (P2.10) ====================
+
+const ogs = require('open-graph-scraper');
+const crypto = require('crypto');
+
+// Защита от SSRF: только публичные URL с http/https
+function isPublicUrl(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname;
+    // Блокируем приватные IP и localhost
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.')) return false;
+    if (hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** GET /api/og?url= — получить OpenGraph preview для URL */
+app.get('/api/og', authMiddleware, async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url || typeof url !== 'string' || url.length > 2000) {
+      return res.status(400).json({ error: 'URL обязателен (до 2000 символов)' });
+    }
+    if (!isPublicUrl(url)) {
+      return res.status(400).json({ error: 'Недопустимый URL' });
+    }
+    // Проверяем кэш (SHA-256 хэш URL → og_cache)
+    const urlHash = crypto.createHash('sha256').update(url).digest('hex');
+    const cached = await pool.query(
+      "SELECT * FROM og_cache WHERE url_hash = $1 AND fetched_at > NOW() - INTERVAL '1 hour'",
+      [urlHash]
+    );
+    if (cached.rows.length > 0) {
+      const c = cached.rows[0];
+      return res.json({ title: c.title, description: c.description, image: c.image_url, site_name: c.site_name, url });
+    }
+
+    // Fetch OG tags с таймаутом
+    const { result } = await ogs({
+      url,
+      timeout: 5000,
+      fetchOptions: { headers: { 'User-Agent': 'sOn-Bot/1.0' } },
+    });
+
+    const ogData = {
+      title: result.ogTitle?.substring(0, 500) || null,
+      description: result.ogDescription?.substring(0, 1000) || null,
+      image: result.ogImage?.[0]?.url || null,
+      site_name: result.ogSiteName?.substring(0, 200) || null,
+    };
+
+    // Сохранить в кэш (upsert)
+    await pool.query(`
+      INSERT INTO og_cache (url_hash, url, title, description, image_url, site_name)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (url_hash) DO UPDATE SET
+        title = EXCLUDED.title, description = EXCLUDED.description,
+        image_url = EXCLUDED.image_url, site_name = EXCLUDED.site_name,
+        fetched_at = NOW()
+    `, [urlHash, url, ogData.title, ogData.description, ogData.image, ogData.site_name]);
+
+    res.json({ ...ogData, url });
+  } catch (err) {
+    // Ошибка fetch — возвращаем пустой preview (не 500)
+    console.error('[og]', err?.message);
+    res.json({ title: null, description: null, image: null, site_name: null, url: req.query.url });
+  }
+});
+
 // ==================== ПОИСК СООБЩЕНИЙ ====================
 
 /** GET /api/messages/search?q=text&chat_id=optional */
