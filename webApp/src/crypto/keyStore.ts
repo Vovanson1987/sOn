@@ -217,6 +217,55 @@ export async function loadKeyPair(chatId: string): Promise<KeyPair | null> {
   });
 }
 
+/**
+ * Сохранить Ed25519 signing key (публичный + приватный 64-байт).
+ * Используется для persistence собственного signing-ключа пользователя.
+ * id: `sk:${chatId}` — при chatId='self' хранится основной ключ,
+ * для отдельных чатов можно передать chat-специфичный id.
+ */
+export async function saveSigningKeyPair(
+  chatId: string,
+  keyPair: { publicKey: Uint8Array; privateKey: Uint8Array },
+): Promise<void> {
+  const db = await openDB();
+  const encPublic = await encryptData(keyPair.publicKey);
+  const encPrivate = await encryptData(keyPair.privateKey);
+  const record = {
+    id: `sk:${chatId}`,
+    publicKey: encPublic,
+    privateKey: encPrivate,
+  };
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  tx.objectStore(STORE_NAME).put(record);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Загрузить Ed25519 signing key (расшифровать) */
+export async function loadSigningKeyPair(
+  chatId: string,
+): Promise<{ publicKey: Uint8Array; privateKey: Uint8Array } | null> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const req = tx.objectStore(STORE_NAME).get(`sk:${chatId}`);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = async () => {
+      const record = req.result;
+      if (!record) { resolve(null); return; }
+      try {
+        const publicKey = await decryptData(record.publicKey);
+        const privateKey = await decryptData(record.privateKey);
+        resolve({ publicKey, privateKey });
+      } catch {
+        resolve(null);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 /** Сохранить shared secret (зашифрованно) */
 export async function saveSharedSecret(chatId: string, secret: Uint8Array): Promise<void> {
   const db = await openDB();

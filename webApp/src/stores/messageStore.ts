@@ -12,12 +12,24 @@ import { useAuthStore } from './authStore';
 import { useSecretChatStore } from './secretChatStore';
 import { useChatStore } from './chatStore';
 
+/** Информация об ошибке дешифровки в секретном чате */
+export interface DecryptError {
+  chatId: string;
+  error: string;
+  timestamp: number;
+}
+
 interface MessageStore {
   messages: Record<string, Message[]>;
   typingUsers: Record<string, string[]>;
   /** HI-37: Use Record instead of Set for Zustand serialization compatibility */
   loadedChats: Record<string, boolean>;
   fetchError: string | null;
+  /**
+   * ERR-3: ошибки дешифровки по чатам. Хранятся до clearDecryptErrors.
+   * Используется UI для показа предупреждения о рассинхроне/возможном MITM.
+   */
+  decryptErrors: Record<string, DecryptError[]>;
   /** Сообщение в режиме редактирования */
   editingMessage: Message | null;
 
@@ -49,6 +61,13 @@ interface MessageStore {
   updateMessage: (chatId: string, messageId: string, content: string) => Promise<void>;
   /** Обновить сообщение локально (для WS event) */
   updateMessageLocal: (chatId: string, messageId: string, content: string, editedAt: string) => void;
+  /**
+   * ERR-3: зафиксировать ошибку дешифровки секретного сообщения.
+   * Вызывается из secretChatStore.decryptReceived при Poly1305/ratchet fail.
+   */
+  reportDecryptError: (chatId: string, error: string) => void;
+  /** Очистить все ошибки дешифровки в чате */
+  clearDecryptErrors: (chatId: string) => void;
 }
 
 const SECRET_LOCKED_PREVIEW = '🔒 Зашифрованное сообщение';
@@ -133,6 +152,7 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   typingUsers: {},
   loadedChats: {},
   fetchError: null,
+  decryptErrors: {},
   editingMessage: null,
 
   getMessages: (chatId) => {
@@ -375,5 +395,23 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         ),
       },
     }));
+  },
+
+  reportDecryptError: (chatId, error) => {
+    const entry: DecryptError = { chatId, error, timestamp: Date.now() };
+    set((s) => ({
+      decryptErrors: {
+        ...s.decryptErrors,
+        [chatId]: [...(s.decryptErrors[chatId] ?? []), entry].slice(-10),
+      },
+    }));
+  },
+
+  clearDecryptErrors: (chatId) => {
+    set((s) => {
+      const { [chatId]: _removed, ...rest } = s.decryptErrors;
+      void _removed;
+      return { decryptErrors: rest };
+    });
   },
 }));

@@ -15,6 +15,7 @@ import {
   saveKeyPair, saveSharedSecret, deleteKeys,
   saveSessionMeta, loadSessionMeta, loadAllSessionChatIds,
   loadKeyPair, loadSharedSecret, loadRatchetState, saveRatchetState,
+  saveSigningKeyPair, loadSigningKeyPair,
 } from '@/crypto/keyStore';
 import * as api from '@/api/client';
 
@@ -70,13 +71,35 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   initialize: async () => {
     if (get().initialized) return;
 
-    // Генерируем Identity Key (X25519) и Signing Key (Ed25519)
-    const identityKey = await generateKeyPair();
-    const signingKey = await generateSigningKeyPair();
+    // Попытка восстановить постоянные ключи из IndexedDB.
+    // ERR-4: ранее signingKey (Ed25519) терялся при F5, что ломало
+    // все secret-сессии. Теперь ключи персистятся вместе.
+    let identityKey: KeyPair | null = null;
+    let signingKey: SigningKeyPair | null = null;
+    try {
+      identityKey = await loadKeyPair('identity');
+    } catch (err) {
+      console.error('[secretChat] loadKeyPair(identity) failed', err);
+    }
+    try {
+      signingKey = await loadSigningKeyPair('self');
+    } catch (err) {
+      console.error('[secretChat] loadSigningKeyPair failed', err);
+    }
 
-    // Генерируем Signed PreKey
+    // Если один из ключей отсутствует (первый запуск или потеря) —
+    // генерируем обе пары заново. Мы обязаны держать их согласованными:
+    // server держит публичные части в prekey bundle, и если мы перезальём
+    // identity/signing рассогласованно — чужие подписи не сойдутся.
+    const isFreshGeneration = !identityKey || !signingKey;
+    if (isFreshGeneration) {
+      identityKey = await generateKeyPair();
+      signingKey = await generateSigningKeyPair();
+    }
+
+    // Генерируем Signed PreKey (всегда свежий — он короткоживущий)
     const signedPreKey = await generateKeyPair();
-    const spkSignature = await signData(signedPreKey.publicKey, signingKey.privateKey);
+    const spkSignature = await signData(signedPreKey.publicKey, signingKey!.privateKey);
 
     // Генерируем пачку One-Time PreKeys
     const otpks: Array<{ key_id: number; public_key: string }> = [];
@@ -84,30 +107,45 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       const otpk = await generateKeyPair();
       otpks.push({ key_id: i, public_key: toBase64(otpk.publicKey) });
       // Сохраняем приватный ключ OPK в IndexedDB
-      await saveKeyPair(`otpk:${i}`, otpk).catch(() => {});
+      try {
+        await saveKeyPair(`otpk:${i}`, otpk);
+      } catch (err) {
+        console.error(`[secretChat] saveKeyPair(otpk:${i}) failed`, err);
+      }
     }
 
-    // Загружаем prekey bundle на сервер
+    // Загружаем prekey bundle на сервер (только если ключи свежие или SPK обновлён)
     try {
       await api.uploadPreKeyBundle({
-        identity_key: toBase64(identityKey.publicKey),
-        signing_key: toBase64(signingKey.publicKey),
+        identity_key: toBase64(identityKey!.publicKey),
+        signing_key: toBase64(signingKey!.publicKey),
         signed_prekey: toBase64(signedPreKey.publicKey),
         signed_prekey_id: 1,
         signed_prekey_signature: toBase64(spkSignature),
         one_time_prekeys: otpks,
       });
-    } catch {
+    } catch (err) {
+      console.error('[secretChat] uploadPreKeyBundle failed', err);
       // Сервер недоступен — работаем оффлайн
     }
 
-    // Сохранить ключи
-    await saveKeyPair('identity', identityKey).catch(() => {});
-    await saveKeyPair('spk:1', signedPreKey).catch(() => {});
+    // ERR-4: persist identity + signing вместе, чтобы после F5 оба
+    // ключа восстанавливались согласованно. Если master-key нет
+    // (изолированная вкладка, потеря паролей) — логируем и падаем
+    // к в-памяти режиму.
+    try {
+      if (isFreshGeneration) {
+        await saveKeyPair('identity', identityKey!);
+        await saveSigningKeyPair('self', signingKey!);
+      }
+      await saveKeyPair('spk:1', signedPreKey);
+    } catch (err) {
+      console.error('[secretChat] saveKeyPair(identity/signing/spk) failed', err);
+    }
 
     set({
-      myIdentityKey: identityKey,
-      mySigningKey: signingKey,
+      myIdentityKey: identityKey!,
+      mySigningKey: signingKey!,
       initialized: true,
     });
   },
@@ -233,10 +271,22 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
       }));
 
       // HI-11: Persist updated ratchet state
-      saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch(() => {});
+      saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch((err) => {
+        console.error(`[secretChat] saveRatchetState(${chatId}) failed`, err);
+      });
 
       return plaintext;
-    } catch {
+    } catch (err) {
+      // ERR-3: не глотаем ошибку дешифровки. Poly1305 auth fail означает
+      // возможный MITM или рассинхрон ratchet — пользователь должен знать.
+      console.error(`[secretChat] decryptReceived(${chatId}) failed`, err);
+      try {
+        // Ленивый импорт чтобы не создавать циклическую зависимость
+        const { useMessageStore } = await import('./messageStore');
+        useMessageStore.getState().reportDecryptError?.(chatId, String(err));
+      } catch {
+        // messageStore может не поддерживать reportDecryptError — это ок
+      }
       return null;
     }
   },
@@ -292,6 +342,26 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
   restoreSessions: async () => {
     try {
+      // ERR-4: сначала восстанавливаем собственные постоянные ключи.
+      // Без signing key нельзя создавать новые сессии после F5.
+      const [selfIdentityKey, selfSigningKey] = await Promise.all([
+        loadKeyPair('identity').catch((err) => {
+          console.error('[secretChat] restoreSessions loadKeyPair(identity)', err);
+          return null;
+        }),
+        loadSigningKeyPair('self').catch((err) => {
+          console.error('[secretChat] restoreSessions loadSigningKeyPair', err);
+          return null;
+        }),
+      ]);
+      if (selfIdentityKey && selfSigningKey) {
+        set({
+          myIdentityKey: selfIdentityKey,
+          mySigningKey: selfSigningKey,
+          initialized: true,
+        });
+      }
+
       const chatIds = await loadAllSessionChatIds();
       const sessions: Record<string, SecretSession> = {};
 
@@ -306,11 +376,21 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
 
           if (!identityKey || !sharedSecret || !ratchetState) continue;
 
+          // Если собственный signing key ещё не восстановлен — пропускаем
+          // сессию. Иначе получим "нулевой" ключ и все подписи сломаются.
+          const mySigningKey = get().mySigningKey;
+          if (!mySigningKey) {
+            console.warn(
+              `[secretChat] skip chat ${chatId}: собственный signing key не восстановлен`
+            );
+            continue;
+          }
+
           sessions[chatId] = {
             chatId,
             peerId: meta.peerId as string,
             myIdentityKey: identityKey,
-            mySigningKey: get().mySigningKey || { publicKey: new Uint8Array(32), privateKey: new Uint8Array(64) },
+            mySigningKey,
             x3dhResult: { sharedSecret, ephemeralPublicKey: new Uint8Array(32), protocol: 'X3DH', timestamp: Date.now() },
             ratchetState: ratchetState as unknown as DoubleRatchetState,
             isVerified: meta.isVerified as boolean || false,
@@ -319,8 +399,8 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
             emojiGrid: meta.emojiGrid as string[][],
             hexFingerprint: meta.hexFingerprint as string,
           };
-        } catch {
-          // Пропускаем повреждённые сессии
+        } catch (err) {
+          console.error(`[secretChat] restoreSessions skip ${chatId}`, err);
         }
       }
 
