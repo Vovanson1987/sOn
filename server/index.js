@@ -16,6 +16,7 @@ const {
   uploadFile,
   getDownloadUrl,
   getUploadUrl,
+  minioHealth,
   isAllowedFolder,
   isAllowedMime,
   sanitizeExt,
@@ -1687,17 +1688,118 @@ app.get('/api/users/blocked', authMiddleware, async (req, res) => {
 
 // ==================== HEALTH ====================
 
-/** Проверка здоровья с тестом зависимостей */
-app.get('/health', async (_, res) => {
-  const checks = { service: 'son-api', uptime: process.uptime() };
+/**
+ * P1.7: разделённые health checks.
+ *
+ * /health/live — liveness. Процесс жив, event loop не заблокирован.
+ *   Всегда 200, если Node-процесс отвечает. Используется Kubernetes/Docker
+ *   для перезапуска "зависшего" контейнера.
+ *
+ * /health/ready — readiness. Все зависимости доступны и можно принимать
+ *   трафик. 200 если postgres + redis + minio отвечают, 503 если нет.
+ *
+ * /health — legacy endpoint, поведение: та же проверка что /health/ready.
+ *   Оставлен для обратной совместимости.
+ */
+
+/** Быстрая liveness-проверка */
+app.get('/health/live', (_, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'son-api',
+    uptime: process.uptime(),
+  });
+});
+
+async function checkPostgres() {
   try {
+    const t0 = Date.now();
     await pool.query('SELECT 1');
-    checks.postgres = 'ok';
-  } catch {
-    checks.postgres = 'error';
+    return { status: 'ok', latency_ms: Date.now() - t0 };
+  } catch (err) {
+    return { status: 'error', message: err?.message };
   }
-  const allOk = checks.postgres === 'ok';
-  res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', ...checks });
+}
+
+async function checkRedis() {
+  // В тестовом окружении Redis недоступен — skip.
+  if (process.env.NODE_ENV === 'test') return { status: 'ok', skipped: true };
+
+  // Redis используется только через express-rate-limit и WS-rate-limit,
+  // напрямую клиент не держится. Делаем лёгкий TCP-check через net.
+  // Если redis недоступен — rate-limiters откатятся на memory.
+  const net = require('net');
+  const host = process.env.REDIS_HOST || 'redis';
+  const port = parseInt(process.env.REDIS_PORT || '6379');
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    const timeout = setTimeout(() => {
+      sock.destroy();
+      resolve({ status: 'error', message: 'timeout' });
+    }, 2000);
+    sock.once('connect', () => {
+      clearTimeout(timeout);
+      sock.destroy();
+      resolve({ status: 'ok' });
+    });
+    sock.once('error', (err) => {
+      clearTimeout(timeout);
+      resolve({ status: 'error', message: err?.message });
+    });
+    sock.connect(port, host);
+  });
+}
+
+async function checkMinio() {
+  try {
+    const t0 = Date.now();
+    const ok = await minioHealth();
+    return ok
+      ? { status: 'ok', latency_ms: Date.now() - t0 }
+      : { status: 'error', message: 'bucket check failed' };
+  } catch (err) {
+    return { status: 'error', message: err?.message };
+  }
+}
+
+/** Readiness: все зависимости доступны */
+app.get('/health/ready', async (_, res) => {
+  const [postgres, redis, minio] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+    checkMinio(),
+  ]);
+  const allOk =
+    postgres.status === 'ok' &&
+    redis.status === 'ok' &&
+    minio.status === 'ok';
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ready' : 'not-ready',
+    service: 'son-api',
+    uptime: process.uptime(),
+    checks: { postgres, redis, minio },
+  });
+});
+
+/** Legacy endpoint — для обратной совместимости */
+app.get('/health', async (_, res) => {
+  const [postgres, redis, minio] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+    checkMinio(),
+  ]);
+  const allOk =
+    postgres.status === 'ok' &&
+    redis.status === 'ok' &&
+    minio.status === 'ok';
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ok' : 'degraded',
+    service: 'son-api',
+    uptime: process.uptime(),
+    postgres: postgres.status,
+    redis: redis.status,
+    minio: minio.status,
+  });
 });
 
 // ==================== Global Error Handlers ====================

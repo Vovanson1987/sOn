@@ -49,6 +49,7 @@ jest.mock('../storage', () => {
     }),
     getDownloadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-url'),
     getUploadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-upload-url'),
+    minioHealth: jest.fn().mockResolvedValue(true),
     isAllowedFolder: (folder) => typeof folder === 'string' && ALLOWED_FOLDERS.has(folder),
     isAllowedMime: (mime) => typeof mime === 'string' && ALLOWED_MIME_TYPES.has(mime),
     sanitizeExt: (fileName) => {
@@ -88,8 +89,40 @@ beforeEach(() => {
 
 // ==================== Health ====================
 
-describe('GET /health', () => {
-  it('возвращает ok когда PostgreSQL доступен', async () => {
+describe('GET /health/live', () => {
+  it('всегда возвращает 200 (liveness)', async () => {
+    const res = await request(app).get('/health/live');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.service).toBe('son-api');
+    expect(typeof res.body.uptime).toBe('number');
+  });
+});
+
+describe('GET /health/ready', () => {
+  it('возвращает ready когда все зависимости доступны', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+
+    const res = await request(app).get('/health/ready');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+    expect(res.body.checks.postgres.status).toBe('ok');
+    expect(res.body.checks.redis.status).toBe('ok');
+    expect(res.body.checks.minio.status).toBe('ok');
+  });
+
+  it('возвращает not-ready когда PostgreSQL недоступен', async () => {
+    mockQuery.mockRejectedValueOnce(new Error('Connection refused'));
+
+    const res = await request(app).get('/health/ready');
+    expect(res.status).toBe(503);
+    expect(res.body.status).toBe('not-ready');
+    expect(res.body.checks.postgres.status).toBe('error');
+  });
+});
+
+describe('GET /health (legacy)', () => {
+  it('возвращает ok когда все зависимости доступны', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
     const res = await request(app).get('/health');

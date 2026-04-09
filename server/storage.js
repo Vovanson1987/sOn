@@ -142,12 +142,28 @@ async function deleteFile(objectName) {
   await minio.removeObject(BUCKET, objectName);
 }
 
+/**
+ * Быстрая проверка доступности MinIO.
+ * Используется в /health/ready. Не бросает, возвращает boolean.
+ */
+async function minioHealth() {
+  try {
+    // bucketExists — лёгкая операция, проверяет подключение к серверу
+    // и возвращает true/false. Сетевые/auth ошибки превращаются в false.
+    const exists = await minio.bucketExists(BUCKET);
+    return exists;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   ensureBucket,
   uploadFile,
   getDownloadUrl,
   getUploadUrl,
   deleteFile,
+  minioHealth,
   isAllowedFolder,
   isAllowedMime,
   sanitizeExt,
