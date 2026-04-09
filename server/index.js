@@ -741,7 +741,7 @@ app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemb
     mentioned_user_ids } = req.body;
   const chatId = req.params.chatId;
 
-  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'voice', 'system', 'poll', 'video_note'];
+  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'voice', 'system', 'poll', 'video_note', 'sticker'];
   if (!allowedTypes.includes(type)) {
     return res.status(400).json({ error: 'Недопустимый тип сообщения' });
   }
@@ -2394,6 +2394,102 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка поиска' });
+  }
+});
+
+// ==================== СТИКЕРЫ (P2.8) ====================
+
+/** GET /api/sticker-packs — доступные пакеты стикеров */
+app.get('/api/sticker-packs', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT sp.*,
+        EXISTS(SELECT 1 FROM user_sticker_packs usp WHERE usp.pack_id = sp.id AND usp.user_id = $1) as is_added
+      FROM sticker_packs sp
+      ORDER BY sp.is_official DESC, sp.created_at DESC
+      LIMIT 50
+    `, [req.user.id]);
+    res.json({ packs: result.rows });
+  } catch (err) {
+    console.error('[sticker packs]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/sticker-packs/my — мои добавленные паки */
+app.get('/api/sticker-packs/my', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT sp.* FROM sticker_packs sp
+      JOIN user_sticker_packs usp ON usp.pack_id = sp.id
+      WHERE usp.user_id = $1
+      ORDER BY usp.added_at DESC
+    `, [req.user.id]);
+    res.json({ packs: result.rows });
+  } catch (err) {
+    console.error('[my sticker packs]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/sticker-packs/:id/stickers — стикеры в пакете */
+app.get('/api/sticker-packs/:id/stickers', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM stickers WHERE pack_id = $1 ORDER BY sort_order',
+      [req.params.id]
+    );
+    res.json({ stickers: result.rows });
+  } catch (err) {
+    console.error('[stickers]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** POST /api/sticker-packs/:id/add — добавить пак себе */
+app.post('/api/sticker-packs/:id/add', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(
+      'INSERT INTO user_sticker_packs (user_id, pack_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[add sticker pack]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** DELETE /api/sticker-packs/:id/add — убрать пак */
+app.delete('/api/sticker-packs/:id/add', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(
+      'DELETE FROM user_sticker_packs WHERE user_id = $1 AND pack_id = $2',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[remove sticker pack]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** POST /api/sticker-packs — создать пак (admin/owner) */
+app.post('/api/sticker-packs', authMiddleware, async (req, res) => {
+  try {
+    const { name, description, cover_url } = req.body;
+    if (!name || typeof name !== 'string' || name.length > 100) {
+      return res.status(400).json({ error: 'Название от 1 до 100 символов' });
+    }
+    const result = await pool.query(
+      `INSERT INTO sticker_packs (name, description, cover_url, author_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name.trim(), description?.substring(0, 500) || null, cover_url || null, req.user.id]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[create sticker pack]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
   }
 });
 
