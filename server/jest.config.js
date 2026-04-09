@@ -3,7 +3,7 @@ module.exports = {
   testEnvironment: 'node',
   // uuid v13 использует ESM — нужно трансформировать
   transformIgnorePatterns: [
-    'node_modules/(?!(uuid)/)',
+    'node_modules/(?!(uuid|otplib|@otplib)/)',
   ],
   transform: {
     '^.+\\.js$': ['babel-jest', { presets: [['@babel/preset-env', { targets: { node: 'current' } }]] }],

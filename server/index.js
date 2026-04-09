@@ -2811,6 +2811,180 @@ app.get('/api/users/blocked', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== 2FA TOTP (P3.3) ====================
+
+const { authenticator } = require('otplib');
+
+/** POST /api/auth/mfa/setup — начать настройку 2FA (генерировать secret) */
+app.post('/api/auth/mfa/setup', authMiddleware, async (req, res) => {
+  try {
+    // Проверить что 2FA ещё не включена
+    const existing = await pool.query(
+      'SELECT is_enabled FROM user_mfa WHERE user_id = $1',
+      [req.user.id]
+    );
+    if (existing.rows[0]?.is_enabled) {
+      return res.status(409).json({ error: '2FA уже включена' });
+    }
+
+    const secret = authenticator.generateSecret();
+    const otpauth = authenticator.keyuri(req.user.email, 'sOn Messenger', secret);
+
+    // Сохранить secret (ещё не включена)
+    await pool.query(`
+      INSERT INTO user_mfa (user_id, totp_secret, is_enabled)
+      VALUES ($1, $2, false)
+      ON CONFLICT (user_id) DO UPDATE SET totp_secret = $2, is_enabled = false
+    `, [req.user.id, secret]);
+
+    res.json({ secret, otpauth_url: otpauth });
+  } catch (err) {
+    console.error('[mfa setup]', err?.message);
+    res.status(500).json({ error: 'Ошибка настройки 2FA' });
+  }
+});
+
+/** POST /api/auth/mfa/verify — подтвердить 2FA код и активировать */
+app.post('/api/auth/mfa/verify', authMiddleware, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code || typeof code !== 'string' || code.length !== 6) {
+      return res.status(400).json({ error: 'Код должен быть 6 цифр' });
+    }
+
+    const mfa = await pool.query(
+      'SELECT totp_secret, is_enabled FROM user_mfa WHERE user_id = $1',
+      [req.user.id]
+    );
+    if (mfa.rows.length === 0) {
+      return res.status(400).json({ error: 'Сначала вызовите /api/auth/mfa/setup' });
+    }
+    if (mfa.rows[0].is_enabled) {
+      return res.status(409).json({ error: '2FA уже активна' });
+    }
+
+    const isValid = authenticator.check(code, mfa.rows[0].totp_secret);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Неверный код' });
+    }
+
+    // Генерируем backup-коды (10 штук, 8 символов каждый)
+    const backupCodes = [];
+    for (let i = 0; i < 10; i++) {
+      backupCodes.push(require('crypto').randomBytes(4).toString('hex'));
+    }
+    // Хешируем backup-коды для хранения
+    const hashedCodes = backupCodes.map(c =>
+      require('crypto').createHash('sha256').update(c).digest('hex')
+    );
+
+    await pool.query(
+      'UPDATE user_mfa SET is_enabled = true, backup_codes = $2, enabled_at = NOW() WHERE user_id = $1',
+      [req.user.id, hashedCodes]
+    );
+
+    res.json({ ok: true, backup_codes: backupCodes });
+  } catch (err) {
+    console.error('[mfa verify]', err?.message);
+    res.status(500).json({ error: 'Ошибка верификации' });
+  }
+});
+
+/** DELETE /api/auth/mfa — отключить 2FA */
+app.delete('/api/auth/mfa', authMiddleware, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Код обязателен' });
+
+    const mfa = await pool.query(
+      'SELECT totp_secret FROM user_mfa WHERE user_id = $1 AND is_enabled = true',
+      [req.user.id]
+    );
+    if (mfa.rows.length === 0) {
+      return res.status(400).json({ error: '2FA не включена' });
+    }
+
+    const isValid = authenticator.check(code, mfa.rows[0].totp_secret);
+    if (!isValid) return res.status(401).json({ error: 'Неверный код' });
+
+    await pool.query('DELETE FROM user_mfa WHERE user_id = $1', [req.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[mfa disable]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/auth/mfa/status — статус 2FA */
+app.get('/api/auth/mfa/status', authMiddleware, async (req, res) => {
+  try {
+    const mfa = await pool.query(
+      'SELECT is_enabled, enabled_at FROM user_mfa WHERE user_id = $1',
+      [req.user.id]
+    );
+    res.json({
+      is_enabled: mfa.rows[0]?.is_enabled || false,
+      enabled_at: mfa.rows[0]?.enabled_at || null,
+    });
+  } catch (err) {
+    console.error('[mfa status]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+// ==================== SESSION MANAGEMENT (P3.5) ====================
+
+/** GET /api/sessions — список активных сессий пользователя */
+app.get('/api/sessions', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, device_name, device_type, ip_address, last_active_at, created_at,
+        (token_hash = $2) as is_current
+      FROM sessions
+      WHERE user_id = $1 AND is_revoked = false
+      ORDER BY last_active_at DESC
+      LIMIT 50
+    `, [req.user.id, req.sessionTokenHash || '']);
+    res.json({ sessions: result.rows });
+  } catch (err) {
+    console.error('[sessions list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** DELETE /api/sessions/:id — отозвать конкретную сессию */
+app.delete('/api/sessions/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE sessions SET is_revoked = true WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Сессия не найдена' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[session revoke]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** DELETE /api/sessions — отозвать ВСЕ сессии кроме текущей */
+app.delete('/api/sessions', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE sessions SET is_revoked = true
+       WHERE user_id = $1 AND is_revoked = false AND token_hash != $2
+       RETURNING id`,
+      [req.user.id, req.sessionTokenHash || '']
+    );
+    res.json({ ok: true, revoked_count: result.rows.length });
+  } catch (err) {
+    console.error('[sessions revoke all]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
 // ==================== HEALTH ====================
 
 /**
