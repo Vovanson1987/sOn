@@ -133,14 +133,36 @@ services:
     networks:
       - son-network
 
+  ## ====== Backend API ======
+
+  api:
+    build: ./server
+    container_name: son-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    networks:
+      - son-network
+
   ## ====== Frontend ======
 
   web:
     build: ./webApp
     container_name: son-web
     restart: unless-stopped
+    depends_on:
+      - api
     ports:
-      - "5173:5173"
+      - "5173:80"
     networks:
       - son-network
 
