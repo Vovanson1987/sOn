@@ -348,8 +348,22 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
     // Call API (skip for incoming WS broadcasts — they are already persisted)
     if (!skipApi) {
       api.toggleReaction(chatId, messageId, emoji).catch((err) => {
-        console.error('Reaction error:', err);
-        // Could add rollback here but keeping it simple
+        console.error('[addReaction] failed, rolling back:', err);
+        // H1: rollback — инвертируем обратно
+        set((s) => ({
+          messages: {
+            ...s.messages,
+            [chatId]: (s.messages[chatId] ?? []).map((m) => {
+              if (m.id !== messageId) return m;
+              const current = m.reactions[emoji] ?? [];
+              const hasReaction = current.includes(userId);
+              const reverted = hasReaction
+                ? current.filter((id) => id !== userId)
+                : [...current, userId];
+              return { ...m, reactions: { ...m.reactions, [emoji]: reverted } };
+            }),
+          },
+        }));
       });
     }
   },

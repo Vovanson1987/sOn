@@ -36,7 +36,8 @@ function loadCachedUser(): AuthUser | null {
     const raw = localStorage.getItem(USER_CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as AuthUser;
-  } catch {
+  } catch (err) {
+    console.warn('[auth] loadCachedUser failed', err);
     return null;
   }
 }
@@ -48,8 +49,8 @@ function saveCachedUser(user: AuthUser | null): void {
     } else {
       localStorage.removeItem(USER_CACHE_KEY);
     }
-  } catch {
-    // localStorage недоступен
+  } catch (err) {
+    console.warn('[auth] saveCachedUser failed (localStorage unavailable?)', err);
   }
 }
 

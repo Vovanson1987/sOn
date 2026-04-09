@@ -117,7 +117,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     }));
     // Сбросить на сервере тоже
-    api.markChatAsRead(chatId).catch(() => {});
+    api.markChatAsRead(chatId).catch((err) => console.error('[markAsRead] failed', err));
   },
 
   fetchChats: async () => {

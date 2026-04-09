@@ -5,9 +5,11 @@ export async function subscribeToPush(): Promise<void> {
   try {
     const reg = await navigator.serviceWorker.ready;
     // Get VAPID key from server
-    const res = await fetch(`${API_URL}/api/push/vapid-key`);
+    // H11: credentials для cookie-auth + проверка res.ok
+    const res = await fetch(`${API_URL}/api/push/vapid-key`, { credentials: 'include' });
+    if (!res.ok) { console.warn('[push] vapid-key failed:', res.status); return; }
     const { publicKey } = await res.json();
-    if (!publicKey) return;
+    if (!publicKey) { console.warn('[push] VAPID key not configured on server'); return; }
     // Subscribe
     const subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
