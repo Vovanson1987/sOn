@@ -272,6 +272,21 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
       values.push(display_name);
     }
     if (avatar_url !== undefined) {
+      // P1.12: валидация avatar_url — только http/https протокол, до 500 символов.
+      // Защита от SSRF (javascript:, file://, data:, внутренние IP).
+      if (avatar_url !== null) {
+        if (typeof avatar_url !== 'string' || avatar_url.length > 500) {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+        try {
+          const parsed = new URL(avatar_url);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'avatar_url должен использовать http или https' });
+          }
+        } catch {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+      }
       updates.push(`avatar_url = $${idx++}`);
       values.push(avatar_url);
     }
@@ -765,13 +780,23 @@ app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemb
     }
   }
 
+  // P1.12: валидация self_destruct_seconds — число от 5 до 604800 (7 дней).
+  // Без этого клиент может передать NaN, Infinity, отрицательное — Date(NaN).
+  const MAX_SELF_DESTRUCT = 7 * 24 * 3600;
+  if (self_destruct_seconds !== undefined && self_destruct_seconds !== null) {
+    const secs = Number(self_destruct_seconds);
+    if (!Number.isFinite(secs) || secs < 5 || secs > MAX_SELF_DESTRUCT) {
+      return res.status(400).json({ error: 'Недопустимое время самоуничтожения (5 сек — 7 дней)' });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // ME-19: Self-destruct timer
     const selfDestructAt = self_destruct_seconds
-      ? new Date(Date.now() + self_destruct_seconds * 1000).toISOString()
+      ? new Date(Date.now() + Number(self_destruct_seconds) * 1000).toISOString()
       : null;
 
     const result = await client.query(
@@ -859,9 +884,35 @@ app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res
     const updates = [];
     const values = [];
     let idx = 1;
-    if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
-    if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
-    if (avatar_url !== undefined) { updates.push(`avatar_url = $${idx++}`); values.push(avatar_url); }
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.length < 1 || name.length > 100) {
+        return res.status(400).json({ error: 'Имя группы от 1 до 100 символов' });
+      }
+      updates.push(`name = $${idx++}`); values.push(name.trim());
+    }
+    if (description !== undefined) {
+      if (typeof description !== 'string' || description.length > 500) {
+        return res.status(400).json({ error: 'Описание до 500 символов' });
+      }
+      updates.push(`description = $${idx++}`); values.push(description.trim());
+    }
+    if (avatar_url !== undefined) {
+      // P1.12: та же валидация URL что и в /api/users/me
+      if (avatar_url !== null) {
+        if (typeof avatar_url !== 'string' || avatar_url.length > 500) {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+        try {
+          const parsed = new URL(avatar_url);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'avatar_url должен использовать http или https' });
+          }
+        } catch {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+      }
+      updates.push(`avatar_url = $${idx++}`); values.push(avatar_url);
+    }
     if (updates.length === 0) return res.status(400).json({ error: 'Нет данных' });
     values.push(req.params.chatId);
     const result = await pool.query(
@@ -912,11 +963,19 @@ app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, as
 
 // ==================== РЕАКЦИИ ====================
 
+// P1.12: whitelist реакций — только известные emoji.
+// Без whitelist поле VARCHAR(10) принимает любой текст, включая HTML-подобный.
+const ALLOWED_EMOJIS = new Set([
+  '❤️', '👍', '👎', '😂', '😮', '😢', '😡', '🔥', '👏', '🎉',
+  '💯', '🤔', '👀', '🙏', '💪', '✅', '❌', '⭐', '🤣', '😍',
+]);
+
 /** POST /api/chats/:chatId/messages/:id/reactions — добавить/убрать реакцию (toggle) */
 app.post('/api/chats/:chatId/messages/:id/reactions', authMiddleware, chatMemberCheck, async (req, res) => {
   try {
     const { emoji } = req.body;
-    if (!emoji) return res.status(400).json({ error: 'emoji обязателен' });
+    if (!emoji || typeof emoji !== 'string') return res.status(400).json({ error: 'emoji обязателен' });
+    if (!ALLOWED_EMOJIS.has(emoji)) return res.status(400).json({ error: 'Недопустимая реакция' });
     // Toggle: если реакция уже есть — удалить, иначе — добавить
     const existing = await pool.query(
       'SELECT id FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
