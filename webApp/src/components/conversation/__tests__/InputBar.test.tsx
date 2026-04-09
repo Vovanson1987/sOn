@@ -47,14 +47,14 @@ describe('InputBar', () => {
     expect(screen.getByPlaceholderText('Сообщение')).toBeInTheDocument();
   });
 
-  it('кастомный placeholder для секретных чатов', () => {
+  it('placeholder всегда "Сообщение" (стиль MAX)', () => {
     render(<InputBar onSend={() => {}} placeholder="Секретное сообщение..." />);
-    expect(screen.getByPlaceholderText('Секретное сообщение...')).toBeInTheDocument();
+    // В MAX placeholder фиксированный
+    expect(screen.getByPlaceholderText('Сообщение')).toBeInTheDocument();
   });
 
-  it('показывает микрофон при пустом поле', () => {
+  it('не показывает кнопку отправки при пустом поле (стиль MAX)', () => {
     render(<InputBar onSend={() => {}} />);
-    expect(screen.getByLabelText('Голосовое сообщение')).toBeInTheDocument();
     expect(screen.queryByLabelText('Отправить')).not.toBeInTheDocument();
   });
 
@@ -62,7 +62,6 @@ describe('InputBar', () => {
     render(<InputBar onSend={() => {}} />);
     fireEvent.change(screen.getByLabelText('Написать сообщение'), { target: { value: 'Привет' } });
     expect(screen.getByLabelText('Отправить')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Голосовое сообщение')).not.toBeInTheDocument();
   });
 
   it('вызывает onSend при клике на кнопку отправки', () => {

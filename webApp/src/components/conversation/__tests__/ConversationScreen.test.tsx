@@ -167,9 +167,9 @@ describe('ConversationScreen — прямой чат', () => {
     expect(screen.getByLabelText('Видеозвонок')).toBeTruthy();
   });
 
-  it('отображает поле ввода с плейсхолдером "iMessage"', () => {
+  it('отображает поле ввода с плейсхолдером "Сообщение"', () => {
     render(<ConversationScreen chat={directChat} onBack={mockOnBack} />);
-    expect(screen.getByPlaceholderText('iMessage')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Сообщение')).toBeTruthy();
   });
 
   it('не отображает кнопки секретного чата', () => {
@@ -206,9 +206,9 @@ describe('ConversationScreen — секретный чат', () => {
     expect(screen.getByLabelText('Информация о шифровании')).toBeTruthy();
   });
 
-  it('показывает плейсхолдер "Секретное сообщение..."', () => {
+  it('показывает плейсхолдер "Сообщение" (MAX стиль)', () => {
     render(<ConversationScreen chat={secretChat} onBack={vi.fn()} />);
-    expect(screen.getByPlaceholderText('Секретное сообщение...')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Сообщение')).toBeTruthy();
   });
 
   it('показывает анимацию обмена ключами для нового секретного чата', () => {
@@ -224,7 +224,7 @@ describe('ConversationScreen — отправка сообщения', () => {
 
   it('отправляет сообщение по вводу и Enter', async () => {
     render(<ConversationScreen chat={directChat} onBack={vi.fn()} />);
-    const input = screen.getByPlaceholderText('iMessage');
+    const input = screen.getByPlaceholderText('Сообщение');
     fireEvent.change(input, { target: { value: 'Тестовое сообщение' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
-import { Plus, AudioLines, ArrowUp, Smile, X, Pencil, Sticker } from 'lucide-react';
-import { t } from '@/i18n';
+import { Paperclip, ArrowUp, Smile, X, Pencil, Sticker } from 'lucide-react';
+// i18n не используется — placeholder фиксированный 'Сообщение'
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
 import EmojiPicker from '@components/media/EmojiPicker';
 import { sendWS } from '@/api/client';
@@ -22,11 +22,11 @@ interface InputBarProps {
 
 /** Панель ввода сообщения в стиле iMessage Mac */
 export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMessage, onCancelEdit }: InputBarProps) {
-  const resolvedPlaceholder = placeholder ?? t('chat.placeholder');
+  void placeholder; // Не используется — placeholder теперь "Сообщение" (как MAX)
   const [text, setText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isRecording, setIsRecording] = useState(false); // Сохранён для будущего использования
   // P2.6: @mentions
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   // P2.8: stickers
@@ -156,6 +156,7 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
       }
     }
   }, [isRecording, chatId]);
+  void handleVoiceToggle; // Сохранён — голосовые сообщения через отдельную кнопку в будущем
 
   /** Insert emoji at cursor position (or append) */
   const handleEmojiSelect = useCallback((emoji: string) => {
@@ -251,130 +252,131 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
         </div>
       )}
 
-      <div className="flex items-end gap-2 px-3 py-2">
-      {/* Кнопка вложений */}
-      <button
-        onClick={() => setShowAttachments(true)}
-        className="w-[44px] h-[44px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
-        style={{ background: '#3a3a5c' }}
-        aria-label="Вложения"
-      >
-        <Plus size={18} color="white" />
-      </button>
+      {/* InputBar стиль MAX: скрепка | поле ввода | emoji + отправка */}
+      <div className="flex items-end gap-1.5 px-3 py-2">
 
-      {/* Picker вложений */}
-      <AttachmentPicker
-        isOpen={showAttachments}
-        onClose={() => setShowAttachments(false)}
-        onSelect={(type) => { setShowAttachments(false); onAttachment?.(type); }}
-      />
+        {/* Скрепка (вложения) */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowAttachments(true)}
+            className="w-[40px] h-[40px] flex items-center justify-center rounded-full transition-colors mb-[1px]"
+            style={{ color: 'rgba(255,255,255,0.45)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            aria-label="Вложения"
+          >
+            <Paperclip size={20} />
+          </button>
+          <AttachmentPicker
+            isOpen={showAttachments}
+            onClose={() => setShowAttachments(false)}
+            onSelect={(type) => { setShowAttachments(false); onAttachment?.(type); }}
+          />
+        </div>
 
-      {/* Поле ввода */}
-      <div
-        className="flex-1 flex items-end rounded-[18px] px-3 py-[6px]"
-        style={{ background: '#232338', border: '1px solid rgba(255,255,255,0.08)' }}
-      >
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => {
-            const val = e.target.value;
-            setText(val);
-            // P2.6: @mentions — ищем @ перед курсором
-            const cursor = e.target.selectionStart ?? val.length;
-            const before = val.slice(0, cursor);
-            const atIdx = before.lastIndexOf('@');
-            if (atIdx >= 0 && (atIdx === 0 || before[atIdx - 1] === ' ')) {
-              const query = before.slice(atIdx + 1);
-              if (query.length >= 1 && !query.includes(' ')) {
-                setMentionQuery(query);
+        {/* Поле ввода — широкое, как MAX */}
+        <div
+          className="flex-1 flex items-end rounded-2xl px-4 py-[8px]"
+          style={{ background: '#232338', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => {
+              const val = e.target.value;
+              setText(val);
+              const cursor = e.target.selectionStart ?? val.length;
+              const before = val.slice(0, cursor);
+              const atIdx = before.lastIndexOf('@');
+              if (atIdx >= 0 && (atIdx === 0 || before[atIdx - 1] === ' ')) {
+                const query = before.slice(atIdx + 1);
+                if (query.length >= 1 && !query.includes(' ')) {
+                  setMentionQuery(query);
+                } else {
+                  setMentionQuery(null);
+                }
               } else {
                 setMentionQuery(null);
               }
-            } else {
-              setMentionQuery(null);
-            }
-            // ME-16: Отправить typing event
-            if (chatId && e.target.value.trim()) {
-              if (!isTypingRef.current) {
-                sendWS({ type: 'typing', chat_id: chatId });
-                isTypingRef.current = true;
-              }
-              clearTimeout(typingTimeoutRef.current);
-              typingTimeoutRef.current = setTimeout(() => {
+              if (chatId && e.target.value.trim()) {
+                if (!isTypingRef.current) {
+                  sendWS({ type: 'typing', chat_id: chatId });
+                  isTypingRef.current = true;
+                }
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = setTimeout(() => {
+                  sendWS({ type: 'stop_typing', chat_id: chatId });
+                  isTypingRef.current = false;
+                }, 3000);
+              } else if (chatId && isTypingRef.current) {
                 sendWS({ type: 'stop_typing', chat_id: chatId });
                 isTypingRef.current = false;
-              }, 3000);
-            } else if (chatId && isTypingRef.current) {
-              sendWS({ type: 'stop_typing', chat_id: chatId });
-              isTypingRef.current = false;
-              clearTimeout(typingTimeoutRef.current);
-            }
-          }}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          placeholder={resolvedPlaceholder}
-          rows={1}
-          aria-label="Написать сообщение"
-          className="flex-1 bg-transparent text-[17px] text-white placeholder-[#ABABAF] outline-none resize-none leading-[1.3] focus:ring-1 focus:ring-[#007AFF] focus:rounded-[4px]"
-          style={{ maxHeight: '100px' }}
-        />
-      </div>
-
-      {/* Аудио-волны / отправка */}
-      {hasText ? (
-        <button
-          onClick={handleSend}
-          className="w-[44px] h-[44px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px]"
-          style={{ background: '#007AFF' }}
-          aria-label="Отправить"
-        >
-          <ArrowUp size={18} color="white" strokeWidth={3} />
-        </button>
-      ) : (
-        <button
-          onClick={handleVoiceToggle}
-          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
-          aria-label={isRecording ? 'Остановить запись' : 'Голосовое сообщение'}
-        >
-          <AudioLines size={22} color={isRecording ? '#FF3B30' : '#8E8E93'} />
-        </button>
-      )}
-
-      {/* Эмодзи */}
-      <div className="relative">
-        <button
-          onClick={() => setShowEmojiPicker((v) => !v)}
-          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
-          aria-label="Эмодзи"
-        >
-          <Smile size={22} color={showEmojiPicker ? '#007AFF' : '#8E8E93'} />
-        </button>
-        {showEmojiPicker && (
-          <EmojiPicker
-            onSelect={handleEmojiSelect}
-            onClose={() => setShowEmojiPicker(false)}
+                clearTimeout(typingTimeoutRef.current);
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            onInput={handleInput}
+            placeholder="Сообщение"
+            rows={1}
+            aria-label="Написать сообщение"
+            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 outline-none resize-none leading-[1.4]"
+            style={{ maxHeight: '120px' }}
           />
-        )}
-      </div>
+        </div>
 
-      {/* P2.8: Стикеры */}
-      <div className="relative">
-        <button
-          onClick={() => setShowStickers((v) => !v)}
-          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
-          aria-label="Стикеры"
-        >
-          <Sticker size={22} color={showStickers ? '#007AFF' : '#8E8E93'} />
-        </button>
-        <StickerPicker
-          isOpen={showStickers}
-          onClose={() => setShowStickers(false)}
-          onSelect={(sticker) => {
-            onSend(`[sticker:${sticker.id}:${sticker.file_url}]`);
-          }}
-        />
-      </div>
+        {/* Emoji */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowEmojiPicker((v) => !v)}
+            className="w-[40px] h-[40px] flex items-center justify-center rounded-full transition-colors mb-[1px]"
+            style={{ color: showEmojiPicker ? '#5B5FC7' : 'rgba(255,255,255,0.4)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            aria-label="Эмодзи"
+          >
+            <Smile size={20} />
+          </button>
+          {showEmojiPicker && (
+            <EmojiPicker
+              onSelect={handleEmojiSelect}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          )}
+        </div>
+
+        {/* Стикеры */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowStickers((v) => !v)}
+            className="w-[40px] h-[40px] flex items-center justify-center rounded-full transition-colors mb-[1px]"
+            style={{ color: showStickers ? '#5B5FC7' : 'rgba(255,255,255,0.4)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            aria-label="Стикеры"
+          >
+            <Sticker size={20} />
+          </button>
+          <StickerPicker
+            isOpen={showStickers}
+            onClose={() => setShowStickers(false)}
+            onSelect={(sticker) => {
+              onSend(`[sticker:${sticker.id}:${sticker.file_url}]`);
+            }}
+          />
+        </div>
+
+        {/* Кнопка отправки — синий круг, только при наличии текста */}
+        {hasText && (
+          <button
+            onClick={handleSend}
+            className="w-[40px] h-[40px] rounded-full flex items-center justify-center flex-shrink-0 mb-[1px] transition-transform active:scale-90"
+            style={{ background: '#5B5FC7' }}
+            aria-label="Отправить"
+          >
+            <ArrowUp size={18} color="white" strokeWidth={2.5} />
+          </button>
+        )}
+
       </div>
     </footer>
   );
