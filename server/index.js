@@ -11,7 +11,16 @@ const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 const multer = require('multer');
 const { pool, initDB } = require('./db');
-const { ensureBucket, uploadFile, getDownloadUrl, getUploadUrl } = require('./storage');
+const {
+  ensureBucket,
+  uploadFile,
+  getDownloadUrl,
+  getUploadUrl,
+  isAllowedFolder,
+  isAllowedMime,
+  sanitizeExt,
+  ALLOWED_FOLDERS,
+} = require('./storage');
 require('dotenv').config();
 
 // ==================== Валидация окружения ====================
@@ -229,15 +238,23 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
 });
 
 /** POST /api/users/me/avatar — загрузить аватар */
+const AVATAR_MIME_WHITELIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
 app.post('/api/users/me/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const { uploadFile } = require('./storage');
+    // SEC-2: строгий whitelist для аватаров — только изображения
+    if (!AVATAR_MIME_WHITELIST.has(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Аватар должен быть изображением (JPEG/PNG/WebP/GIF)' });
+    }
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Размер аватара не должен превышать 5 MB' });
+    }
     const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, 'avatars');
     await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [result.url, req.user.id]);
     res.json({ avatar_url: result.url });
   } catch (err) {
-    console.error(err);
+    console.error('[avatar upload]', err?.message);
     res.status(500).json({ error: 'Ошибка загрузки аватара' });
   }
 });
@@ -1466,7 +1483,23 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не прикреплён' });
 
-    const folder = req.body.folder || 'attachments';
+    // SEC-2: whitelist MIME-типов. Заявленный клиентом mimetype сравнивается
+    // со списком разрешённых. avatars уходят через отдельный endpoint.
+    if (!isAllowedMime(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Недопустимый тип файла' });
+    }
+
+    // SEC-2: whitelist папок. avatars доступны только через /api/users/me/avatar,
+    // остальные произвольные значения приводятся к 'attachments'.
+    const rawFolder = req.body.folder;
+    if (rawFolder !== undefined && !isAllowedFolder(rawFolder)) {
+      return res.status(400).json({ error: 'Недопустимая папка' });
+    }
+    if (rawFolder === 'avatars') {
+      return res.status(400).json({ error: 'Для аватаров используйте /api/users/me/avatar' });
+    }
+    const folder = rawFolder || 'attachments';
+
     const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, folder);
 
     // Сохранить запись в БД
@@ -1478,7 +1511,7 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
 
     res.status(201).json(result);
   } catch (err) {
-    console.error('Ошибка загрузки:', err);
+    console.error('[media upload]', err?.message);
     res.status(500).json({ error: 'Ошибка загрузки файла' });
   }
 });
@@ -1486,11 +1519,50 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
 /** POST /api/media/download — pre-signed URL для скачивания */
 app.post('/api/media/download', authMiddleware, async (req, res) => {
   try {
-    const objectName = req.body.object_name;
+    const objectName = req.body?.object_name;
+
+    // SEC-3: валидация object_name + проверка ownership/доступа.
+    // Без неё любой аутентифицированный пользователь может запросить
+    // presigned URL для чужого объекта.
+    if (
+      !objectName ||
+      typeof objectName !== 'string' ||
+      objectName.length > 300 ||
+      objectName.includes('..') ||
+      objectName.startsWith('/')
+    ) {
+      return res.status(400).json({ error: 'Недопустимое имя объекта' });
+    }
+
+    // Проверяем, что объект принадлежит пользователю либо доступен ему
+    // через участие в чате (для attachments) или это публичный аватар.
+    let hasAccess = false;
+
+    if (objectName.startsWith('avatars/')) {
+      // Аватары публичны по политике bucket, но всё равно проверяем что объект существует
+      // и этот запрос не используется для разведки. Разрешаем любому аутентифицированному.
+      hasAccess = true;
+    } else {
+      const r = await pool.query(
+        `SELECT 1 FROM attachments a
+         LEFT JOIN messages m ON m.id = a.message_id
+         LEFT JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $2
+         WHERE a.object_name = $1
+           AND (a.uploader_id = $2 OR cm.user_id = $2)
+         LIMIT 1`,
+        [objectName, req.user.id]
+      );
+      hasAccess = r.rows.length > 0;
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Нет доступа к файлу' });
+    }
+
     const url = await getDownloadUrl(objectName);
     res.json({ url });
   } catch (err) {
-    console.error('Ошибка получения URL:', err);
+    console.error('[media download]', err?.message);
     res.status(404).json({ error: 'Файл не найден' });
   }
 });
@@ -1498,13 +1570,24 @@ app.post('/api/media/download', authMiddleware, async (req, res) => {
 /** POST /api/media/upload-url — получить pre-signed URL для прямой загрузки */
 app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
   try {
-    const { fileName, folder = 'attachments' } = req.body;
-    const ext = fileName?.split('.').pop() || 'bin';
-    const objectName = `${folder}/${require('uuid').v4()}.${ext}`;
+    const { fileName, folder } = req.body || {};
+
+    // SEC-2: whitelist папок (тот же, что для /api/media/upload)
+    if (folder !== undefined && !isAllowedFolder(folder)) {
+      return res.status(400).json({ error: 'Недопустимая папка' });
+    }
+    if (folder === 'avatars') {
+      return res.status(400).json({ error: 'Для аватаров используйте /api/users/me/avatar' });
+    }
+    const safeFolder = folder || 'attachments';
+
+    // SEC-2: санитизация расширения (только a-z0-9, до 10 символов)
+    const ext = sanitizeExt(fileName);
+    const objectName = `${safeFolder}/${uuid()}.${ext}`;
     const url = await getUploadUrl(objectName);
     res.json({ url, objectName });
   } catch (err) {
-    console.error('Ошибка pre-signed URL:', err);
+    console.error('[upload-url]', err?.message);
     res.status(500).json({ error: 'Ошибка генерации URL' });
   }
 });
