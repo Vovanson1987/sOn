@@ -13,7 +13,7 @@ export function SearchBar({ value, onChange, placeholder }: SearchBarProps) {
     <div className="pb-1">
       <div
         className="flex items-center gap-2 rounded-[10px] px-2 py-[5px]"
-        style={{ backgroundColor: '#2C2C2E' }}
+        style={{ backgroundColor: '#282840' }}
       >
         <Search size={16} color="#8E8E93" aria-hidden="true" />
         <input
