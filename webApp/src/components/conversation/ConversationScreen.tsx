@@ -509,7 +509,9 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           contactName={chatName}
           onComplete={() => {
             const peerId = chat.members?.find((m: { id: string }) => m.id !== myUserId)?.id || '';
-            initSession(chat.id, peerId).then(() => setShowKeyExchange(false));
+            initSession(chat.id, peerId)
+              .then(() => setShowKeyExchange(false))
+              .catch((err) => { console.error('[secretChat] initSession failed', err); setShowKeyExchange(false); });
           }}
         />
       )}
@@ -538,7 +540,9 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
           onRegenerateKeys={() => {
             if (window.confirm('Пересоздать ключи шифрования? Текущая сессия будет сброшена.')) {
-              regenerateKeys(chat.id).then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); });
+              regenerateKeys(chat.id)
+                .then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); })
+                .catch((err) => console.error('[secretChat] regenerateKeys failed', err));
             }
           }}
           onEndSecretChat={() => {
@@ -615,8 +619,8 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           }}
           onUnpin={() => {
             import('@/api/client').then(({ unpinMessage }) => {
-              unpinMessage(chat.id);
-            });
+              unpinMessage(chat.id).catch((err) => console.error('[unpin] failed', err));
+            }).catch((err) => console.error('[unpin] import failed', err));
           }}
           canUnpin={chat.type === 'group'}
         />

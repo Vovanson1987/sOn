@@ -137,7 +137,8 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       connectWS();
-      subscribeToPush();
+      // H4: subscribeToPush с catch чтобы rejection не улетал в void
+      subscribeToPush().catch((err) => console.error('[push] subscribe failed', err));
       fetchChats();
 
       // Слушать входящие события через WebSocket
@@ -246,7 +247,11 @@ export default function App() {
           useCallStore.getState().incomingCall(chatId, callerName, isVideo, callerId, sdp);
         }
         if (['call_answer', 'ice_candidate', 'call_end', 'call_reject'].includes(msg.type as string)) {
-          handleSignaling(msg as Record<string, unknown>);
+          // H3: handleSignaling — async, ловим rejection
+          handleSignaling(msg as Record<string, unknown>).catch((err) => {
+            console.error('[App] handleSignaling failed:', err);
+            useCallStore.getState().endCall();
+          });
         }
       });
 
