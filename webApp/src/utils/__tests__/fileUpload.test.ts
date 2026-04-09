@@ -54,7 +54,11 @@ describe('uploadFile', () => {
   });
 
   it('бросает ошибку при неуспешном ответе', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: 'Ошибка загрузки файла' }),
+    });
     const file = new File([''], 'test.txt');
     await expect(uploadFile(file)).rejects.toThrow('Ошибка загрузки файла');
   });
