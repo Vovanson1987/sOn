@@ -528,17 +528,45 @@ async function chatMemberCheck(req, res, next) {
   const userId = req.user.id;
   try {
     const result = await pool.query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      'SELECT role, permissions FROM chat_members WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
     if (result.rows.length === 0) {
       return res.status(403).json({ error: 'Нет доступа к этому чату' });
     }
+    // P2.2: сохраняем роль и права на объект запроса для downstream handlers
+    req.chatRole = result.rows[0].role || 'member';
+    req.chatPermissions = result.rows[0].permissions || {};
     next();
   } catch (err) {
     console.error('[chatMemberCheck] DB error', { chatId, userId, message: err?.message });
     res.status(503).json({ error: 'Сервис временно недоступен' });
   }
+}
+
+/**
+ * P2.2: проверка прав на действие в группе.
+ * owner — всегда разрешено. admin — если право в дефолтах или permissions.
+ * member — только если право явно выдано в permissions.
+ */
+const ADMIN_DEFAULT_PERMISSIONS = new Set([
+  'can_pin', 'can_delete_messages', 'can_invite', 'can_change_info',
+]);
+
+function hasPermission(role, permissions, action) {
+  if (role === 'admin' && ADMIN_DEFAULT_PERMISSIONS.has(action)) return true;
+  if (role === 'owner') return true;
+  return permissions?.[action] === true;
+}
+
+/** Middleware-фабрика: проверяет конкретное право после chatMemberCheck */
+function requirePermission(action) {
+  return (req, res, next) => {
+    if (!hasPermission(req.chatRole, req.chatPermissions, action)) {
+      return res.status(403).json({ error: 'Недостаточно прав для этого действия' });
+    }
+    next();
+  };
 }
 
 function isPlainObject(value) {
@@ -879,7 +907,7 @@ app.delete('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, re
 });
 
 /** PATCH /api/chats/:chatId — обновить группу (имя, описание, аватар) */
-app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res) => {
+app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, requirePermission('can_change_info'), async (req, res) => {
   try {
     const { name, description, avatar_url } = req.body;
     // Только для групп
@@ -975,7 +1003,7 @@ app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, as
 // ==================== INVITE LINKS (P2.1) ====================
 
 /** POST /api/chats/:chatId/invite — создать invite link (только admin) */
-app.post('/api/chats/:chatId/invite', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/invite', authMiddleware, chatMemberCheck, requirePermission('can_invite'), async (req, res) => {
   try {
     const chatId = req.params.chatId;
     // Только group чаты
@@ -1124,7 +1152,7 @@ app.get('/api/chats/:chatId/invites', authMiddleware, chatMemberCheck, async (re
 // ==================== PINNED MESSAGES (P2.4) ====================
 
 /** POST /api/chats/:chatId/pin — закрепить сообщение */
-app.post('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, requirePermission('can_pin'), async (req, res) => {
   try {
     const { message_id } = req.body;
     if (!message_id) return res.status(400).json({ error: 'message_id обязателен' });
@@ -1359,6 +1387,71 @@ app.delete('/api/chats/:chatId/members/:userId', authMiddleware, chatMemberCheck
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка удаления участника' });
+  }
+});
+
+// ==================== RBAC (P2.2) ====================
+
+/** PATCH /api/chats/:chatId/members/:userId/role — изменить роль участника */
+app.patch('/api/chats/:chatId/members/:userId/role', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { role, permissions } = req.body;
+    const VALID_ROLES = ['admin', 'member'];
+    if (!role || !VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: 'Роль должна быть admin или member' });
+    }
+    // Только owner может менять роли
+    if (req.chatRole !== 'owner') {
+      return res.status(403).json({ error: 'Только создатель группы может менять роли' });
+    }
+    // Нельзя менять роль себе
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя изменить свою роль' });
+    }
+    // Проверяем что целевой пользователь в чате
+    const target = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [req.params.chatId, req.params.userId]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден в этом чате' });
+    }
+    const safePerms = typeof permissions === 'object' && permissions !== null ? permissions : {};
+    await pool.query(
+      'UPDATE chat_members SET role = $1, permissions = $2 WHERE chat_id = $3 AND user_id = $4',
+      [role, JSON.stringify(safePerms), req.params.chatId, req.params.userId]
+    );
+    broadcastToChat(req.params.chatId, {
+      type: 'member_role_changed',
+      chat_id: req.params.chatId,
+      user_id: req.params.userId,
+      role,
+      changed_by: req.user.id,
+    });
+    res.json({ ok: true, role, permissions: safePerms });
+  } catch (err) {
+    console.error('[role change]', err?.message);
+    res.status(500).json({ error: 'Ошибка изменения роли' });
+  }
+});
+
+/** GET /api/chats/:chatId/members — список участников с ролями */
+app.get('/api/chats/:chatId/members', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cm.user_id, cm.role, cm.permissions, cm.joined_at,
+             u.display_name, u.avatar_url, u.is_online
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1
+      ORDER BY
+        CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+        u.display_name
+    `, [req.params.chatId]);
+    res.json({ members: result.rows });
+  } catch (err) {
+    console.error('[members list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
   }
 });
 
