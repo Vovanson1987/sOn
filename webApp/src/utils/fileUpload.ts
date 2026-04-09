@@ -26,19 +26,26 @@ export async function uploadFile(file: File, folder = 'attachments', messageId?:
   formData.append('folder', folder);
   if (messageId) formData.append('message_id', messageId);
 
+  // C8: используем credentials:'include' для cookie-auth.
+  // Bearer header добавляется как fallback если memoryToken доступен.
   const token = getToken();
-  if (!token) throw new Error('Не авторизован');
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_URL}/api/media/upload`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
+    headers,
     body: formData,
   });
 
   if (res.status === 401) {
     throw new Error('Сессия истекла. Войдите заново.');
   }
-  if (!res.ok) throw new Error('Ошибка загрузки файла');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Ошибка загрузки файла' }));
+    throw new Error(err.error || 'Ошибка загрузки файла');
+  }
   return res.json();
 }
 

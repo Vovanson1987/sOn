@@ -61,6 +61,8 @@ interface ChatStore {
   filter: ChatFilter;
   isLoading: boolean;
   isOnline: boolean;
+  /** C9: ошибка загрузки чатов (null = нет ошибки) */
+  fetchError: string | null;
 
   setActiveChat: (id: string | null) => void;
   setSearchQuery: (q: string) => void;
@@ -84,6 +86,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   filter: 'all',
   isLoading: false,
   isOnline: false,
+  fetchError: null,
 
   setActiveChat: (id) => set({ activeChatId: id }),
   setSearchQuery: (q) => set({ searchQuery: q }),
@@ -118,16 +121,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   fetchChats: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, fetchError: null });
     try {
       const data = await api.getChats();
       const apiChats = (data.chats as Array<Record<string, unknown>>).map(mapApiChat);
-      // Используем только реальные чаты с сервера (моки отключены)
-      set({ chats: apiChats, isOnline: true });
+      set({ chats: apiChats, isOnline: true, fetchError: null });
     } catch (err) {
       console.warn('Не удалось загрузить чаты с сервера:', err);
-      // При ошибке — пустой список, не моки
-      set({ chats: [], isOnline: false });
+      // C9: НЕ обнуляем чаты при ошибке — сохраняем предыдущие.
+      // Показываем fetchError для UI (кнопка retry).
+      set({
+        isOnline: false,
+        fetchError: err instanceof Error ? err.message : 'Ошибка загрузки чатов',
+      });
     } finally {
       set({ isLoading: false });
     }

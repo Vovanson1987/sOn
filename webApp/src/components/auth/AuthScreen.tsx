@@ -67,6 +67,18 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
       if (!res.ok) throw new Error(data.error || 'Ошибка');
 
       setFailedAttempts(0);
+
+      // C2: инициализировать мастер-ключ для E2EE keyStore ПЕРЕД onAuth,
+      // пока пароль ещё доступен. После этого вызова keyStore может
+      // сохранять/загружать ключи из IndexedDB.
+      try {
+        const { initMasterKeyFromPassword } = await import('@/crypto/keyStore');
+        await initMasterKeyFromPassword(password);
+      } catch (err) {
+        console.error('[auth] initMasterKeyFromPassword failed', err);
+        // Не блокируем логин — E2EE работает в in-memory режиме
+      }
+
       onAuth(data.token, data.user);
     } catch (err) {
       const newAttempts = failedAttempts + 1;

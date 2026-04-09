@@ -5,18 +5,49 @@
 
 import { sendWS } from '@/api/client';
 
-/** Конфигурация ICE серверов */
-const ICE_CONFIG: RTCConfiguration = {
+/**
+ * C1: ICE конфигурация. TURN credentials получаются динамически через API
+ * (см. getTurnCredentials). Здесь только STUN — они публичны.
+ * TURN добавляется перед каждым звонком через fetchIceConfig().
+ */
+const BASE_ICE_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: ['turn:chat.sonchat.uk:3478', 'turns:chat.sonchat.uk:5349'],
-      username: 'son',
-      credential: 'son-turn-2026',
-    },
   ],
 };
+
+let cachedIceConfig: RTCConfiguration | null = null;
+let cachedAt = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+
+/** Получить ICE конфигурацию с TURN credentials через API */
+export async function fetchIceConfig(): Promise<RTCConfiguration> {
+  if (cachedIceConfig && Date.now() - cachedAt < CACHE_TTL) {
+    return cachedIceConfig;
+  }
+  try {
+    const res = await fetch('/api/calls/turn-credentials', { credentials: 'include' });
+    if (res.ok) {
+      const { username, credential, urls } = await res.json();
+      cachedIceConfig = {
+        iceServers: [
+          ...BASE_ICE_CONFIG.iceServers!,
+          { urls, username, credential },
+        ],
+      };
+    } else {
+      cachedIceConfig = BASE_ICE_CONFIG;
+    }
+  } catch {
+    cachedIceConfig = BASE_ICE_CONFIG;
+  }
+  cachedAt = Date.now();
+  return cachedIceConfig;
+}
+
+// Для обратной совместимости (до добавления /api/calls/turn-credentials на бэке)
+const ICE_CONFIG = BASE_ICE_CONFIG;
 
 /** Состояние звонка */
 export interface CallSession {

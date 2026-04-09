@@ -293,6 +293,8 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   },
 
   deleteMessage: async (chatId, messageId) => {
+    // C3: сохраняем backup для rollback при ошибке
+    const backup = get().messages[chatId]?.find((m) => m.id === messageId);
     // Optimistic: удалить локально сразу
     set((s) => ({
       messages: {
@@ -300,11 +302,20 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
         [chatId]: (s.messages[chatId] ?? []).filter((m) => m.id !== messageId),
       },
     }));
-    // CR-07: Отправить на сервер
     try {
       await api.deleteMessage(chatId, messageId);
     } catch (err) {
       console.error('Ошибка удаления сообщения:', err);
+      // Rollback: восстановить сообщение
+      if (backup) {
+        set((s) => ({
+          messages: {
+            ...s.messages,
+            [chatId]: [...(s.messages[chatId] ?? []), backup]
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+          },
+        }));
+      }
     }
   },
 
@@ -374,6 +385,10 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   },
 
   updateMessage: async (chatId, messageId, content) => {
+    // C4: backup для rollback
+    const original = get().messages[chatId]?.find((m) => m.id === messageId);
+    const oldContent = original?.content;
+    const oldEditedAt = original?.editedAt;
     // Optimistic update
     const editedAt = new Date().toISOString();
     set((s) => ({
@@ -389,6 +404,17 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       await api.editMessage(chatId, messageId, content);
     } catch (err) {
       console.error('Ошибка редактирования сообщения:', err);
+      // Rollback: восстановить оригинальный контент
+      if (oldContent !== undefined) {
+        set((s) => ({
+          messages: {
+            ...s.messages,
+            [chatId]: (s.messages[chatId] ?? []).map((m) =>
+              m.id === messageId ? { ...m, content: oldContent, editedAt: oldEditedAt } : m,
+            ),
+          },
+        }));
+      }
     }
   },
 

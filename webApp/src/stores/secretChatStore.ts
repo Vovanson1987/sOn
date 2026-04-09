@@ -62,6 +62,13 @@ interface SecretChatStore {
 /** Количество OPK для генерации */
 const OPK_BATCH_SIZE = 20;
 
+/**
+ * C5: Мьютекс per-chat для encryptForSend.
+ * Без него параллельная отправка двух сообщений читает один ratchetState,
+ * создаёт одинаковый messageNumber → Double Ratchet desynchronises.
+ */
+const encryptLocks: Record<string, Promise<unknown>> = {};
+
 export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   sessions: {},
   myIdentityKey: null,
@@ -228,27 +235,36 @@ export const useSecretChatStore = create<SecretChatStore>((set, get) => ({
   getSession: (chatId) => get().sessions[chatId],
 
   encryptForSend: async (chatId, plaintext) => {
-    const session = get().sessions[chatId];
-    if (!session) return null;
+    // C5: сериализуем encrypt через per-chat мьютекс, чтобы параллельные
+    // вызовы не читали один и тот же ratchetState.
+    const prev = encryptLocks[chatId] ?? Promise.resolve();
+    let resolve: () => void;
+    encryptLocks[chatId] = new Promise<void>((r) => { resolve = r; });
 
-    // Шаг рэтчета + получение ключа сообщения
-    const { header, messageKey, state: newState } = ratchetEncrypt(session.ratchetState);
+    await prev;
 
-    // Шифрование контента
-    const encrypted = await encryptMessage(plaintext, messageKey);
+    try {
+      const session = get().sessions[chatId];
+      if (!session) return null;
 
-    // Обновить состояние (используем свежую сессию из store, не захваченную)
-    set((s) => ({
-      sessions: {
-        ...s.sessions,
-        [chatId]: { ...s.sessions[chatId], ratchetState: newState },
-      },
-    }));
+      const { header, messageKey, state: newState } = ratchetEncrypt(session.ratchetState);
+      const encrypted = await encryptMessage(plaintext, messageKey);
 
-    // HI-11: Persist updated ratchet state
-    saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch(() => {});
+      set((s) => ({
+        sessions: {
+          ...s.sessions,
+          [chatId]: { ...s.sessions[chatId], ratchetState: newState },
+        },
+      }));
 
-    return { encrypted, header };
+      saveRatchetState(chatId, newState as unknown as Record<string, unknown>).catch((err) => {
+        console.error(`[secretChat] saveRatchetState(${chatId}) failed`, err);
+      });
+
+      return { encrypted, header };
+    } finally {
+      resolve!();
+    }
   },
 
   decryptReceived: async (chatId, encrypted, header) => {
