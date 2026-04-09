@@ -474,3 +474,56 @@ export function addGroupMember(chatId: string, user_id: string) {
 export function removeGroupMember(chatId: string, userId: string) {
   return request<undefined>(`/api/chats/${chatId}/members/${userId}`, { method: 'DELETE' });
 }
+
+// ==================== P2.1: Invite Links ====================
+
+export function createInviteLink(chatId: string, opts?: { expires_hours?: number; max_uses?: number }) {
+  return request<{ id: string; token: string; expires_at: string | null; max_uses: number | null }>(`/api/chats/${chatId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify(opts || {}),
+  });
+}
+
+export function getInviteInfo(token: string) {
+  return request<{ chat_name: string; chat_avatar: string | null; member_count: number }>(`/api/invite/${token}`);
+}
+
+export function joinByInvite(token: string) {
+  return request<{ ok: boolean; chat_id: string }>(`/api/invite/${token}/join`, { method: 'POST' });
+}
+
+export function revokeInvite(chatId: string, inviteId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/invite/${inviteId}`, { method: 'DELETE' });
+}
+
+export function getInvites(chatId: string) {
+  return request<{ invites: Array<{ id: string; token: string; expires_at: string | null; max_uses: number | null; uses_count: number }> }>(`/api/chats/${chatId}/invites`);
+}
+
+// ==================== P2.4: Pinned Messages ====================
+
+export function pinMessage(chatId: string, messageId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/pin`, {
+    method: 'POST',
+    body: JSON.stringify({ message_id: messageId }),
+  });
+}
+
+export function unpinMessage(chatId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/pin`, { method: 'DELETE' });
+}
+
+// ==================== P2.3: Forward ====================
+
+export function forwardMessage(targetChatId: string, sourceChatId: string, sourceMessageId: string) {
+  return request<Record<string, unknown>>(`/api/chats/${targetChatId}/forward`, {
+    method: 'POST',
+    body: JSON.stringify({ source_chat_id: sourceChatId, source_message_id: sourceMessageId }),
+  });
+}
+
+// ==================== P2.6: @Mentions ====================
+
+export function searchChatMembers(chatId: string, query: string) {
+  return request<{ members: Array<{ id: string; display_name: string; avatar_url: string | null }> }>(`/api/chats/${chatId}/members/search?q=${encodeURIComponent(query)}`);
+}
