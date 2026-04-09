@@ -92,6 +92,12 @@ function mapApiMessageBase(raw: Record<string, unknown>): Message {
     selfDestructAt: raw.self_destruct_at as string | undefined,
     editedAt: raw.edited_at as string | undefined,
     createdAt: raw.created_at as string,
+    // P2.3: forwarded messages
+    forwardedFromId: raw.forwarded_from_id as string | undefined,
+    forwardedFromChatName: raw.forwarded_from_chat_name as string | undefined,
+    forwardedFromSenderName: raw.forwarded_from_sender_name as string | undefined,
+    // P2.6: mentions
+    mentionedUserIds: raw.mentioned_user_ids as string[] | undefined,
   };
 }
 

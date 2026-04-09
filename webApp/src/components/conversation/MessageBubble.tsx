@@ -5,6 +5,8 @@ import type { ChatType } from '@/types/chat';
 import { FileAttachment } from '@components/media/FileAttachment';
 import { VoiceMessage } from '@components/media/VoiceMessage';
 import { ImageViewer } from '@components/media/ImageViewer';
+import { MarkdownText } from './MarkdownText';
+import { ForwardedHeader } from './ForwardedHeader';
 
 interface MessageBubbleProps {
   message: Message;
@@ -102,6 +104,14 @@ export const MessageBubble = memo(function MessageBubble({
           padding: '8px 16px',
         }}
       >
+        {/* P2.3: Forwarded header */}
+        {message.forwardedFromSenderName && (
+          <ForwardedHeader
+            senderName={message.forwardedFromSenderName}
+            chatName={message.forwardedFromChatName}
+          />
+        )}
+
         {message.type === 'image' && message.attachment ? (
           <>
             <img
@@ -137,7 +147,7 @@ export const MessageBubble = memo(function MessageBubble({
         ) : (
           <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
             {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" aria-hidden="true" />}
-            {message.content}
+            <MarkdownText text={message.content} />
             {message.editedAt && (
               <span className="text-[11px] ml-1 opacity-50" aria-label="Отредактировано">(ред.)</span>
             )}
