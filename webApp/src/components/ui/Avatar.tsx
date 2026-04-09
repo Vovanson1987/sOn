@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * Compound Avatar (паттерн из MAX).
  *
