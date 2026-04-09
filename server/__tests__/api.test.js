@@ -666,3 +666,109 @@ describe('POST /api/media/download', () => {
     expect(res.body.url).toContain('presigned');
   });
 });
+
+// ==================== P1.16: КРИТИЧНЫЕ ТЕСТЫ ====================
+
+describe('Валидация self_destruct_seconds (P1.12)', () => {
+  it('400 при отрицательном self_destruct_seconds', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    // SELECT type FROM chats
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
+    // blocked check
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ content: 'test', self_destruct_seconds: -5 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('самоуничтожения');
+  });
+
+  it('400 при NaN self_destruct_seconds', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ content: 'test', self_destruct_seconds: 'not-a-number' });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('Emoji whitelist (P1.12)', () => {
+  it('400 при недопустимом emoji в реакции', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages/msg-1/reactions')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ emoji: '<script>' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('реакция');
+  });
+
+  it('принимает допустимый emoji', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    // SELECT existing reaction
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    // INSERT reaction
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    // broadcastToChat: SELECT user_id FROM chat_members
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages/msg-1/reactions')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ emoji: '❤️' });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('avatar_url валидация (P1.12)', () => {
+  it('400 при javascript: протоколе в avatar_url', async () => {
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'javascript:alert(1)' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('400 при file:// протоколе', async () => {
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'file:///etc/passwd' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('принимает https:// URL', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'user-1', avatar_url: 'https://example.com/photo.jpg' }] });
+
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'https://example.com/photo.jpg' });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('Health endpoints (P1.7)', () => {
+  it('/health/live всегда 200', async () => {
+    const res = await request(app).get('/health/live');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+  });
+});
