@@ -1746,36 +1746,74 @@ async function start() {
 
 // ==================== Graceful Shutdown ====================
 
-function shutdown(signal) {
+/**
+ * Корректное завершение:
+ * 1) отклоняем новые подключения, но даём отработать текущим HTTP-запросам,
+ * 2) закрываем активные WebSocket соединения,
+ * 3) закрываем пул PostgreSQL,
+ * 4) выходим.
+ *
+ * P1.6: ранее server.close() не ожидался, pool.end() вызывался параллельно,
+ * активные HTTP-запросы могли получить разорванное соединение.
+ */
+let shuttingDown = false;
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n⏹️  ${signal} — завершение сервера...`);
 
-  // Перестать принимать новые подключения
-  server.close(() => {
+  // Жёсткий таймаут на случай зависания (safety net)
+  const hardTimeout = setTimeout(() => {
+    console.error('⚠️ Принудительное завершение через 15 секунд');
+    process.exit(1);
+  }, 15000);
+  hardTimeout.unref?.();
+
+  try {
+    // 1. Перестать принимать новые HTTP-подключения и дождаться активных запросов.
+    await new Promise((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
     console.log('✅ HTTP сервер остановлен');
-  });
 
-  // Закрыть все WebSocket соединения
-  wss.clients.forEach((ws) => {
-    ws.close(1001, 'Сервер перезапускается');
-  });
+    // 2. Закрыть все WebSocket соединения (мягко, с кодом 1001).
+    for (const ws of wss.clients) {
+      try {
+        ws.close(1001, 'Сервер перезапускается');
+      } catch (err) {
+        console.error('[shutdown] ws.close failed:', err?.message);
+      }
+    }
+    // Даём WS клиентам коротенькую паузу, чтобы close frame ушёл
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    console.log('✅ WebSocket соединения закрыты');
 
-  // Закрыть пул PostgreSQL
-  pool.end().then(() => {
+    // 3. Закрыть пул PostgreSQL (после того как запросы прошли).
+    await pool.end();
     console.log('✅ PostgreSQL пул закрыт');
-    process.exit(0);
-  }).catch(() => {
-    process.exit(1);
-  });
 
-  // Таймаут на случай зависания
-  setTimeout(() => {
-    console.error('⚠️ Принудительное завершение через 10 секунд');
+    clearTimeout(hardTimeout);
+    process.exit(0);
+  } catch (err) {
+    console.error('[shutdown] error:', err?.message);
+    clearTimeout(hardTimeout);
     process.exit(1);
-  }, 10000);
+  }
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[shutdown] unhandled error:', err?.message);
+    process.exit(1);
+  });
+});
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((err) => {
+    console.error('[shutdown] unhandled error:', err?.message);
+    process.exit(1);
+  });
+});
 
 // Запуск только при прямом вызове (не при импорте для тестов)
 if (require.main === module) {
