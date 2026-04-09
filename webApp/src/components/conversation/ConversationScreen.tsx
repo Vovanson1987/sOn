@@ -20,6 +20,7 @@ import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAuthStore } from '@stores/authStore';
 import { useChatStore } from '@stores/chatStore';
 import { uploadImage, uploadFile } from '@/utils/fileUpload';
+import { PinnedBanner } from './PinnedBanner';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
 
@@ -157,6 +158,12 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
   const setEditingMessage = useMessageStore((s) => s.setEditingMessage);
   const clearEditingMessage = useMessageStore((s) => s.clearEditingMessage);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
+
+  // P2.4: Pinned message
+  const pinnedMessage = useMemo(
+    () => chat.pinnedMessageId ? messages.find((m) => m.id === chat.pinnedMessageId) : undefined,
+    [chat.pinnedMessageId, messages]
+  );
 
   // Загрузить сообщения с сервера при открытии чата
   useEffect(() => {
@@ -597,6 +604,23 @@ export function ConversationScreen({ chat, onBack }: ConversationScreenProps) {
           <button onClick={() => alert('Видеозвонки скоро будут доступны')} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
+
+      {/* P2.4: Pinned message banner */}
+      {chat.pinnedMessageId && pinnedMessage && (
+        <PinnedBanner
+          content={pinnedMessage.content}
+          senderName={pinnedMessage.senderName}
+          onTap={() => {
+            // TODO: scroll to pinned message
+          }}
+          onUnpin={() => {
+            import('@/api/client').then(({ unpinMessage }) => {
+              unpinMessage(chat.id);
+            });
+          }}
+          canUnpin={chat.type === 'group'}
+        />
+      )}
 
       {/* Область сообщений */}
       <div

@@ -14,5 +14,6 @@ export interface Chat {
   isArchived: boolean;
   isVerified?: boolean;
   selfDestruct?: number;
+  pinnedMessageId?: string;
   updatedAt: string;
 }
