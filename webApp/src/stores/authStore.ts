@@ -94,14 +94,25 @@ export const useAuthStore = create<AuthStore>((set) => ({
       setSentryUser({ id: user.id, email: user.email });
       set({ token: null, user, isAuthenticated: true, isRestoring: false });
       return true;
-    } catch {
-      // 401 / network error / сервер недоступен — пользователь не
-      // авторизован. Убираем всё.
-      if (cachedUser) {
-        saveCachedUser(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const is401 = msg.includes('401') || msg.includes('Сессия истекла');
+
+      if (is401) {
+        // Реальный 401 — пользователь не авторизован, чистим кэш
+        if (cachedUser) saveCachedUser(null);
+        setSentryUser(null);
+        set({ token: null, user: null, isAuthenticated: false, isRestoring: false });
+      } else {
+        // H21: сетевая ошибка — НЕ разлогиниваем, показываем cached user
+        // если он есть, помечаем offline. При восстановлении сети — retry.
+        console.warn('[auth] restore network error, using cached user', err);
+        if (cachedUser) {
+          set({ token: null, user: cachedUser, isAuthenticated: true, isRestoring: false });
+          return true;
+        }
+        set({ token: null, user: null, isAuthenticated: false, isRestoring: false });
       }
-      setSentryUser(null);
-      set({ token: null, user: null, isAuthenticated: false, isRestoring: false });
       return false;
     }
   },

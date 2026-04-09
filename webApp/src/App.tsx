@@ -155,9 +155,10 @@ export default function App() {
 
           // Browser notification when tab is not focused
           if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-            const senderName = (m.sender_name as string) || 'Новое сообщение';
-            const content = (m.content as string) || '';
-            const chatId = m.chat_id as string;
+            // H15: type guards — WS может прислать не-string значения
+            const senderName = typeof m.sender_name === 'string' ? m.sender_name : 'Новое сообщение';
+            const content = typeof m.content === 'string' ? m.content : '';
+            const chatId = typeof m.chat_id === 'string' ? m.chat_id : '';
             new Notification(senderName, {
               body: content.substring(0, 100),
               icon: '/icon-192.png',

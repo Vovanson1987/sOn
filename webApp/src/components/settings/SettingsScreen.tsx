@@ -112,14 +112,13 @@ function ProfileEditor() {
     setNameSaving(true);
     try {
       const updated = await updateProfile({ display_name: trimmed });
-      if (token) {
-        loginAction(token, {
-          id: updated.id,
-          email: updated.email,
-          display_name: updated.display_name,
-          avatar_url: updated.avatar_url ?? undefined,
-        });
-      }
+      // H22: обновить профиль в store даже при cookie-auth (token=null)
+      loginAction(token || '', {
+        id: updated.id,
+        email: updated.email,
+        display_name: updated.display_name,
+        avatar_url: updated.avatar_url ?? undefined,
+      });
       setEditingName(false);
     } catch (err) {
       console.error('Ошибка обновления имени:', err);
