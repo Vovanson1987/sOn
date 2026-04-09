@@ -20,7 +20,7 @@ import { useSecretChatStore } from '@stores/secretChatStore';
 import { useAuthStore } from '@stores/authStore';
 import { useChatStore } from '@stores/chatStore';
 import { uploadImage, uploadFile } from '@/utils/fileUpload';
-import { sendMessage } from '@/api/client';
+import { sendMessage as apiSendMessage } from '@/api/client';
 import { PinnedBanner } from './PinnedBanner';
 import type { Chat } from '@/types/chat';
 import type { Message } from '@/types/message';
@@ -316,7 +316,7 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
             const result = await uploadImage(file);
             // C-F6: Отправляем на сервер через API (не только локально)
             const msgType = file.type.startsWith('video/') ? 'video' : 'image';
-            await sendMessage(chat.id, result.url, msgType, undefined, undefined, {
+            await apiSendMessage(chat.id, result.url, msgType, undefined, undefined, {
               url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
             });
           } catch (err) {
@@ -334,7 +334,7 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           try {
             const result = await uploadFile(file);
             // C-F6: Отправляем на сервер через API
-            await sendMessage(chat.id, file.name, 'file', undefined, undefined, {
+            await apiSendMessage(chat.id, file.name, 'file', undefined, undefined, {
               url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
             });
           } catch (err) {
@@ -366,7 +366,7 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
           const result = await uploadImage(file);
           // C-F6: Отправляем на сервер через API
-          await sendMessage(chat.id, result.url, 'image', undefined, undefined, {
+          await apiSendMessage(chat.id, result.url, 'image', undefined, undefined, {
             url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
           });
         } catch (err) {
