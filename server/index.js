@@ -1602,6 +1602,9 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Минимум 2 символа для поиска' });
     }
     const chatId = req.query.chat_id;
+    // DB-2: используем Postgres FTS (content_tsv + GIN-индекс).
+    // После применения phase-0-hardening.sql ILIKE-поиск с seq scan
+    // заменён на быстрый @@ plainto_tsquery.
     let query, params;
     if (chatId) {
       // Search within specific chat (must be member)
@@ -1609,15 +1612,17 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
       if (member.rows.length === 0) return res.status(403).json({ error: 'Нет доступа' });
       query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
         FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
-        WHERE m.chat_id = $1 AND m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
-      params = [chatId, `%${q}%`];
+        WHERE m.chat_id = $1 AND m.content_tsv @@ plainto_tsquery('russian', $2)
+        ORDER BY m.created_at DESC LIMIT 50`;
+      params = [chatId, q];
     } else {
       // Search across all user's chats
       query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
         FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
         JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $1
-        WHERE m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
-      params = [req.user.id, `%${q}%`];
+        WHERE m.content_tsv @@ plainto_tsquery('russian', $2)
+        ORDER BY m.created_at DESC LIMIT 50`;
+      params = [req.user.id, q];
     }
     const result = await pool.query(query, params);
     res.json({ messages: result.rows });
