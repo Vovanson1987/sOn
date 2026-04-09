@@ -100,6 +100,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockClient.query.mockReset();
   mockClient.release.mockReset();
+  // Default для mockClient (BEGIN/COMMIT/ROLLBACK в транзакциях)
+  mockClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
 // ==================== Health ====================

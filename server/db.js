@@ -15,7 +15,23 @@ const { Pool } = require('pg');
 const path = require('path');
 require('dotenv').config();
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// C-D5: Явная конфигурация pool вместо дефолтных max=10
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: parseInt(process.env.PG_POOL_MAX) || 20,
+  min: parseInt(process.env.PG_POOL_MIN) || 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  statement_timeout: 10000,
+  application_name: 'son-api',
+});
+
+// В тестах pool замокан — .on может не существовать
+if (typeof pool.on === 'function') {
+  pool.on('error', (err) => {
+    console.error('[pg pool] unexpected error', err?.message);
+  });
+}
 
 /**
  * Запуск миграций. Вызывается один раз при старте сервера.
