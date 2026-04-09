@@ -114,7 +114,7 @@ export const MessageBubble = memo(function MessageBubble({
           />
         )}
 
-        {message.type === 'image' && message.attachment ? (
+        {message.type === 'image' && message.attachment && 'url' in message.attachment ? (
           <>
             <img
               src={message.attachment.url}
@@ -134,12 +134,12 @@ export const MessageBubble = memo(function MessageBubble({
               />
             )}
           </>
-        ) : message.type === 'file' && message.attachment ? (
+        ) : message.type === 'file' && message.attachment && 'fileName' in message.attachment ? (
           <FileAttachment
             fileName={message.attachment.fileName || 'Файл'}
             fileSize={message.attachment.fileSize || 0}
           />
-        ) : message.type === 'voice' && message.attachment ? (
+        ) : message.type === 'voice' && message.attachment && 'duration' in message.attachment ? (
           <VoiceMessage
             duration={message.attachment.duration || 0}
             isPlaying={false}

@@ -234,7 +234,7 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
       type: 'text',
       status: 'sending',
       reactions: {},
-      replyTo,
+      replyTo: replyTo ? { type: 'reply', messageId: replyTo.id, senderName: replyTo.senderName, preview: replyTo.preview } : undefined,
       isDestroyed: false,
       createdAt: new Date().toISOString(),
     };
