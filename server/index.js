@@ -2932,6 +2932,116 @@ app.get('/api/auth/mfa/status', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== PHONE AUTH (P3.4) ====================
+
+/**
+ * POST /api/auth/phone/send-code — отправить SMS-код на телефон.
+ * В production нужно подключить Twilio/SMS.ru/другой провайдер.
+ * Сейчас — в dev-режиме код логируется в консоль.
+ */
+app.post('/api/auth/phone/send-code', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone || typeof phone !== 'string' || phone.length < 10 || phone.length > 15) {
+      return res.status(400).json({ error: 'Номер телефона от 10 до 15 символов' });
+    }
+    // Проверить rate limit — максимум 3 кода за 10 минут на один номер
+    const recent = await pool.query(
+      "SELECT COUNT(*)::int as count FROM phone_verifications WHERE phone = $1 AND created_at > NOW() - INTERVAL '10 minutes'",
+      [phone]
+    );
+    if (recent.rows[0].count >= 3) {
+      return res.status(429).json({ error: 'Слишком много попыток. Подождите 10 минут.' });
+    }
+    // Генерируем 6-значный код
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 минут
+    await pool.query(
+      'INSERT INTO phone_verifications (phone, code, expires_at) VALUES ($1, $2, $3)',
+      [phone, code, expiresAt]
+    );
+
+    // TODO: отправить SMS через провайдер
+    // В dev — логируем
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[phone auth] Код для ${phone}: ${code}`);
+    }
+    // В production подключить:
+    // await sendSMS(phone, `sOn: ваш код — ${code}`);
+
+    res.json({ ok: true, expires_in: 300 });
+  } catch (err) {
+    console.error('[phone send-code]', err?.message);
+    res.status(500).json({ error: 'Ошибка отправки кода' });
+  }
+});
+
+/** POST /api/auth/phone/verify — подтвердить код и войти/зарегистрироваться */
+app.post('/api/auth/phone/verify', async (req, res) => {
+  try {
+    const { phone, code, display_name } = req.body;
+    if (!phone || !code) {
+      return res.status(400).json({ error: 'phone и code обязательны' });
+    }
+    // Найти неиспользованный код
+    const verification = await pool.query(`
+      SELECT id, attempts FROM phone_verifications
+      WHERE phone = $1 AND code = $2 AND used = false AND expires_at > NOW()
+      ORDER BY created_at DESC LIMIT 1
+    `, [phone, code]);
+
+    if (verification.rows.length === 0) {
+      // Увеличить счётчик попыток для последнего кода
+      await pool.query(`
+        UPDATE phone_verifications SET attempts = attempts + 1
+        WHERE phone = $1 AND used = false AND expires_at > NOW()
+        AND attempts < 5
+      `, [phone]);
+      return res.status(401).json({ error: 'Неверный или истёкший код' });
+    }
+
+    // Пометить код использованным
+    await pool.query(
+      'UPDATE phone_verifications SET used = true WHERE id = $1',
+      [verification.rows[0].id]
+    );
+
+    // Найти или создать пользователя по телефону
+    let user = (await pool.query('SELECT * FROM users WHERE phone = $1', [phone])).rows[0];
+    if (!user) {
+      // Регистрация нового пользователя по телефону
+      const name = display_name || phone;
+      const hash = await bcrypt.hash(require('crypto').randomBytes(32).toString('hex'), 12);
+      const result = await pool.query(
+        `INSERT INTO users (phone, display_name, password_hash, email)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [phone, name, hash, `${phone}@phone.sonchat.uk`]
+      );
+      user = result.rows[0];
+    }
+
+    // Выдать JWT
+    const token = jwt.sign(
+      { id: user.id, email: user.email, display_name: user.display_name },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    res.cookie('son-token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, display_name: user.display_name, avatar_url: user.avatar_url, phone: user.phone },
+    });
+  } catch (err) {
+    console.error('[phone verify]', err?.message);
+    res.status(500).json({ error: 'Ошибка верификации' });
+  }
+});
+
 // ==================== SESSION MANAGEMENT (P3.5) ====================
 
 /** GET /api/sessions — список активных сессий пользователя */
