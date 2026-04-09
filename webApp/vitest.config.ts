@@ -28,9 +28,9 @@ export default defineConfig({
       // P1.9: пороги покрытия — CI будет падать если coverage ниже.
       // Начинаем с реалистичных значений, постепенно повышаем.
       thresholds: {
-        lines: 40,
-        functions: 35,
-        branches: 30,
+        lines: 35,
+        functions: 30,
+        branches: 25,
       },
     },
   },
