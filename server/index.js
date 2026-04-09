@@ -119,6 +119,26 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
+
+// P1.11: отдельный лимит на отправку сообщений — 60/мин (~1 msg/sec).
+// Глобальный apiLimiter (200/мин) слишком мягкий для спам-защиты.
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Слишком много сообщений. Подождите.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// P1.11: лимит на загрузку файлов — 30/мин (тяжёлые операции + MinIO writes).
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Слишком много загрузок. Подождите.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // SEC: Ограничить размер JSON body (1MB)
 app.use(express.json({ limit: '1mb' }));
 
@@ -252,7 +272,7 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
 /** POST /api/users/me/avatar — загрузить аватар */
 const AVATAR_MIME_WHITELIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
-app.post('/api/users/me/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+app.post('/api/users/me/avatar', authMiddleware, uploadLimiter, upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     // SEC-2: строгий whitelist для аватаров — только изображения
@@ -653,7 +673,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 });
 
 /** POST /api/chats/:chatId/messages */
-app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemberCheck, async (req, res) => {
   const { content, type = 'text', reply_to, self_destruct_seconds, e2ee } = req.body;
   const chatId = req.params.chatId;
 
@@ -1491,7 +1511,7 @@ app.get('/api/keys/count', authMiddleware, async (req, res) => {
 // ==================== ФАЙЛЫ ====================
 
 /** POST /api/media/upload — загрузка файла */
-app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req, res) => {
+app.post('/api/media/upload', authMiddleware, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не прикреплён' });
 
@@ -1580,7 +1600,7 @@ app.post('/api/media/download', authMiddleware, async (req, res) => {
 });
 
 /** POST /api/media/upload-url — получить pre-signed URL для прямой загрузки */
-app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
+app.post('/api/media/upload-url', authMiddleware, uploadLimiter, async (req, res) => {
   try {
     const { fileName, folder } = req.body || {};
 
