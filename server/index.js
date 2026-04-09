@@ -741,7 +741,7 @@ app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemb
     mentioned_user_ids } = req.body;
   const chatId = req.params.chatId;
 
-  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'system'];
+  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'voice', 'system', 'poll', 'video_note'];
   if (!allowedTypes.includes(type)) {
     return res.status(400).json({ error: 'Недопустимый тип сообщения' });
   }
@@ -2394,6 +2394,271 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка поиска' });
+  }
+});
+
+// ==================== КАНАЛЫ (P2.7) ====================
+
+/** POST /api/channels — создать канал */
+app.post('/api/channels', authMiddleware, async (req, res) => {
+  try {
+    const { name, description, is_public = true } = req.body;
+    if (!name || typeof name !== 'string' || name.length < 1 || name.length > 200) {
+      return res.status(400).json({ error: 'Название от 1 до 200 символов' });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const ch = await client.query(
+        `INSERT INTO channels (name, description, owner_id, is_public) VALUES ($1, $2, $3, $4) RETURNING *`,
+        [name.trim(), description?.substring(0, 1000) || null, req.user.id, is_public]
+      );
+      const channel = ch.rows[0];
+      await client.query(
+        `INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, $2, 'owner')`,
+        [channel.id, req.user.id]
+      );
+      await client.query('UPDATE channels SET subscriber_count = 1 WHERE id = $1', [channel.id]);
+      await client.query('COMMIT');
+      res.status(201).json({ ...channel, subscriber_count: 1 });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[channel create]', err?.message);
+    res.status(500).json({ error: 'Ошибка создания канала' });
+  }
+});
+
+/** GET /api/channels — каналы текущего пользователя */
+app.get('/api/channels', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.*, cm.role
+      FROM channels c
+      JOIN channel_members cm ON cm.channel_id = c.id AND cm.user_id = $1
+      ORDER BY c.created_at DESC
+    `, [req.user.id]);
+    res.json({ channels: result.rows });
+  } catch (err) {
+    console.error('[channels list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/channels/:id — информация о канале */
+app.get('/api/channels/:id', authMiddleware, async (req, res) => {
+  try {
+    const ch = await pool.query('SELECT * FROM channels WHERE id = $1', [req.params.id]);
+    if (ch.rows.length === 0) return res.status(404).json({ error: 'Канал не найден' });
+    const membership = await pool.query(
+      'SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    res.json({ ...ch.rows[0], my_role: membership.rows[0]?.role || null });
+  } catch (err) {
+    console.error('[channel get]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** POST /api/channels/:id/subscribe — подписаться */
+app.post('/api/channels/:id/subscribe', authMiddleware, async (req, res) => {
+  try {
+    const existing = await pool.query(
+      'SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Уже подписан' });
+    await pool.query(
+      `INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1, $2, 'subscriber')`,
+      [req.params.id, req.user.id]
+    );
+    await pool.query('UPDATE channels SET subscriber_count = subscriber_count + 1 WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[channel subscribe]', err?.message);
+    res.status(500).json({ error: 'Ошибка подписки' });
+  }
+});
+
+/** DELETE /api/channels/:id/subscribe — отписаться */
+app.delete('/api/channels/:id/subscribe', authMiddleware, async (req, res) => {
+  try {
+    const member = await pool.query(
+      'SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (member.rows.length === 0) return res.status(404).json({ error: 'Не подписан' });
+    if (member.rows[0].role === 'owner') return res.status(400).json({ error: 'Владелец не может отписаться' });
+    await pool.query('DELETE FROM channel_members WHERE channel_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    await pool.query('UPDATE channels SET subscriber_count = GREATEST(subscriber_count - 1, 0) WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[channel unsubscribe]', err?.message);
+    res.status(500).json({ error: 'Ошибка отписки' });
+  }
+});
+
+/** POST /api/channels/:id/posts — создать пост (только owner/admin) */
+app.post('/api/channels/:id/posts', authMiddleware, async (req, res) => {
+  try {
+    const member = await pool.query(
+      'SELECT role FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!member.rows[0] || !['owner', 'admin'].includes(member.rows[0].role)) {
+      return res.status(403).json({ error: 'Только администраторы могут публиковать' });
+    }
+    const { content, type = 'text', attachment_url } = req.body;
+    if (!content || typeof content !== 'string' || content.length > 10000) {
+      return res.status(400).json({ error: 'Контент обязателен (до 10000 символов)' });
+    }
+    const result = await pool.query(
+      `INSERT INTO channel_posts (channel_id, author_id, content, type, attachment_url)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.params.id, req.user.id, content, type, attachment_url || null]
+    );
+    const post = result.rows[0];
+    // WS broadcast всем подписчикам
+    const subs = await pool.query('SELECT user_id FROM channel_members WHERE channel_id = $1', [req.params.id]);
+    const payload = JSON.stringify({ type: 'channel_post', channel_id: req.params.id, post });
+    for (const sub of subs.rows) {
+      const conns = connections.get(sub.user_id);
+      if (!conns) continue;
+      for (const ws of conns) {
+        if (ws.readyState === 1) try { ws.send(payload); } catch { /* skip */ }
+      }
+    }
+    res.status(201).json(post);
+  } catch (err) {
+    console.error('[channel post]', err?.message);
+    res.status(500).json({ error: 'Ошибка публикации' });
+  }
+});
+
+/** GET /api/channels/:id/posts — лента постов канала */
+app.get('/api/channels/:id/posts', authMiddleware, async (req, res) => {
+  try {
+    const member = await pool.query(
+      'SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (member.rows.length === 0) return res.status(403).json({ error: 'Подпишитесь для просмотра' });
+    const before = req.query.before || new Date().toISOString();
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+    const result = await pool.query(`
+      SELECT cp.*, u.display_name as author_name, u.avatar_url as author_avatar
+      FROM channel_posts cp
+      JOIN users u ON u.id = cp.author_id
+      WHERE cp.channel_id = $1 AND cp.created_at < $2
+      ORDER BY cp.created_at DESC LIMIT $3
+    `, [req.params.id, before, limit]);
+    res.json({ posts: result.rows, has_more: result.rows.length === limit });
+  } catch (err) {
+    console.error('[channel posts]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+// ==================== STORIES (P2.11) ====================
+
+/** POST /api/stories — создать story (24h TTL) */
+app.post('/api/stories', authMiddleware, uploadLimiter, async (req, res) => {
+  try {
+    const { media_url, media_type = 'image', caption } = req.body;
+    if (!media_url || typeof media_url !== 'string') {
+      return res.status(400).json({ error: 'media_url обязателен' });
+    }
+    const ALLOWED_STORY_TYPES = ['image', 'video'];
+    if (!ALLOWED_STORY_TYPES.includes(media_type)) {
+      return res.status(400).json({ error: 'Тип: image или video' });
+    }
+    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const result = await pool.query(
+      `INSERT INTO stories (user_id, media_url, media_type, caption, expires_at)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user.id, media_url, media_type, caption?.substring(0, 500) || null, expiresAt]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[story create]', err?.message);
+    res.status(500).json({ error: 'Ошибка создания story' });
+  }
+});
+
+/** GET /api/stories — stories контактов (не истёкшие) */
+app.get('/api/stories', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT s.*, u.display_name, u.avatar_url,
+        EXISTS(SELECT 1 FROM story_views sv WHERE sv.story_id = s.id AND sv.viewer_id = $1) as viewed
+      FROM stories s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.expires_at > NOW()
+        AND (s.user_id = $1 OR s.user_id IN (
+          SELECT contact_id FROM contacts WHERE owner_id = $1
+        ))
+      ORDER BY
+        CASE WHEN s.user_id = $1 THEN 0 ELSE 1 END,
+        s.created_at DESC
+    `, [req.user.id]);
+    // Группируем по пользователю
+    const grouped = new Map();
+    for (const story of result.rows) {
+      if (!grouped.has(story.user_id)) {
+        grouped.set(story.user_id, {
+          user_id: story.user_id,
+          display_name: story.display_name,
+          avatar_url: story.avatar_url,
+          stories: [],
+          has_unviewed: false,
+        });
+      }
+      const g = grouped.get(story.user_id);
+      g.stories.push(story);
+      if (!story.viewed) g.has_unviewed = true;
+    }
+    res.json({ users: Array.from(grouped.values()) });
+  } catch (err) {
+    console.error('[stories list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** POST /api/stories/:id/view — отметить story просмотренной */
+app.post('/api/stories/:id/view', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(
+      `INSERT INTO story_views (story_id, viewer_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [req.params.id, req.user.id]
+    );
+    await pool.query(
+      'UPDATE stories SET views_count = (SELECT COUNT(*) FROM story_views WHERE story_id = $1) WHERE id = $1',
+      [req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[story view]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** DELETE /api/stories/:id — удалить свою story */
+app.delete('/api/stories/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Story не найдена' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[story delete]', err?.message);
+    res.status(500).json({ error: 'Ошибка удаления' });
   }
 });
 
