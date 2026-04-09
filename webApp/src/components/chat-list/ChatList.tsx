@@ -89,7 +89,7 @@ export function ChatList() {
   return (
     <nav
       className="flex flex-col h-full"
-      style={{ background: '#1C1C1E', borderRight: '0.5px solid #38383A' }}
+      style={{ background: '#1e1e2e' }}
       aria-label="Список чатов"
     >
       <ChatListHeader

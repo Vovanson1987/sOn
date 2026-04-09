@@ -2,7 +2,7 @@ import { MessageSquare, Phone, Users, Settings } from 'lucide-react';
 import { t } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 
-export type TabId = 'chats' | 'calls' | 'contacts' | 'settings';
+export type TabId = 'chats' | 'channels' | 'calls' | 'contacts' | 'settings';
 
 interface TabBarProps {
   activeTab: TabId;

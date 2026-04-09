@@ -1,29 +1,43 @@
 @import "tailwindcss";
 
+/* ===== MAX/Telegram Desktop Dark Theme ===== */
+
 @theme {
-  --color-bg-primary: #000000;
-  --color-bg-secondary: #1C1C1E;
-  --color-bg-tertiary: #2C2C2E;
-  --color-bg-elevated: #1C1C1E;
-  --color-bubble-outgoing: #007AFF;
+  /* Фоны — тёмно-синяя гамма вместо чистого чёрного */
+  --color-bg-primary: #141420;
+  --color-bg-secondary: #1e1e2e;
+  --color-bg-tertiary: #282840;
+  --color-bg-elevated: #232338;
+  --color-bg-sidebar: #16161a;
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-active: rgba(255, 255, 255, 0.1);
+
+  /* Пузыри сообщений */
+  --color-bubble-outgoing: #5B5FC7;
   --color-bubble-outgoing-sms: #30D158;
-  --color-bubble-incoming: #3A3A3C;
-  --color-bg-incoming-secret: #1E1E22;
+  --color-bubble-incoming: #282840;
+  --color-bg-incoming-secret: #1E2E1E;
+
+  /* Текст */
   --color-text-primary: #FFFFFF;
-  --color-text-secondary: rgba(235, 235, 245, 0.6);
-  --color-text-tertiary: rgba(235, 235, 245, 0.3);
-  --color-accent-blue: #007AFF;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-tertiary: rgba(255, 255, 255, 0.35);
+
+  /* Акценты */
+  --color-accent-blue: #5B5FC7;
   --color-accent-green: #30D158;
   --color-accent-red: #FF453A;
   --color-accent-orange: #FF9F0A;
   --color-accent-yellow: #FFD60A;
-  --color-accent-purple: #BF5AF2;
-  --color-separator: rgba(255, 255, 255, 0.1);
-  --color-selection: rgba(0, 122, 255, 0.12);
+  --color-accent-purple: #9B59B6;
+
+  /* Разделители и выделения */
+  --color-separator: rgba(255, 255, 255, 0.06);
+  --color-selection: rgba(91, 95, 199, 0.15);
 }
 
 :root {
-  --header-bg: rgba(0, 0, 0, 0.72);
+  --header-bg: rgba(30, 30, 46, 0.85);
   --header-blur: saturate(180%) blur(20px);
   --secret-border: 3px solid #30D158;
   --font-family: system-ui, -apple-system, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
@@ -43,26 +57,40 @@ html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background-color: #000000;
-  color: #FFFFFF;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
   font-family: var(--font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   touch-action: manipulation;
 }
 
+/* Скроллбар в стиле MAX (тонкий, полупрозрачный) */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 button:active {
-  opacity: 0.6;
+  opacity: 0.7;
   transition: opacity 0.1s ease;
 }
 
-/* Глобальный focus indicator для клавиатурной навигации (WCAG 2.4.7) */
+/* Глобальный focus indicator (WCAG 2.4.7) */
 :focus-visible {
-  outline: 2px solid #007AFF;
+  outline: 2px solid var(--color-accent-blue);
   outline-offset: 2px;
 }
 
-/* Скрытый элемент для screen reader */
 .sr-only {
   position: absolute;
   width: 1px;
