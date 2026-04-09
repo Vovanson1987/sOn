@@ -31,16 +31,15 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           command_timeout: 10m
           script: |
-            cd ~/sOn
+            cd /srv/son
             git fetch origin master
             git reset --hard origin/master
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-            echo "=== Waiting for containers ==="
+            docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml build api web
+            docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml up -d postgres redis minio api web coturn cloudflared --remove-orphans
             sleep 10
             docker ps --format 'table {{.Names}}\t{{.Status}}'
-            echo "=== Health check ==="
-            curl -sf http://localhost:8080/ > /dev/null && echo "✓ Web OK" || echo "✗ Web FAIL"
-            curl -sf http://localhost:8080/api/health > /dev/null && echo "✓ API OK" || echo "✗ API FAIL"
+            curl -sf http://localhost:8080/ > /dev/null && echo "Web OK" || echo "Web FAIL"
+            curl -sf http://localhost:8080/health/ready > /dev/null && echo "API Ready" || echo "API NOT Ready"
 
       - name: Smoke-check production
         env:
