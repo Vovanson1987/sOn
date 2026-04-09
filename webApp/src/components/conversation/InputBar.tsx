@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
-import { Plus, AudioLines, ArrowUp, Smile, X, Pencil } from 'lucide-react';
+import { Plus, AudioLines, ArrowUp, Smile, X, Pencil, Sticker } from 'lucide-react';
 import { t } from '@/i18n';
 import { AttachmentPicker } from '@components/media/AttachmentPicker';
 import EmojiPicker from '@components/media/EmojiPicker';
@@ -8,6 +8,7 @@ import { createVoiceRecorder, uploadVoice } from '@/utils/fileUpload';
 import { useMessageStore } from '@stores/messageStore';
 import { useAuthStore } from '@stores/authStore';
 import { MentionSuggestions } from './MentionSuggestions';
+import { StickerPicker } from '@components/media/StickerPicker';
 import type { Message } from '@/types/message';
 
 interface InputBarProps {
@@ -28,6 +29,8 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
   const [isRecording, setIsRecording] = useState(false);
   // P2.6: @mentions
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  // P2.8: stickers
+  const [showStickers, setShowStickers] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isTypingRef = useRef(false);
@@ -353,6 +356,24 @@ export function InputBar({ onSend, onAttachment, placeholder, chatId, editingMes
             onClose={() => setShowEmojiPicker(false)}
           />
         )}
+      </div>
+
+      {/* P2.8: Стикеры */}
+      <div className="relative">
+        <button
+          onClick={() => setShowStickers((v) => !v)}
+          className="w-[44px] h-[44px] flex items-center justify-center flex-shrink-0"
+          aria-label="Стикеры"
+        >
+          <Sticker size={22} color={showStickers ? '#007AFF' : '#8E8E93'} />
+        </button>
+        <StickerPicker
+          isOpen={showStickers}
+          onClose={() => setShowStickers(false)}
+          onSelect={(sticker) => {
+            onSend(`[sticker:${sticker.id}:${sticker.file_url}]`);
+          }}
+        />
       </div>
       </div>
     </footer>
