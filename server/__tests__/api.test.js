@@ -72,6 +72,14 @@ jest.mock('web-push', () => ({
   sendNotification: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('otplib', () => ({
+  authenticator: {
+    generateSecret: jest.fn().mockReturnValue('JBSWY3DPEHPK3PXP'),
+    keyuri: jest.fn().mockReturnValue('otpauth://totp/sOn%20Messenger:test@test.com?secret=JBSWY3DPEHPK3PXP'),
+    check: jest.fn().mockReturnValue(true),
+  },
+}));
+
 const { app } = require('../index');
 
 const JWT_SECRET = process.env.JWT_SECRET;
