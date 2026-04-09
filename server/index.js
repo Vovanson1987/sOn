@@ -741,7 +741,7 @@ app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemb
     mentioned_user_ids } = req.body;
   const chatId = req.params.chatId;
 
-  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'system'];
+  const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'voice', 'system', 'poll', 'video_note'];
   if (!allowedTypes.includes(type)) {
     return res.status(400).json({ error: 'Недопустимый тип сообщения' });
   }

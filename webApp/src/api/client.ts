@@ -527,3 +527,67 @@ export function forwardMessage(targetChatId: string, sourceChatId: string, sourc
 export function searchChatMembers(chatId: string, query: string) {
   return request<{ members: Array<{ id: string; display_name: string; avatar_url: string | null }> }>(`/api/chats/${chatId}/members/search?q=${encodeURIComponent(query)}`);
 }
+
+// ==================== P2.7: Channels ====================
+
+export function createChannel(name: string, description?: string, is_public = true) {
+  return request<Record<string, unknown>>('/api/channels', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, is_public }),
+  });
+}
+
+export function getChannels() {
+  return request<{ channels: Array<Record<string, unknown>> }>('/api/channels');
+}
+
+export function getChannel(id: string) {
+  return request<Record<string, unknown>>(`/api/channels/${id}`);
+}
+
+export function subscribeChannel(id: string) {
+  return request<{ ok: boolean }>(`/api/channels/${id}/subscribe`, { method: 'POST' });
+}
+
+export function unsubscribeChannel(id: string) {
+  return request<{ ok: boolean }>(`/api/channels/${id}/subscribe`, { method: 'DELETE' });
+}
+
+export function createChannelPost(channelId: string, content: string, type = 'text', attachment_url?: string) {
+  return request<Record<string, unknown>>(`/api/channels/${channelId}/posts`, {
+    method: 'POST',
+    body: JSON.stringify({ content, type, attachment_url }),
+  });
+}
+
+export function getChannelPosts(channelId: string, before?: string) {
+  const params = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<{ posts: Array<Record<string, unknown>>; has_more: boolean }>(`/api/channels/${channelId}/posts${params}`);
+}
+
+// ==================== P2.11: Stories ====================
+
+export function createStory(media_url: string, media_type = 'image', caption?: string) {
+  return request<Record<string, unknown>>('/api/stories', {
+    method: 'POST',
+    body: JSON.stringify({ media_url, media_type, caption }),
+  });
+}
+
+export function getStories() {
+  return request<{ users: Array<Record<string, unknown>> }>('/api/stories');
+}
+
+export function viewStory(storyId: string) {
+  return request<{ ok: boolean }>(`/api/stories/${storyId}/view`, { method: 'POST' });
+}
+
+export function deleteStory(storyId: string) {
+  return request<{ ok: boolean }>(`/api/stories/${storyId}`, { method: 'DELETE' });
+}
+
+// ==================== P2.10: URL Preview ====================
+
+export function getOgPreview(url: string) {
+  return request<{ title: string | null; description: string | null; image: string | null; site_name: string | null; url: string }>(`/api/og?url=${encodeURIComponent(url)}`);
+}
