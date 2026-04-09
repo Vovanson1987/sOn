@@ -1,0 +1,26 @@
+# LiveKit Server конфигурация для sOn Messenger
+# Документация: https://docs.livekit.io/realtime/self-hosting/deployment/
+
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50200
+  use_external_ip: true
+
+# Ключи генерируются через: docker run --rm livekit/generate
+# и прописываются в .env как LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+keys:
+  # Placeholder — реальные ключи подставляются из .env при старте
+  # Если не задан LIVEKIT_API_KEY — используется дефолт для dev
+  devkey: secret
+
+logging:
+  level: info
+  # В production можно поставить warn
+
+# TURN встроенный в LiveKit (не нужен отдельный coturn для LiveKit)
+turn:
+  enabled: true
+  udp_port: 3478
+  tls_port: 5349

@@ -127,6 +127,10 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?required}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # P2.12 LiveKit
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit:7880}
       # P1.2 observability — если DSN не задан, Sentry не инициализируется
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
@@ -220,7 +224,35 @@ services:
     networks:
       - son-internal
 
-  # ====== TURN сервер ======
+  # ====== LiveKit SFU (P2.12: групповые и 1:1 звонки) ======
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: son-livekit
+    restart: always
+    command: --config /etc/livekit.yaml --node-ip 0.0.0.0
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+    ports:
+      - "7880:7880"       # HTTP/WS signaling
+      - "7881:7881"       # RTC TCP
+      - "7882:7882/udp"   # RTC UDP
+      - "50000-50200:50000-50200/udp"  # Media relay range
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - son-internal
+
+  # ====== TURN сервер (fallback для P2P legacy) ======
   coturn:
     image: coturn/coturn:4.6
     container_name: son-coturn
