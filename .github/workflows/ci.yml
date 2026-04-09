@@ -117,5 +117,5 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ matrix.dir }}/package-lock.json
       - run: npm ci
-      - name: npm audit (P1.9: без || true — уязвимости блокируют CI)
+      - name: "npm audit"
         run: npm audit --audit-level=high
