@@ -22,6 +22,7 @@ const {
   sanitizeExt,
   ALLOWED_FOLDERS,
 } = require('./storage');
+const { logger, httpLogger } = require('./logger');
 require('dotenv').config();
 
 // ==================== Валидация окружения ====================
@@ -63,6 +64,11 @@ const JWT_SECRET = process.env.JWT_SECRET;
 app.set('trust proxy', 1);
 
 // ==================== Безопасность ====================
+
+// P1.3: structured logging + request-ID (pino-http).
+// Должен быть самым первым middleware, чтобы логировать абсолютно все запросы,
+// включая те что дальше падают на CORS или rate-limit.
+app.use(httpLogger);
 
 // Заголовки безопасности (CSP, HSTS, X-Frame-Options и т.д.)
 app.use(helmet({
@@ -1808,30 +1814,28 @@ app.get('/health', async (_, res) => {
 // и middleware (Express 5 автоматически передаёт их сюда через next(err)).
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
-  const reqId = req.headers['x-request-id'] || '';
-  console.error('[express error]', {
-    reqId,
+  // req.log создан pino-http с привязанным req.id
+  const log = req.log || logger;
+  log.error({
+    err,
     method: req.method,
     path: req.path,
     userId: req.user?.id,
-    message: err?.message,
-    code: err?.code,
-  });
+  }, 'express error');
   if (res.headersSent) return;
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
 // Safety net на уровне процесса — не даём процессу умереть от rejected
 // promises, которые не попали в route handlers (например из WS callback'ов).
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[unhandledRejection]', {
-    message: reason?.message || String(reason),
-    stack: reason?.stack,
-  });
+process.on('unhandledRejection', (reason) => {
+  logger.error({
+    err: reason instanceof Error ? reason : new Error(String(reason)),
+  }, 'unhandledRejection');
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', { message: err?.message, stack: err?.stack });
+  logger.error({ err }, 'uncaughtException');
   // Не выходим — пусть процесс дожмёт запросы, а потом систем-ди перезапустит
 });
 
@@ -1839,10 +1843,9 @@ process.on('uncaughtException', (err) => {
 
 async function start() {
   await initDB();
-  await ensureBucket().catch((err) => console.warn('⚠️ MinIO недоступен:', err.message));
+  await ensureBucket().catch((err) => logger.warn({ err }, 'MinIO недоступен при старте'));
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 sOn API сервер запущен на http://localhost:${PORT}`);
-    console.log(`🔌 WebSocket на ws://localhost:${PORT}/ws`);
+    logger.info({ port: PORT }, 'sOn API сервер запущен');
   });
 }
 
