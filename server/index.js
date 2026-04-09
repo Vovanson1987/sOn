@@ -708,7 +708,9 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 
 /** POST /api/chats/:chatId/messages */
 app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemberCheck, async (req, res) => {
-  const { content, type = 'text', reply_to, self_destruct_seconds, e2ee } = req.body;
+  const { content, type = 'text', reply_to, self_destruct_seconds, e2ee,
+    forwarded_from_id, forwarded_from_chat_name, forwarded_from_sender_name,
+    mentioned_user_ids } = req.body;
   const chatId = req.params.chatId;
 
   const allowedTypes = ['text', 'image', 'file', 'audio', 'video', 'system'];
@@ -799,9 +801,18 @@ app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemb
       ? new Date(Date.now() + Number(self_destruct_seconds) * 1000).toISOString()
       : null;
 
+    // P2.3/P2.6: forwarded_from_* и mentioned_user_ids сохраняются при отправке
+    const safeMentions = Array.isArray(mentioned_user_ids) ? mentioned_user_ids.filter(id => typeof id === 'string') : null;
     const result = await client.query(
-      'INSERT INTO messages (chat_id, sender_id, content, type, reply_to, self_destruct_at, e2ee_nonce, e2ee_header, e2ee_algorithm) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [chatId, req.user.id, dbContent, type, reply_to || null, selfDestructAt, e2eeNonce, e2eeHeader, e2eeAlgorithm]
+      `INSERT INTO messages (chat_id, sender_id, content, type, reply_to, self_destruct_at,
+        e2ee_nonce, e2ee_header, e2ee_algorithm,
+        forwarded_from_id, forwarded_from_chat_name, forwarded_from_sender_name,
+        mentioned_user_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [chatId, req.user.id, dbContent, type, reply_to || null, selfDestructAt,
+        e2eeNonce, e2eeHeader, e2eeAlgorithm,
+        forwarded_from_id || null, forwarded_from_chat_name || null, forwarded_from_sender_name || null,
+        safeMentions]
     );
     const msg = result.rows[0];
     msg.sender_name = req.user.display_name;
@@ -958,6 +969,293 @@ app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, as
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка редактирования' });
+  }
+});
+
+// ==================== INVITE LINKS (P2.1) ====================
+
+/** POST /api/chats/:chatId/invite — создать invite link (только admin) */
+app.post('/api/chats/:chatId/invite', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const chatId = req.params.chatId;
+    // Только group чаты
+    const chat = await pool.query('SELECT type FROM chats WHERE id = $1', [chatId]);
+    if (chat.rows[0]?.type !== 'group') {
+      return res.status(400).json({ error: 'Invite links доступны только для групп' });
+    }
+    // Только admin
+    const role = await pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, req.user.id]
+    );
+    if (role.rows[0]?.role !== 'admin') {
+      return res.status(403).json({ error: 'Только администратор может создавать ссылки' });
+    }
+    const { expires_hours, max_uses } = req.body || {};
+    const expiresAt = expires_hours
+      ? new Date(Date.now() + Number(expires_hours) * 3600000).toISOString()
+      : null;
+    // Генерируем уникальный токен (16 байт hex = 32 символа)
+    const token = require('crypto').randomBytes(16).toString('hex');
+    const result = await pool.query(
+      `INSERT INTO chat_invites (chat_id, token, created_by, expires_at, max_uses)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [chatId, token, req.user.id, expiresAt, max_uses || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[invite create]', err?.message);
+    res.status(500).json({ error: 'Ошибка создания приглашения' });
+  }
+});
+
+/** GET /api/invite/:token — информация о группе по invite token (без auth) */
+app.get('/api/invite/:token', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT ci.id, ci.chat_id, ci.expires_at, ci.max_uses, ci.uses_count,
+             c.name as chat_name, c.avatar_url as chat_avatar,
+             (SELECT COUNT(*) FROM chat_members WHERE chat_id = ci.chat_id)::int as member_count
+      FROM chat_invites ci
+      JOIN chats c ON c.id = ci.chat_id
+      WHERE ci.token = $1
+    `, [req.params.token]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Приглашение не найдено или истекло' });
+    }
+    const invite = result.rows[0];
+    // Проверить срок и использования
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Срок приглашения истёк' });
+    }
+    if (invite.max_uses && invite.uses_count >= invite.max_uses) {
+      return res.status(410).json({ error: 'Лимит использований исчерпан' });
+    }
+    res.json({
+      chat_name: invite.chat_name,
+      chat_avatar: invite.chat_avatar,
+      member_count: invite.member_count,
+    });
+  } catch (err) {
+    console.error('[invite info]', err?.message);
+    res.status(500).json({ error: 'Ошибка получения информации' });
+  }
+});
+
+/** POST /api/invite/:token/join — вступить в группу по invite (с auth) */
+app.post('/api/invite/:token/join', authMiddleware, async (req, res) => {
+  try {
+    const invite = await pool.query(
+      'SELECT * FROM chat_invites WHERE token = $1',
+      [req.params.token]
+    );
+    if (invite.rows.length === 0) {
+      return res.status(404).json({ error: 'Приглашение не найдено' });
+    }
+    const inv = invite.rows[0];
+    if (inv.expires_at && new Date(inv.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Срок приглашения истёк' });
+    }
+    if (inv.max_uses && inv.uses_count >= inv.max_uses) {
+      return res.status(410).json({ error: 'Лимит использований исчерпан' });
+    }
+    // Проверить что юзер ещё не в чате
+    const existing = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [inv.chat_id, req.user.id]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Вы уже участник этой группы' });
+    }
+    // Добавить в чат + обновить счётчик
+    await pool.query(
+      'INSERT INTO chat_members (chat_id, user_id, role) VALUES ($1, $2, $3)',
+      [inv.chat_id, req.user.id, 'member']
+    );
+    await pool.query(
+      'UPDATE chat_invites SET uses_count = uses_count + 1 WHERE id = $1',
+      [inv.id]
+    );
+    // Уведомить участников
+    broadcastToChat(inv.chat_id, {
+      type: 'member_added',
+      chat_id: inv.chat_id,
+      user_id: req.user.id,
+      display_name: req.user.display_name,
+    });
+    res.json({ ok: true, chat_id: inv.chat_id });
+  } catch (err) {
+    console.error('[invite join]', err?.message);
+    res.status(500).json({ error: 'Ошибка вступления' });
+  }
+});
+
+/** DELETE /api/chats/:chatId/invite/:inviteId — отозвать invite */
+app.delete('/api/chats/:chatId/invite/:inviteId', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM chat_invites WHERE id = $1 AND chat_id = $2 RETURNING id',
+      [req.params.inviteId, req.params.chatId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Приглашение не найдено' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[invite delete]', err?.message);
+    res.status(500).json({ error: 'Ошибка удаления' });
+  }
+});
+
+/** GET /api/chats/:chatId/invites — список invite links чата */
+app.get('/api/chats/:chatId/invites', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM chat_invites WHERE chat_id = $1 ORDER BY created_at DESC',
+      [req.params.chatId]
+    );
+    res.json({ invites: result.rows });
+  } catch (err) {
+    console.error('[invites list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+// ==================== PINNED MESSAGES (P2.4) ====================
+
+/** POST /api/chats/:chatId/pin — закрепить сообщение */
+app.post('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { message_id } = req.body;
+    if (!message_id) return res.status(400).json({ error: 'message_id обязателен' });
+    // Проверить что сообщение принадлежит чату
+    const msg = await pool.query(
+      'SELECT id, content, sender_id FROM messages WHERE id = $1 AND chat_id = $2',
+      [message_id, req.params.chatId]
+    );
+    if (msg.rows.length === 0) {
+      return res.status(404).json({ error: 'Сообщение не найдено в этом чате' });
+    }
+    await pool.query(
+      'UPDATE chats SET pinned_message_id = $1 WHERE id = $2',
+      [message_id, req.params.chatId]
+    );
+    broadcastToChat(req.params.chatId, {
+      type: 'message_pinned',
+      chat_id: req.params.chatId,
+      message_id,
+      pinned_by: req.user.id,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[pin]', err?.message);
+    res.status(500).json({ error: 'Ошибка закрепления' });
+  }
+});
+
+/** DELETE /api/chats/:chatId/pin — открепить */
+app.delete('/api/chats/:chatId/pin', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE chats SET pinned_message_id = NULL WHERE id = $1',
+      [req.params.chatId]
+    );
+    broadcastToChat(req.params.chatId, {
+      type: 'message_unpinned',
+      chat_id: req.params.chatId,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[unpin]', err?.message);
+    res.status(500).json({ error: 'Ошибка открепления' });
+  }
+});
+
+// ==================== FORWARDED MESSAGES (P2.3) ====================
+
+/** POST /api/chats/:chatId/forward — переслать сообщение из другого чата */
+app.post('/api/chats/:chatId/forward', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const { source_message_id, source_chat_id } = req.body;
+    if (!source_message_id || !source_chat_id) {
+      return res.status(400).json({ error: 'source_message_id и source_chat_id обязательны' });
+    }
+    // Проверить что юзер — участник исходного чата
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [source_chat_id, req.user.id]
+    );
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к исходному чату' });
+    }
+    // Получить оригинальное сообщение
+    const original = await pool.query(`
+      SELECT m.content, m.type, m.sender_id, u.display_name as sender_name,
+             c.name as chat_name
+      FROM messages m
+      JOIN users u ON u.id = m.sender_id
+      JOIN chats c ON c.id = m.chat_id
+      WHERE m.id = $1 AND m.chat_id = $2
+    `, [source_message_id, source_chat_id]);
+    if (original.rows.length === 0) {
+      return res.status(404).json({ error: 'Исходное сообщение не найдено' });
+    }
+    const orig = original.rows[0];
+    // Нельзя пересылать секретные
+    const targetChat = await pool.query('SELECT type FROM chats WHERE id = $1', [req.params.chatId]);
+    if (targetChat.rows[0]?.type === 'secret') {
+      return res.status(400).json({ error: 'Нельзя пересылать в секретный чат' });
+    }
+    // Создать forwarded сообщение
+    const result = await pool.query(`
+      INSERT INTO messages (chat_id, sender_id, content, type,
+        forwarded_from_id, forwarded_from_chat_name, forwarded_from_sender_name)
+      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+    `, [
+      req.params.chatId, req.user.id, orig.content, orig.type,
+      source_message_id, orig.chat_name || 'Чат', orig.sender_name,
+    ]);
+    const msg = result.rows[0];
+    msg.sender_name = req.user.display_name;
+    // Обновить last_message_at
+    await pool.query('UPDATE chats SET last_message_at = $1 WHERE id = $2', [msg.created_at, req.params.chatId]);
+    await pool.query(
+      'UPDATE chat_members SET unread_count = unread_count + 1 WHERE chat_id = $1 AND user_id != $2',
+      [req.params.chatId, req.user.id]
+    );
+    broadcastToChat(req.params.chatId, { type: 'new_message', message: msg }, req.user.id);
+    const pushContent = orig.content?.substring(0, 100) || 'Пересланное сообщение';
+    sendPushToOfflineMembers(req.params.chatId, req.user.id, pushContent, req.user.display_name);
+    res.status(201).json(msg);
+  } catch (err) {
+    console.error('[forward]', err?.message);
+    res.status(500).json({ error: 'Ошибка пересылки' });
+  }
+});
+
+// ==================== @MENTIONS (P2.6) ====================
+
+/** GET /api/chats/:chatId/members/search?q= — поиск участников для @mention */
+app.get('/api/chats/:chatId/members/search', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q || typeof q !== 'string' || q.length < 1) {
+      return res.status(400).json({ error: 'Параметр q обязателен' });
+    }
+    const result = await pool.query(`
+      SELECT u.id, u.display_name, u.avatar_url
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1
+        AND u.id != $2
+        AND u.display_name ILIKE $3
+      ORDER BY u.display_name
+      LIMIT 10
+    `, [req.params.chatId, req.user.id, `%${q}%`]);
+    res.json({ members: result.rows });
+  } catch (err) {
+    console.error('[members search]', err?.message);
+    res.status(500).json({ error: 'Ошибка поиска' });
   }
 });
 
