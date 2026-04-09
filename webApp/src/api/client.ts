@@ -115,8 +115,13 @@ export async function getMe() {
 
 // ==================== CHATS ====================
 
-export async function getChats() {
-  return request<{ chats: unknown[] }>('/api/chats');
+/** Получить чаты с marker-пагинацией (паттерн из MAX) */
+export async function getChats(options?: { marker?: string; count?: number }) {
+  const params = new URLSearchParams();
+  if (options?.marker) params.set('marker', options.marker);
+  if (options?.count) params.set('count', String(options.count));
+  const qs = params.toString();
+  return request<{ chats: unknown[]; marker: string | null }>(`/api/chats${qs ? `?${qs}` : ''}`);
 }
 
 export async function createChat(type: string, memberIds: string[], name?: string) {
@@ -138,10 +143,32 @@ export function updateChat(chatId: string, data: { name?: string; description?: 
   return request<Record<string, unknown>>(`/api/chats/${chatId}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
 
+/** Список админов чата (паттерн из MAX) */
+export function getChatAdmins(chatId: string) {
+  return request<{ members: unknown[] }>(`/api/chats/${chatId}/admins`);
+}
+
+/** Мой статус в чате (паттерн из MAX) */
+export function getChatMembership(chatId: string) {
+  return request<Record<string, unknown>>(`/api/chats/${chatId}/membership`);
+}
+
+/** Покинуть чат (паттерн из MAX) */
+export function leaveChat(chatId: string) {
+  return request<{ ok: boolean }>(`/api/chats/${chatId}/members/me`, { method: 'DELETE' });
+}
+
 // ==================== MESSAGES ====================
 
-export async function getMessages(chatId: string) {
-  return request<{ messages: unknown[] }>(`/api/chats/${chatId}/messages`);
+/** Получить сообщения с marker-пагинацией (паттерн из MAX) */
+export async function getMessages(chatId: string, options?: { marker?: string; count?: number }) {
+  const params = new URLSearchParams();
+  if (options?.marker) params.set('marker', options.marker);
+  if (options?.count) params.set('count', String(options.count));
+  const qs = params.toString();
+  return request<{ messages: unknown[]; marker: string | null; has_more: boolean }>(
+    `/api/chats/${chatId}/messages${qs ? `?${qs}` : ''}`,
+  );
 }
 
 export interface SecretPayloadForSend {

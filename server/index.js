@@ -618,6 +618,20 @@ function normalizeSecretPayload(content, e2ee) {
 
 /** GET /api/chats — список чатов пользователя */
 app.get('/api/chats', authMiddleware, async (req, res) => {
+  // Marker-based пагинация (паттерн из MAX)
+  const limit = Math.min(parseInt(req.query.count) || 50, 200);
+  const marker = req.query.marker; // ISO timestamp последнего чата
+
+  let whereClause = 'WHERE cm.user_id = $1';
+  const params = [req.user.id];
+
+  if (marker) {
+    params.push(marker);
+    whereClause += ` AND COALESCE(c.last_message_at, c.created_at) < $${params.length}`;
+  }
+
+  params.push(limit + 1); // +1 чтобы определить has_more
+
   const result = await pool.query(`
     SELECT c.*, cm.unread_count,
       (SELECT json_agg(json_build_object('id', u.id, 'display_name', u.display_name, 'avatar_url', u.avatar_url, 'is_online', u.is_online))
@@ -630,10 +644,18 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
        FROM messages m WHERE m.chat_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message
     FROM chats c
     JOIN chat_members cm ON cm.chat_id = c.id
-    WHERE cm.user_id = $1
+    ${whereClause}
     ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-  `, [req.user.id]);
-  res.json({ chats: result.rows });
+    LIMIT $${params.length}
+  `, params);
+
+  const hasMore = result.rows.length > limit;
+  const chats = hasMore ? result.rows.slice(0, limit) : result.rows;
+  const nextMarker = hasMore
+    ? (chats[chats.length - 1].last_message_at || chats[chats.length - 1].created_at)
+    : null;
+
+  res.json({ chats, marker: nextMarker });
 });
 
 /** POST /api/chats — создать чат */
@@ -689,26 +711,29 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
 
 /** GET /api/chats/:chatId/messages?before=ISO&limit=50 — с пагинацией */
 app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const before = req.query.before; // ISO timestamp для курсорной пагинации
+  // Marker-based пагинация (паттерн из MAX)
+  const limit = Math.min(parseInt(req.query.count || req.query.limit) || 50, 200);
+  const marker = req.query.marker || req.query.before; // marker = ISO timestamp
 
   let query, params;
-  if (before) {
+  if (marker) {
     query = `SELECT m.*, u.display_name as sender_name FROM messages m
      JOIN users u ON u.id = m.sender_id
      WHERE m.chat_id = $1 AND m.created_at < $2
      ORDER BY m.created_at DESC LIMIT $3`;
-    params = [req.params.chatId, before, limit];
+    params = [req.params.chatId, marker, limit + 1];
   } else {
     query = `SELECT m.*, u.display_name as sender_name FROM messages m
      JOIN users u ON u.id = m.sender_id
      WHERE m.chat_id = $1
      ORDER BY m.created_at DESC LIMIT $2`;
-    params = [req.params.chatId, limit];
+    params = [req.params.chatId, limit + 1];
   }
 
   const result = await pool.query(query, params);
-  const messages = result.rows.reverse(); // Хронологический порядок (ASC)
+  const hasMore = result.rows.length > limit;
+  const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+  const messages = rows.reverse(); // Хронологический порядок (ASC)
 
   // Загрузить реакции для всех сообщений одним запросом
   let messagesWithReactions = messages;
@@ -718,7 +743,6 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
       'SELECT r.message_id, r.emoji, r.user_id FROM reactions r WHERE r.message_id = ANY($1::uuid[])',
       [messageIds]
     );
-    // Группировка: { messageId: { emoji: [userId, ...] } }
     const reactionsMap = {};
     for (const r of reactionsResult.rows) {
       if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = {};
@@ -731,7 +755,8 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
     }));
   }
 
-  res.json({ messages: messagesWithReactions, has_more: result.rows.length === limit });
+  const nextMarker = hasMore ? rows[0].created_at : null; // rows[0] — самый старый (DESC → первый)
+  res.json({ messages: messagesWithReactions, marker: nextMarker, has_more: hasMore });
 });
 
 /** POST /api/chats/:chatId/messages */
@@ -1452,6 +1477,75 @@ app.get('/api/chats/:chatId/members', authMiddleware, chatMemberCheck, async (re
   } catch (err) {
     console.error('[members list]', err?.message);
     res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/chats/:chatId/admins — список админов (паттерн из MAX) */
+app.get('/api/chats/:chatId/admins', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cm.user_id, cm.role, cm.permissions, cm.joined_at,
+             u.display_name, u.avatar_url, u.is_online
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1 AND cm.role IN ('owner', 'admin')
+      ORDER BY CASE cm.role WHEN 'owner' THEN 0 ELSE 1 END, u.display_name
+    `, [req.params.chatId]);
+    res.json({ members: result.rows });
+  } catch (err) {
+    console.error('[admins list]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** GET /api/chats/:chatId/membership — мой статус в чате (паттерн из MAX) */
+app.get('/api/chats/:chatId/membership', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cm.user_id, cm.role, cm.permissions, cm.joined_at,
+             u.display_name, u.avatar_url, u.is_online
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1 AND cm.user_id = $2
+    `, [req.params.chatId, req.user.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Вы не участник этого чата' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[membership]', err?.message);
+    res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+/** DELETE /api/chats/:chatId/members/me — покинуть чат (паттерн из MAX) */
+app.delete('/api/chats/:chatId/members/me', authMiddleware, chatMemberCheck, async (req, res) => {
+  try {
+    // Владелец не может покинуть чат
+    const member = await pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [req.params.chatId, req.user.id]
+    );
+    if (member.rows[0]?.role === 'owner') {
+      return res.status(400).json({ error: 'Владелец не может покинуть чат. Передайте права сначала.' });
+    }
+
+    await pool.query(
+      'DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [req.params.chatId, req.user.id]
+    );
+
+    broadcastToChat(req.params.chatId, {
+      type: 'user_removed',
+      chat_id: req.params.chatId,
+      user_id: req.user.id,
+      left_voluntarily: true,
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[leave chat]', err?.message);
+    res.status(500).json({ error: 'Ошибка при выходе из чата' });
   }
 });
 

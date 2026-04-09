@@ -1,13 +1,11 @@
 import { create } from 'zustand';
 import type { Chat } from '@/types/chat';
-// Моки отключены — используем только реальные данные с сервера
 import * as api from '@/api/client';
 
 type ChatFilter = 'all' | 'unread' | 'groups' | 'secret' | 'archived';
 
 /** HI-19: Преобразовать данные API в формат Chat с защитой от null/undefined */
 function mapApiChat(raw: Record<string, unknown>): Chat {
-  // Guard: ensure raw is a valid object
   if (!raw || typeof raw !== 'object') {
     throw new Error('mapApiChat: invalid API response — expected an object');
   }
@@ -33,11 +31,17 @@ function mapApiChat(raw: Record<string, unknown>): Chat {
   return {
     id: (raw.id as string) ?? '',
     type: chatType,
+    status: (raw.status as Chat['status']) || 'active',
     name: raw.name as string | undefined,
+    description: raw.description as string | undefined,
     members,
     unreadCount: typeof raw.unread_count === 'number' ? raw.unread_count : 0,
     isMuted: false,
     isArchived: false,
+    isPublic: (raw.is_public as boolean) || false,
+    link: raw.link as string | undefined,
+    iconUrl: raw.icon_url as string | undefined,
+    participantsCount: typeof raw.participants_count === 'number' ? raw.participants_count : members.length,
     updatedAt: (lastMsg?.created_at as string) || (raw.created_at as string) || new Date().toISOString(),
     lastMessage: lastMsg ? {
       id: 'last',
@@ -61,39 +65,42 @@ interface ChatStore {
   filter: ChatFilter;
   isLoading: boolean;
   isOnline: boolean;
-  /** C9: ошибка загрузки чатов (null = нет ошибки) */
   fetchError: string | null;
+  /** Marker-based пагинация (паттерн из MAX) */
+  nextMarker: string | null;
+  hasMore: boolean;
 
   setActiveChat: (id: string | null) => void;
   setSearchQuery: (q: string) => void;
   setFilter: (f: ChatFilter) => void;
   deleteChat: (id: string) => Promise<void>;
-  /** Удалить чат локально (для WS event) */
   removeChatLocal: (id: string) => void;
   markAsRead: (chatId: string) => void;
-  /** Загрузить чаты с сервера */
   fetchChats: () => Promise<void>;
-  /** Создать новый чат */
+  /** Загрузить следующую страницу чатов */
+  fetchMoreChats: () => Promise<void>;
   createChat: (memberIds: string[], name?: string) => Promise<string | null>;
-  /** Добавить чат локально (при получении через WS) */
   addChat: (chat: Chat) => void;
+  /** Покинуть чат (паттерн из MAX) */
+  leaveChat: (chatId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
-  chats: [], // Реальные чаты загружаются с сервера
+  chats: [],
   activeChatId: null,
   searchQuery: '',
   filter: 'all',
   isLoading: false,
   isOnline: false,
   fetchError: null,
+  nextMarker: null,
+  hasMore: true,
 
   setActiveChat: (id) => set({ activeChatId: id }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setFilter: (f) => set({ filter: f }),
 
   deleteChat: async (id) => {
-    // Optimistic delete
     set((s) => ({
       chats: s.chats.filter((c) => c.id !== id),
       activeChatId: s.activeChatId === id ? null : s.activeChatId,
@@ -102,7 +109,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await api.deleteChat(id);
     } catch (err) {
       console.error('Ошибка удаления чата:', err);
-      // При ошибке — перезагрузить чаты
       get().fetchChats();
     }
   },
@@ -116,24 +122,47 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => ({
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     }));
-    // Сбросить на сервере тоже
     api.markChatAsRead(chatId).catch((err) => console.error('[markAsRead] failed', err));
   },
 
   fetchChats: async () => {
     set({ isLoading: true, fetchError: null });
     try {
-      const data = await api.getChats();
+      const data = await api.getChats({ count: 50 });
       const apiChats = (data.chats as Array<Record<string, unknown>>).map(mapApiChat);
-      set({ chats: apiChats, isOnline: true, fetchError: null });
+      set({
+        chats: apiChats,
+        isOnline: true,
+        fetchError: null,
+        nextMarker: data.marker,
+        hasMore: data.marker !== null,
+      });
     } catch (err) {
       console.warn('Не удалось загрузить чаты с сервера:', err);
-      // C9: НЕ обнуляем чаты при ошибке — сохраняем предыдущие.
-      // Показываем fetchError для UI (кнопка retry).
       set({
         isOnline: false,
         fetchError: err instanceof Error ? err.message : 'Ошибка загрузки чатов',
       });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  fetchMoreChats: async () => {
+    const { nextMarker, hasMore, isLoading } = get();
+    if (!hasMore || isLoading || !nextMarker) return;
+
+    set({ isLoading: true });
+    try {
+      const data = await api.getChats({ marker: nextMarker, count: 50 });
+      const newChats = (data.chats as Array<Record<string, unknown>>).map(mapApiChat);
+      set((s) => ({
+        chats: [...s.chats, ...newChats],
+        nextMarker: data.marker,
+        hasMore: data.marker !== null,
+      }));
+    } catch (err) {
+      console.error('Ошибка загрузки чатов:', err);
     } finally {
       set({ isLoading: false });
     }
@@ -157,5 +186,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (s.chats.find((c) => c.id === chat.id)) return s;
       return { chats: [chat, ...s.chats] };
     });
+  },
+
+  leaveChat: async (chatId) => {
+    try {
+      await api.leaveChat(chatId);
+      set((s) => ({
+        chats: s.chats.filter((c) => c.id !== chatId),
+        activeChatId: s.activeChatId === chatId ? null : s.activeChatId,
+      }));
+    } catch (err) {
+      console.error('Ошибка выхода из чата:', err);
+      throw err;
+    }
   },
 }));

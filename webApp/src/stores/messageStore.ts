@@ -25,6 +25,9 @@ interface MessageStore {
   /** HI-37: Use Record instead of Set for Zustand serialization compatibility */
   loadedChats: Record<string, boolean>;
   fetchError: string | null;
+  /** Marker-based пагинация (паттерн из MAX) */
+  messageMarkers: Record<string, string | null>;
+  hasMoreMessages: Record<string, boolean>;
   /**
    * ERR-3: ошибки дешифровки по чатам. Хранятся до clearDecryptErrors.
    * Используется UI для показа предупреждения о рассинхроне/возможном MITM.
@@ -37,6 +40,8 @@ interface MessageStore {
   getMessages: (chatId: string) => Message[];
   /** Загрузить сообщения с сервера */
   fetchMessages: (chatId: string) => Promise<void>;
+  /** Загрузить старые сообщения (подгрузка при скролле вверх) */
+  fetchOlderMessages: (chatId: string) => Promise<boolean>;
   /** Отправить сообщение (через API + локально) */
   sendMessage: (chatId: string, content: string, replyTo?: { id: string; senderName: string; preview: string }) => Promise<void>;
   /** Добавить входящее сообщение от сервера с E2EE-дешифровкой */
@@ -158,6 +163,8 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   typingUsers: {},
   loadedChats: {},
   fetchError: null,
+  messageMarkers: {},
+  hasMoreMessages: {},
   decryptErrors: {},
   editingMessage: null,
 
@@ -166,26 +173,48 @@ export const useMessageStore = create<MessageStore>((set, get) => ({
   },
 
   fetchMessages: async (chatId) => {
-    // Не загружать повторно
     if (get().loadedChats[chatId]) return;
 
     try {
-      const data = await api.getMessages(chatId);
+      const data = await api.getMessages(chatId, { count: 50 });
       const myUserId = useAuthStore.getState().user?.id || 'user-me';
       const msgs: Message[] = [];
       for (const raw of data.messages as Array<Record<string, unknown>>) {
         msgs.push(await mapServerMessage(raw, myUserId));
       }
-      // HI-38: Always mark chat as loaded after successful fetch (even if empty)
       set((s) => ({
         messages: { ...s.messages, [chatId]: msgs },
         loadedChats: { ...s.loadedChats, [chatId]: true },
+        messageMarkers: { ...s.messageMarkers, [chatId]: data.marker ?? null },
+        hasMoreMessages: { ...s.hasMoreMessages, [chatId]: data.has_more },
         fetchError: null,
       }));
     } catch (err) {
-      // HI-12: Log error instead of silently ignoring
       console.error(`Failed to fetch messages for chat ${chatId}:`, err);
       set({ fetchError: `Failed to load messages for chat ${chatId}` });
+    }
+  },
+
+  fetchOlderMessages: async (chatId) => {
+    const { messageMarkers, hasMoreMessages } = get();
+    if (!hasMoreMessages[chatId] || !messageMarkers[chatId]) return false;
+
+    try {
+      const data = await api.getMessages(chatId, { marker: messageMarkers[chatId]!, count: 50 });
+      const myUserId = useAuthStore.getState().user?.id || 'user-me';
+      const older: Message[] = [];
+      for (const raw of data.messages as Array<Record<string, unknown>>) {
+        older.push(await mapServerMessage(raw, myUserId));
+      }
+      set((s) => ({
+        messages: { ...s.messages, [chatId]: [...older, ...(s.messages[chatId] || [])] },
+        messageMarkers: { ...s.messageMarkers, [chatId]: data.marker ?? null },
+        hasMoreMessages: { ...s.hasMoreMessages, [chatId]: data.has_more },
+      }));
+      return older.length > 0;
+    } catch (err) {
+      console.error(`Failed to fetch older messages for chat ${chatId}:`, err);
+      return false;
     }
   },
 

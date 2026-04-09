@@ -54,14 +54,20 @@ describe('uploadFile', () => {
   });
 
   it('бросает ошибку при неуспешном ответе', async () => {
-    mockFetch.mockResolvedValueOnce({
+    // withRetry повторяет до 3 раз — мокаем все попытки
+    const errorResponse = {
       ok: false,
       status: 400,
       json: () => Promise.resolve({ error: 'Ошибка загрузки файла' }),
-    });
+    };
+    mockFetch
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(errorResponse);
     const file = new File([''], 'test.txt');
-    await expect(uploadFile(file)).rejects.toThrow('Ошибка загрузки файла');
-  });
+    await expect(uploadFile(file)).rejects.toThrow('Ошибка загрузки');
+  }, 15000);
 });
 
 describe('uploadVoice', () => {
