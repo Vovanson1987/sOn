@@ -25,7 +25,9 @@ export function initSentry(): void {
     // Session Replay: 0% нормальных сессий, 100% сессий с ошибкой.
     // Это даёт экономию квоты при максимальной отладочной ценности.
     replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: import.meta.env.PROD ? 1.0 : 0,
+    // H12: отключён replay в prod — E2EE верификация, звонки и ключи
+    // не должны попадать в Sentry даже при maskAllText.
+    replaysOnErrorSampleRate: 0,
 
     integrations: [
       Sentry.browserTracingIntegration(),

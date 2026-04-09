@@ -231,6 +231,8 @@ let ws: WebSocket | null = null;
 let wsListeners: Array<(data: unknown) => void> = [];
 let intentionalClose = false;
 let wsReconnectAttempt = 0;
+// H9: generation counter предотвращает reconnect после disconnectWS
+let wsGeneration = 0;
 
 /** Подключиться к WebSocket */
 export function connectWS(): void {
@@ -276,13 +278,17 @@ export function connectWS(): void {
 
   ws.onclose = () => {
     if (intentionalClose) return;
-    // Exponential backoff: 3с, 6с, 12с, 24с... макс 60с
     const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempt), 60000);
     wsReconnectAttempt++;
+    // H9: запоминаем generation на момент планирования reconnect.
+    // Если disconnectWS() вызовется до срабатывания таймера,
+    // generation изменится и reconnect не произойдёт.
+    const gen = wsGeneration;
     if (import.meta.env.DEV) console.log(`WebSocket отключён, переподключение через ${delay / 1000}с...`);
-    // Переподключение пока не было явного disconnect().
-    // Это поддерживает сценарий cookie-auth без memory-token.
-    setTimeout(connectWS, delay);
+    setTimeout(() => {
+      if (intentionalClose || wsGeneration !== gen) return;
+      connectWS();
+    }, delay);
   };
 }
 
@@ -304,6 +310,7 @@ export function onWS(callback: (data: unknown) => void): () => void {
 /** Отключить WebSocket */
 export function disconnectWS(): void {
   intentionalClose = true;
+  wsGeneration++; // H9: отменить запланированные reconnect
   ws?.close();
   ws = null;
 }

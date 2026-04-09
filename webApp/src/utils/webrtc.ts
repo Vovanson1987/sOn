@@ -231,30 +231,40 @@ export function toggleCamera(): boolean {
 }
 
 /** Обработать входящие WebRTC события (вызывать при получении WS-сообщений) */
+/** H8: handleSignaling с try/catch на каждом case — setRemoteDescription
+ * и addIceCandidate бросают при невалидных SDP/ICE */
 export async function handleSignaling(data: Record<string, unknown>): Promise<void> {
-  switch (data.type) {
-    case 'call_answer': {
-      if (!activeSession) return;
-      const sdp = data.sdp as RTCSessionDescriptionInit;
-      await activeSession.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-      break;
-    }
-    case 'ice_candidate': {
-      if (!activeSession) return;
-      const candidate = data.candidate as RTCIceCandidateInit;
-      await activeSession.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      break;
-    }
-    case 'call_end':
-    case 'call_reject': {
-      if (activeSession) {
-        activeSession.localStream?.getTracks().forEach((t) => t.stop());
-        activeSession.peerConnection.close();
-        activeSession = null;
+  try {
+    switch (data.type) {
+      case 'call_answer': {
+        if (!activeSession) return;
+        const sdp = data.sdp as RTCSessionDescriptionInit;
+        await activeSession.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+        break;
       }
-      emitCallEvent(data.type as string, data);
-      break;
+      case 'ice_candidate': {
+        if (!activeSession) return;
+        const candidate = data.candidate as RTCIceCandidateInit;
+        if (candidate) {
+          await activeSession.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        break;
+      }
+      case 'call_end':
+      case 'call_reject': {
+        if (activeSession) {
+          activeSession.localStream?.getTracks().forEach((t) => t.stop());
+          activeSession.peerConnection.close();
+          activeSession = null;
+        }
+        emitCallEvent(data.type as string, data);
+        break;
+      }
     }
+  } catch (err) {
+    console.error('[webrtc] handleSignaling error', { type: data.type, err });
+    // При ошибке SDP/ICE — завершаем звонок чтобы не зависал в connecting
+    emitCallEvent('call_ended', { reason: 'signaling_error' });
   }
 }
 

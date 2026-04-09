@@ -119,7 +119,14 @@ export function createVoiceRecorder(): {
   return {
     start: async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      // H10: Safari не поддерживает audio/webm — fallback на mp4 или дефолт
+      const preferredMime = 'audio/webm;codecs=opus';
+      const mimeType = typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(preferredMime)
+        ? preferredMime
+        : typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : undefined;
+      mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       chunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -134,7 +141,7 @@ export function createVoiceRecorder(): {
         if (!mediaRecorder) { resolve(new Blob()); return; }
 
         mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
+          const blob = new Blob(chunks, { type: mediaRecorder!.mimeType || 'audio/webm' });
           // Остановить микрофон
           mediaRecorder!.stream.getTracks().forEach((t) => t.stop());
           resolve(blob);

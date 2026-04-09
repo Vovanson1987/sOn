@@ -44,7 +44,7 @@ export function onCallEvent(handler: CallEventHandler): () => void {
 
 function emit(event: CallEvent) {
   for (const fn of listeners) {
-    try { fn(event); } catch { /* skip broken listener */ }
+    try { fn(event); } catch (err) { console.error('[livekit] listener error', err); }
   }
 }
 
@@ -107,7 +107,7 @@ export async function leaveRoom(): Promise<void> {
   if (!activeRoom) return;
   try {
     activeRoom.disconnect(true);
-  } catch { /* ignore */ }
+  } catch (err) { console.error('[livekit] disconnect error', err); }
   activeRoom = null;
 }
 
