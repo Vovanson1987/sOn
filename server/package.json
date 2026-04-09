@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "NODE_ENV=test jest --forceExit --detectOpenHandles",
-    "start": "node index.js"
+    "start": "node index.js",
+    "migrate": "node-pg-migrate up --database-url-var DATABASE_URL --migrations-dir migrations",
+    "migrate:down": "node-pg-migrate down --database-url-var DATABASE_URL --migrations-dir migrations",
+    "migrate:status": "node-pg-migrate status --database-url-var DATABASE_URL --migrations-dir migrations",
+    "migrate:create": "node-pg-migrate create --migrations-dir migrations"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +27,7 @@
     "jsonwebtoken": "^9.0.3",
     "minio": "^8.0.7",
     "multer": "^2.1.1",
+    "node-pg-migrate": "^8.0.4",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
