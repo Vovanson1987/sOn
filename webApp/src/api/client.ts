@@ -586,6 +586,35 @@ export function deleteStory(storyId: string) {
   return request<{ ok: boolean }>(`/api/stories/${storyId}`, { method: 'DELETE' });
 }
 
+// ==================== P2.8: Stickers ====================
+
+export function getStickerPacks() {
+  return request<{ packs: Array<Record<string, unknown>> }>('/api/sticker-packs');
+}
+
+export function getMyStickerPacks() {
+  return request<{ packs: Array<Record<string, unknown>> }>('/api/sticker-packs/my');
+}
+
+export function getStickers(packId: string) {
+  return request<{ stickers: Array<{ id: string; emoji: string; file_url: string; file_type: string }> }>(`/api/sticker-packs/${packId}/stickers`);
+}
+
+export function addStickerPack(packId: string) {
+  return request<{ ok: boolean }>(`/api/sticker-packs/${packId}/add`, { method: 'POST' });
+}
+
+export function removeStickerPack(packId: string) {
+  return request<{ ok: boolean }>(`/api/sticker-packs/${packId}/add`, { method: 'DELETE' });
+}
+
+export function createStickerPack(name: string, description?: string, cover_url?: string) {
+  return request<Record<string, unknown>>('/api/sticker-packs', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, cover_url }),
+  });
+}
+
 // ==================== P2.10: URL Preview ====================
 
 export function getOgPreview(url: string) {
