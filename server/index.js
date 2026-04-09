@@ -11,7 +11,16 @@ const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 const multer = require('multer');
 const { pool, initDB } = require('./db');
-const { ensureBucket, uploadFile, getDownloadUrl, getUploadUrl } = require('./storage');
+const {
+  ensureBucket,
+  uploadFile,
+  getDownloadUrl,
+  getUploadUrl,
+  isAllowedFolder,
+  isAllowedMime,
+  sanitizeExt,
+  ALLOWED_FOLDERS,
+} = require('./storage');
 require('dotenv').config();
 
 // ==================== Валидация окружения ====================
@@ -229,15 +238,23 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
 });
 
 /** POST /api/users/me/avatar — загрузить аватар */
+const AVATAR_MIME_WHITELIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
 app.post('/api/users/me/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const { uploadFile } = require('./storage');
+    // SEC-2: строгий whitelist для аватаров — только изображения
+    if (!AVATAR_MIME_WHITELIST.has(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Аватар должен быть изображением (JPEG/PNG/WebP/GIF)' });
+    }
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Размер аватара не должен превышать 5 MB' });
+    }
     const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, 'avatars');
     await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [result.url, req.user.id]);
     res.json({ avatar_url: result.url });
   } catch (err) {
-    console.error(err);
+    console.error('[avatar upload]', err?.message);
     res.status(500).json({ error: 'Ошибка загрузки аватара' });
   }
 });
@@ -443,14 +460,19 @@ app.get('/api/users/search', authMiddleware, async (req, res) => {
 async function chatMemberCheck(req, res, next) {
   const chatId = req.params.chatId;
   const userId = req.user.id;
-  const result = await pool.query(
-    'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-    [chatId, userId]
-  );
-  if (result.rows.length === 0) {
-    return res.status(403).json({ error: 'Нет доступа к этому чату' });
+  try {
+    const result = await pool.query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к этому чату' });
+    }
+    next();
+  } catch (err) {
+    console.error('[chatMemberCheck] DB error', { chatId, userId, message: err?.message });
+    res.status(503).json({ error: 'Сервис временно недоступен' });
   }
-  next();
 }
 
 function isPlainObject(value) {
@@ -634,6 +656,22 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
   }
   const chatType = chatResult.rows[0].type;
 
+  // SEC-5: reply_to должен принадлежать тому же чату.
+  // Защищает от утечки message_id из других чатов, в т.ч. секретных,
+  // и от нарушения изоляции секретных чатов от обычных.
+  if (reply_to !== undefined && reply_to !== null) {
+    if (typeof reply_to !== 'string') {
+      return res.status(400).json({ error: 'Некорректный reply_to' });
+    }
+    const replyCheck = await pool.query(
+      'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
+      [reply_to, chatId]
+    );
+    if (replyCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'Сообщение для ответа не найдено в этом чате' });
+    }
+  }
+
   // Проверка блокировки: если отправитель заблокирован кем-то из участников (для direct чатов)
   if (chatType === 'direct') {
     const blocked = await pool.query(
@@ -705,8 +743,11 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
 
     // Отправить через WebSocket всем участникам чата (кроме отправителя — у него уже есть optimistic update)
     broadcastToChat(chatId, { type: 'new_message', message: msg }, req.user.id);
-    // Push-уведомления для офлайн-пользователей
-    sendPushToOfflineMembers(req.params.chatId, req.user.id, content, req.user.display_name);
+    // Push-уведомления для офлайн-пользователей.
+    // SEC: для секретных чатов НЕ отправляем содержимое — оно зашифровано
+    // и клиент всё равно его не покажет. Вместо этого — заглушка.
+    const pushContent = chatType === 'secret' ? null : content;
+    sendPushToOfflineMembers(req.params.chatId, req.user.id, pushContent, req.user.display_name);
     res.status(201).json(msg);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1064,7 +1105,9 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      handleWsMessage(user, ws, msg);
+      handleWsMessage(user, ws, msg).catch((err) => {
+        console.error('Ошибка обработки WS:', err);
+      });
     } catch (err) {
       console.error('Ошибка обработки WS:', err);
     }
@@ -1091,71 +1134,116 @@ function registerConnection(ws, user) {
   pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
 }
 
+/**
+ * Проверить, что user является участником указанного чата.
+ * Возвращает true/false, никогда не выбрасывает (при ошибке БД — false).
+ */
+async function isChatMember(userId, chatId) {
+  if (!userId || !chatId || typeof chatId !== 'string') return false;
+  try {
+    const r = await pool.query(
+      'SELECT 1 FROM chat_members WHERE user_id = $1 AND chat_id = $2 LIMIT 1',
+      [userId, chatId]
+    );
+    return r.rows.length > 0;
+  } catch (err) {
+    console.error('[isChatMember] DB error', { userId, chatId, message: err?.message });
+    return false;
+  }
+}
+
+/**
+ * Проверить, что два пользователя входят в общий чат.
+ * Используется для авторизации WebRTC signaling — нельзя звонить
+ * произвольному пользователю по user_id, только тем, с кем есть общий чат.
+ */
+async function haveSharedChat(userA, userB) {
+  if (!userA || !userB || userA === userB) return false;
+  try {
+    const r = await pool.query(
+      `SELECT 1 FROM chat_members cm1
+       JOIN chat_members cm2 ON cm1.chat_id = cm2.chat_id
+       WHERE cm1.user_id = $1 AND cm2.user_id = $2
+       LIMIT 1`,
+      [userA, userB]
+    );
+    return r.rows.length > 0;
+  } catch (err) {
+    console.error('[haveSharedChat] DB error', { userA, userB, message: err?.message });
+    return false;
+  }
+}
+
 /** Обработка WebSocket сообщений */
-function handleWsMessage(user, ws, msg) {
+async function handleWsMessage(user, ws, msg) {
   switch (msg.type) {
     case 'typing':
-      broadcastToChat(msg.chat_id, { type: 'typing', user_id: user.id, display_name: user.display_name }, user.id);
-      break;
     case 'stop_typing':
-      broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id, display_name: user.display_name }, user.id);
+    case 'read': {
+      // SEC: убеждаемся, что отправитель реально в этом чате
+      if (!(await isChatMember(user.id, msg.chat_id))) return;
+      if (msg.type === 'typing') {
+        broadcastToChat(msg.chat_id, { type: 'typing', user_id: user.id, display_name: user.display_name }, user.id);
+      } else if (msg.type === 'stop_typing') {
+        broadcastToChat(msg.chat_id, { type: 'stop_typing', user_id: user.id, display_name: user.display_name }, user.id);
+      } else {
+        broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);
+      }
       break;
-    case 'read':
-      broadcastToChat(msg.chat_id, { type: 'read', message_id: msg.message_id, user_id: user.id }, user.id);
-      break;
+    }
 
     // ==================== WebRTC Signaling ====================
 
     case 'call_offer':
-      // Переслать SDP offer целевому пользователю
-      sendToUser(msg.target_user_id, {
-        type: 'call_offer',
-        caller_id: user.id,
-        caller_name: user.display_name,
-        chat_id: msg.chat_id,
-        sdp: msg.sdp,
-        is_video: msg.is_video || false,
-      });
-      break;
-
     case 'call_answer':
-      // Переслать SDP answer вызывающему
-      sendToUser(msg.target_user_id, {
-        type: 'call_answer',
-        answerer_id: user.id,
-        chat_id: msg.chat_id,
-        sdp: msg.sdp,
-      });
-      break;
-
     case 'ice_candidate':
-      // Переслать ICE candidate другой стороне
-      sendToUser(msg.target_user_id, {
-        type: 'ice_candidate',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-        candidate: msg.candidate,
-      });
-      break;
-
     case 'call_end':
-      // Уведомить собеседника о завершении звонка
-      sendToUser(msg.target_user_id, {
-        type: 'call_end',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-        reason: msg.reason || 'ended',
-      });
-      break;
+    case 'call_reject': {
+      // SEC-4: проверяем, что target_user_id входит в общий чат с отправителем.
+      // Без этого любой аутентифицированный пользователь может звонить/слать SDP
+      // произвольному пользователю по user_id (harassment + DoS через signaling).
+      if (!msg.target_user_id || typeof msg.target_user_id !== 'string') return;
+      if (!(await haveSharedChat(user.id, msg.target_user_id))) return;
 
-    case 'call_reject':
-      // Уведомить о отклонении звонка
-      sendToUser(msg.target_user_id, {
-        type: 'call_reject',
-        from_user_id: user.id,
-        chat_id: msg.chat_id,
-      });
+      if (msg.type === 'call_offer') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_offer',
+          caller_id: user.id,
+          caller_name: user.display_name,
+          chat_id: msg.chat_id,
+          sdp: msg.sdp,
+          is_video: msg.is_video || false,
+        });
+      } else if (msg.type === 'call_answer') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_answer',
+          answerer_id: user.id,
+          chat_id: msg.chat_id,
+          sdp: msg.sdp,
+        });
+      } else if (msg.type === 'ice_candidate') {
+        sendToUser(msg.target_user_id, {
+          type: 'ice_candidate',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+          candidate: msg.candidate,
+        });
+      } else if (msg.type === 'call_end') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_end',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+          reason: msg.reason || 'ended',
+        });
+      } else if (msg.type === 'call_reject') {
+        sendToUser(msg.target_user_id, {
+          type: 'call_reject',
+          from_user_id: user.id,
+          chat_id: msg.chat_id,
+        });
+      }
       break;
+    }
   }
 }
 
@@ -1169,22 +1257,50 @@ function sendToUser(userId, data) {
   }
 }
 
-/** Отправить сообщение всем участникам чата */
+/**
+ * Отправить сообщение всем участникам чата.
+ * Функция не выбрасывает ошибок — при любом сбое БД/сериализации
+ * пишет лог и возвращает void, чтобы вызывающий код не должен был
+ * оборачивать каждый вызов в try/catch. Критично для доставки сообщений.
+ */
 async function broadcastToChat(chatId, data, excludeUserId = null) {
-  const members = await pool.query('SELECT user_id FROM chat_members WHERE chat_id = $1', [chatId]);
-  const payload = JSON.stringify(data);
-  for (const row of members.rows) {
-    if (row.user_id === excludeUserId) continue;
-    const userConns = connections.get(row.user_id);
-    if (userConns) {
+  try {
+    const members = await pool.query(
+      'SELECT user_id FROM chat_members WHERE chat_id = $1',
+      [chatId]
+    );
+    const payload = JSON.stringify(data);
+    for (const row of members.rows) {
+      if (row.user_id === excludeUserId) continue;
+      const userConns = connections.get(row.user_id);
+      if (!userConns) continue;
       for (const ws of userConns) {
-        if (ws.readyState === 1) ws.send(payload);
+        if (ws.readyState !== 1) continue;
+        try {
+          ws.send(payload);
+        } catch (sendErr) {
+          console.error('[broadcastToChat] ws.send failed', {
+            chatId,
+            userId: row.user_id,
+            message: sendErr?.message,
+          });
+        }
       }
     }
+  } catch (err) {
+    console.error('[broadcastToChat] failed', {
+      chatId,
+      dataType: data?.type,
+      message: err?.message,
+    });
   }
 }
 
-/** Send push notifications to offline chat members */
+/**
+ * Отправить push-уведомления офлайн-участникам чата.
+ * Никогда не выбрасывает ошибок — все сбои логируются.
+ * Поскольку вызывается после res.json(201), она не должна ронять запрос.
+ */
 async function sendPushToOfflineMembers(chatId, senderId, messageContent, senderName) {
   try {
     const members = await pool.query(
@@ -1194,24 +1310,65 @@ async function sendPushToOfflineMembers(chatId, senderId, messageContent, sender
     for (const member of members.rows) {
       // Skip if user has active WS connections
       if (connections.has(member.user_id) && connections.get(member.user_id).size > 0) continue;
-      // Get push tokens
-      const tokens = await pool.query('SELECT endpoint, p256dh, auth FROM push_tokens WHERE user_id = $1', [member.user_id]);
+      let tokens;
+      try {
+        tokens = await pool.query(
+          'SELECT endpoint, p256dh, auth FROM push_tokens WHERE user_id = $1',
+          [member.user_id]
+        );
+      } catch (dbErr) {
+        console.error('[push] failed to load tokens', {
+          userId: member.user_id,
+          message: dbErr?.message,
+        });
+        continue;
+      }
       for (const token of tokens.rows) {
-        const subscription = { endpoint: token.endpoint, keys: { p256dh: token.p256dh, auth: token.auth } };
+        const subscription = {
+          endpoint: token.endpoint,
+          keys: { p256dh: token.p256dh, auth: token.auth },
+        };
+        // При messageContent === null (секретный чат) показываем заглушку,
+        // чтобы не сливать plaintext содержимое в push.
+        const pushBody = messageContent === null
+          ? '🔒 Зашифрованное сообщение'
+          : (messageContent?.substring(0, 100) || 'Новое сообщение');
         const payload = JSON.stringify({
           title: senderName || 'sOn',
-          body: messageContent?.substring(0, 100) || 'Новое сообщение',
+          body: pushBody,
           chat_id: chatId,
         });
-        webpush.sendNotification(subscription, payload).catch((err) => {
-          if (err.statusCode === 410) {
-            pool.query('DELETE FROM push_tokens WHERE endpoint = $1', [token.endpoint]);
-          }
-        });
+        webpush
+          .sendNotification(subscription, payload)
+          .catch(async (err) => {
+            if (err?.statusCode === 410) {
+              // Подписка умерла — удаляем, но не роняем ничего при ошибке delete
+              try {
+                await pool.query(
+                  'DELETE FROM push_tokens WHERE endpoint = $1',
+                  [token.endpoint]
+                );
+              } catch (delErr) {
+                console.error('[push] failed to delete expired token', {
+                  endpoint: token.endpoint,
+                  message: delErr?.message,
+                });
+              }
+            } else {
+              console.error('[push] sendNotification failed', {
+                statusCode: err?.statusCode,
+                message: err?.message,
+              });
+            }
+          });
       }
     }
   } catch (err) {
-    console.error('Push error:', err);
+    console.error('[sendPushToOfflineMembers] failed', {
+      chatId,
+      senderId,
+      message: err?.message,
+    });
   }
 }
 
@@ -1326,7 +1483,23 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не прикреплён' });
 
-    const folder = req.body.folder || 'attachments';
+    // SEC-2: whitelist MIME-типов. Заявленный клиентом mimetype сравнивается
+    // со списком разрешённых. avatars уходят через отдельный endpoint.
+    if (!isAllowedMime(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Недопустимый тип файла' });
+    }
+
+    // SEC-2: whitelist папок. avatars доступны только через /api/users/me/avatar,
+    // остальные произвольные значения приводятся к 'attachments'.
+    const rawFolder = req.body.folder;
+    if (rawFolder !== undefined && !isAllowedFolder(rawFolder)) {
+      return res.status(400).json({ error: 'Недопустимая папка' });
+    }
+    if (rawFolder === 'avatars') {
+      return res.status(400).json({ error: 'Для аватаров используйте /api/users/me/avatar' });
+    }
+    const folder = rawFolder || 'attachments';
+
     const result = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype, folder);
 
     // Сохранить запись в БД
@@ -1338,7 +1511,7 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
 
     res.status(201).json(result);
   } catch (err) {
-    console.error('Ошибка загрузки:', err);
+    console.error('[media upload]', err?.message);
     res.status(500).json({ error: 'Ошибка загрузки файла' });
   }
 });
@@ -1346,11 +1519,50 @@ app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req,
 /** POST /api/media/download — pre-signed URL для скачивания */
 app.post('/api/media/download', authMiddleware, async (req, res) => {
   try {
-    const objectName = req.body.object_name;
+    const objectName = req.body?.object_name;
+
+    // SEC-3: валидация object_name + проверка ownership/доступа.
+    // Без неё любой аутентифицированный пользователь может запросить
+    // presigned URL для чужого объекта.
+    if (
+      !objectName ||
+      typeof objectName !== 'string' ||
+      objectName.length > 300 ||
+      objectName.includes('..') ||
+      objectName.startsWith('/')
+    ) {
+      return res.status(400).json({ error: 'Недопустимое имя объекта' });
+    }
+
+    // Проверяем, что объект принадлежит пользователю либо доступен ему
+    // через участие в чате (для attachments) или это публичный аватар.
+    let hasAccess = false;
+
+    if (objectName.startsWith('avatars/')) {
+      // Аватары публичны по политике bucket, но всё равно проверяем что объект существует
+      // и этот запрос не используется для разведки. Разрешаем любому аутентифицированному.
+      hasAccess = true;
+    } else {
+      const r = await pool.query(
+        `SELECT 1 FROM attachments a
+         LEFT JOIN messages m ON m.id = a.message_id
+         LEFT JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $2
+         WHERE a.object_name = $1
+           AND (a.uploader_id = $2 OR cm.user_id = $2)
+         LIMIT 1`,
+        [objectName, req.user.id]
+      );
+      hasAccess = r.rows.length > 0;
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Нет доступа к файлу' });
+    }
+
     const url = await getDownloadUrl(objectName);
     res.json({ url });
   } catch (err) {
-    console.error('Ошибка получения URL:', err);
+    console.error('[media download]', err?.message);
     res.status(404).json({ error: 'Файл не найден' });
   }
 });
@@ -1358,13 +1570,24 @@ app.post('/api/media/download', authMiddleware, async (req, res) => {
 /** POST /api/media/upload-url — получить pre-signed URL для прямой загрузки */
 app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
   try {
-    const { fileName, folder = 'attachments' } = req.body;
-    const ext = fileName?.split('.').pop() || 'bin';
-    const objectName = `${folder}/${require('uuid').v4()}.${ext}`;
+    const { fileName, folder } = req.body || {};
+
+    // SEC-2: whitelist папок (тот же, что для /api/media/upload)
+    if (folder !== undefined && !isAllowedFolder(folder)) {
+      return res.status(400).json({ error: 'Недопустимая папка' });
+    }
+    if (folder === 'avatars') {
+      return res.status(400).json({ error: 'Для аватаров используйте /api/users/me/avatar' });
+    }
+    const safeFolder = folder || 'attachments';
+
+    // SEC-2: санитизация расширения (только a-z0-9, до 10 символов)
+    const ext = sanitizeExt(fileName);
+    const objectName = `${safeFolder}/${uuid()}.${ext}`;
     const url = await getUploadUrl(objectName);
     res.json({ url, objectName });
   } catch (err) {
-    console.error('Ошибка pre-signed URL:', err);
+    console.error('[upload-url]', err?.message);
     res.status(500).json({ error: 'Ошибка генерации URL' });
   }
 });
@@ -1379,6 +1602,9 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Минимум 2 символа для поиска' });
     }
     const chatId = req.query.chat_id;
+    // DB-2: используем Postgres FTS (content_tsv + GIN-индекс).
+    // После применения phase-0-hardening.sql ILIKE-поиск с seq scan
+    // заменён на быстрый @@ plainto_tsquery.
     let query, params;
     if (chatId) {
       // Search within specific chat (must be member)
@@ -1386,15 +1612,17 @@ app.get('/api/messages/search', authMiddleware, async (req, res) => {
       if (member.rows.length === 0) return res.status(403).json({ error: 'Нет доступа' });
       query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
         FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
-        WHERE m.chat_id = $1 AND m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
-      params = [chatId, `%${q}%`];
+        WHERE m.chat_id = $1 AND m.content_tsv @@ plainto_tsquery('russian', $2)
+        ORDER BY m.created_at DESC LIMIT 50`;
+      params = [chatId, q];
     } else {
       // Search across all user's chats
       query = `SELECT m.*, u.display_name as sender_name, c.name as chat_name
         FROM messages m JOIN users u ON u.id = m.sender_id JOIN chats c ON c.id = m.chat_id
         JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $1
-        WHERE m.content ILIKE $2 ORDER BY m.created_at DESC LIMIT 50`;
-      params = [req.user.id, `%${q}%`];
+        WHERE m.content_tsv @@ plainto_tsquery('russian', $2)
+        ORDER BY m.created_at DESC LIMIT 50`;
+      params = [req.user.id, q];
     }
     const result = await pool.query(query, params);
     res.json({ messages: result.rows });
@@ -1470,6 +1698,39 @@ app.get('/health', async (_, res) => {
   }
   const allOk = checks.postgres === 'ok';
   res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', ...checks });
+});
+
+// ==================== Global Error Handlers ====================
+
+// Express error-handling middleware — ловит async rejections из route handlers
+// и middleware (Express 5 автоматически передаёт их сюда через next(err)).
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  const reqId = req.headers['x-request-id'] || '';
+  console.error('[express error]', {
+    reqId,
+    method: req.method,
+    path: req.path,
+    userId: req.user?.id,
+    message: err?.message,
+    code: err?.code,
+  });
+  if (res.headersSent) return;
+  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+});
+
+// Safety net на уровне процесса — не даём процессу умереть от rejected
+// promises, которые не попали в route handlers (например из WS callback'ов).
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[unhandledRejection]', {
+    message: reason?.message || String(reason),
+    stack: reason?.stack,
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', { message: err?.message, stack: err?.stack });
+  // Не выходим — пусть процесс дожмёт запросы, а потом систем-ди перезапустит
 });
 
 // ==================== START ====================

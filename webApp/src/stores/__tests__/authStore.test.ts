@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 vi.mock('@/api/client', () => ({
   setUnauthorizedHandler: vi.fn(),
   setToken: vi.fn(),
   removeToken: vi.fn(),
+  getMe: vi.fn(),
 }));
 
 import { useAuthStore } from '../authStore';
-import { setToken, removeToken } from '@/api/client';
+import { setToken, removeToken, getMe } from '@/api/client';
 
 // Мок localStorage
 const localStorageMock = (() => {
@@ -29,6 +31,7 @@ describe('authStore', () => {
       token: null,
       user: null,
       isAuthenticated: false,
+      isRestoring: false,
     });
   });
 
@@ -39,7 +42,7 @@ describe('authStore', () => {
     expect(isAuthenticated).toBe(false);
   });
 
-  it('login сохраняет токен и пользователя', () => {
+  it('login сохраняет токен и пользователя в памяти', () => {
     const user = { id: 'u1', email: 'test@test.com', display_name: 'Тест' };
     useAuthStore.getState().login('jwt-token', user);
 
@@ -49,12 +52,14 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(true);
   });
 
-  it('login записывает в localStorage', () => {
+  it('login кеширует ТОЛЬКО профиль в localStorage (без токена)', () => {
     const user = { id: 'u1', email: 'test@test.com', display_name: 'Тест' };
     useAuthStore.getState().login('jwt-token', user);
 
     expect(setToken).toHaveBeenCalledWith('jwt-token');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('son-token', 'jwt-token');
+    // SEC-1: токен больше НЕ пишется в localStorage
+    expect(localStorageMock.setItem).not.toHaveBeenCalledWith('son-token', expect.anything());
+    // Профиль кешируется — он не чувствителен
     expect(localStorageMock.setItem).toHaveBeenCalledWith('son-user', JSON.stringify(user));
   });
 
@@ -68,48 +73,67 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(false);
   });
 
-  it('logout удаляет из localStorage', () => {
+  it('logout удаляет кеш профиля из localStorage', () => {
     useAuthStore.getState().login('jwt-token', { id: 'u1', email: 'e', display_name: 'n' });
     useAuthStore.getState().logout();
 
     expect(removeToken).toHaveBeenCalled();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-token');
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-user');
   });
 
-  it('restore восстанавливает сессию из localStorage', () => {
-    const user = { id: 'u1', email: 'test@test.com', display_name: 'Тест' };
-    localStorageMock.setItem('son-token', 'saved-token');
-    localStorageMock.setItem('son-user', JSON.stringify(user));
+  it('restore получает пользователя через GET /api/users/me (cookie)', async () => {
+    const user = {
+      id: 'u1',
+      email: 'test@test.com',
+      display_name: 'Тест',
+      is_online: true,
+    };
+    (getMe as ReturnType<typeof vi.fn>).mockResolvedValueOnce(user);
 
-    const result = useAuthStore.getState().restore();
+    const result = await useAuthStore.getState().restore();
     expect(result).toBe(true);
 
-    expect(setToken).toHaveBeenCalledWith('saved-token');
     const state = useAuthStore.getState();
-    expect(state.token).toBe('saved-token');
-    expect(state.user).toEqual(user);
     expect(state.isAuthenticated).toBe(true);
+    expect(state.user?.id).toBe('u1');
+    // Токен НЕ восстанавливается из localStorage
+    expect(setToken).not.toHaveBeenCalled();
   });
 
-  it('restore возвращает false без данных', () => {
-    const result = useAuthStore.getState().restore();
+  it('restore возвращает false и чистит localStorage при ошибке', async () => {
+    (getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('401'));
+    localStorageMock.setItem('son-user', JSON.stringify({
+      id: 'u1', email: 'e', display_name: 'n',
+    }));
+
+    const result = await useAuthStore.getState().restore();
     expect(result).toBe(false);
-    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('son-user');
   });
 
-  it('restore возвращает false при невалидном JSON', () => {
-    localStorageMock.setItem('son-token', 'token');
-    localStorageMock.setItem('son-user', 'not-json{');
+  it('restore возвращает false если getMe возвращает 401', async () => {
+    (getMe as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('Сессия истекла. Войдите заново.')
+    );
 
-    const result = useAuthStore.getState().restore();
+    const result = await useAuthStore.getState().restore();
     expect(result).toBe(false);
   });
 
-  it('restore не восстанавливает если только токен без user', () => {
-    localStorageMock.setItem('son-token', 'token');
+  it('restore устанавливает isRestoring на время запроса', async () => {
+    let resolvePromise: (v: unknown) => void = () => undefined;
+    (getMe as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => { resolvePromise = resolve; })
+    );
 
-    const result = useAuthStore.getState().restore();
-    expect(result).toBe(false);
+    const p = useAuthStore.getState().restore();
+    expect(useAuthStore.getState().isRestoring).toBe(true);
+
+    resolvePromise({ id: 'u1', email: 'e', display_name: 'n' });
+    await p;
+    expect(useAuthStore.getState().isRestoring).toBe(false);
   });
 });

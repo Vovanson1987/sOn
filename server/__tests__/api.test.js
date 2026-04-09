@@ -29,17 +29,42 @@ jest.mock('../db', () => ({
   initDB: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../storage', () => ({
-  ensureBucket: jest.fn().mockResolvedValue(undefined),
-  uploadFile: jest.fn().mockResolvedValue({
-    objectName: 'attachments/test.jpg',
-    url: 'http://localhost:9000/son-files/attachments/test.jpg',
-    size: 1024,
-    mimeType: 'image/jpeg',
-  }),
-  getDownloadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-url'),
-  getUploadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-upload-url'),
-}));
+jest.mock('../storage', () => {
+  const ALLOWED_FOLDERS = new Set([
+    'attachments', 'images', 'voice', 'audio', 'video', 'files', 'avatars',
+  ]);
+  const ALLOWED_MIME_TYPES = new Set([
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/webm', 'audio/wav',
+    'video/mp4', 'video/webm',
+    'application/pdf', 'application/zip', 'text/plain', 'text/csv',
+  ]);
+  return {
+    ensureBucket: jest.fn().mockResolvedValue(undefined),
+    uploadFile: jest.fn().mockResolvedValue({
+      objectName: 'attachments/test.jpg',
+      url: 'http://localhost:9000/son-files/attachments/test.jpg',
+      size: 1024,
+      mimeType: 'image/jpeg',
+    }),
+    getDownloadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-url'),
+    getUploadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-upload-url'),
+    isAllowedFolder: (folder) => typeof folder === 'string' && ALLOWED_FOLDERS.has(folder),
+    isAllowedMime: (mime) => typeof mime === 'string' && ALLOWED_MIME_TYPES.has(mime),
+    sanitizeExt: (fileName) => {
+      if (!fileName || typeof fileName !== 'string') return 'bin';
+      const lastDot = fileName.lastIndexOf('.');
+      if (lastDot === -1 || lastDot === fileName.length - 1) return 'bin';
+      const rawExt = fileName.slice(lastDot + 1).toLowerCase();
+      if (!/^[a-z0-9]{1,10}$/.test(rawExt)) return 'bin';
+      return rawExt;
+    },
+    ALLOWED_FOLDERS,
+    ALLOWED_MIME_TYPES,
+    BUCKET: 'son-files',
+    PUBLIC_URL: 'http://localhost:9000',
+  };
+});
 
 jest.mock('web-push', () => ({
   setVapidDetails: jest.fn(),
@@ -520,7 +545,10 @@ describe('POST /api/media/upload', () => {
     const res = await request(app)
       .post('/api/media/upload')
       .set('Authorization', `Bearer ${makeToken()}`)
-      .attach('file', Buffer.from('test-content'), 'test.jpg');
+      .attach('file', Buffer.from('test-content'), {
+        filename: 'test.jpg',
+        contentType: 'image/jpeg',
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.objectName).toContain('attachments/');
@@ -533,14 +561,73 @@ describe('POST /api/media/upload', () => {
 
     expect(res.status).toBe(400);
   });
+
+  it('возвращает 400 при недопустимом MIME', async () => {
+    const res = await request(app)
+      .post('/api/media/upload')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .attach('file', Buffer.from('<?php phpinfo(); ?>'), {
+        filename: 'evil.php',
+        contentType: 'application/x-httpd-php',
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('возвращает 400 при попытке загрузить в avatars через общий upload', async () => {
+    const res = await request(app)
+      .post('/api/media/upload')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .field('folder', 'avatars')
+      .attach('file', Buffer.from('test'), {
+        filename: 'a.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('POST /api/media/download', () => {
-  it('возвращает pre-signed URL', async () => {
+  it('возвращает pre-signed URL когда у пользователя есть доступ', async () => {
+    // Ownership check: SELECT 1 FROM attachments ... returns row
+    mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+
     const res = await request(app)
       .post('/api/media/download')
       .set('Authorization', `Bearer ${makeToken()}`)
       .send({ object_name: 'attachments/test.jpg' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.url).toContain('presigned');
+  });
+
+  it('возвращает 403 когда объект не принадлежит пользователю', async () => {
+    // Ownership check: SELECT 1 FROM attachments ... returns NO rows
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/media/download')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ object_name: 'attachments/someone-elses-file.jpg' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('возвращает 400 при path traversal в object_name', async () => {
+    const res = await request(app)
+      .post('/api/media/download')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ object_name: '../../../etc/passwd' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('разрешает скачивание аватара любому аутентифицированному', async () => {
+    const res = await request(app)
+      .post('/api/media/download')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ object_name: 'avatars/uuid.jpg' });
 
     expect(res.status).toBe(200);
     expect(res.body.url).toContain('presigned');
