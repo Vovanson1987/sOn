@@ -38,7 +38,22 @@ services:
     image: redis:7-alpine
     container_name: son-redis
     restart: always
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    # P1.5: persistence включена.
+    #  --appendonly yes + --appendfsync everysec — AOF с fsync раз в секунду
+    #    (сбалансированный компромисс: в худшем случае теряем до 1 с данных).
+    #  --save 900 1 / 300 10 / 60 10000 — периодические RDB-снепшоты
+    #    для быстрой холодной загрузки.
+    # Без persistence при рестарте контейнера сбрасываются rate-limit
+    # счётчики, сессии и любые кэши.
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
     volumes:
       - redis_data:/data
     healthcheck:
@@ -112,6 +127,11 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?required}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # P1.2 observability — если DSN не задан, Sentry не инициализируется
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: ${LOG_PRETTY:-false}
     deploy:
       resources:
         limits:

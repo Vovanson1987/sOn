@@ -1,4 +1,10 @@
 /** sOn Messenger — Node.js API сервер + WebSocket */
+// P1.2: Sentry должен инициализироваться ДО всех остальных require,
+// чтобы корректно инструментировать http/express.
+require('dotenv').config();
+const sentry = require('./sentry');
+sentry.init();
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -16,12 +22,13 @@ const {
   uploadFile,
   getDownloadUrl,
   getUploadUrl,
+  minioHealth,
   isAllowedFolder,
   isAllowedMime,
   sanitizeExt,
   ALLOWED_FOLDERS,
 } = require('./storage');
-require('dotenv').config();
+const { logger, httpLogger } = require('./logger');
 
 // ==================== Валидация окружения ====================
 
@@ -63,9 +70,33 @@ app.set('trust proxy', 1);
 
 // ==================== Безопасность ====================
 
-// Заголовки безопасности (CSP, HSTS, X-Frame-Options и т.д.)
+// P1.3: structured logging + request-ID (pino-http).
+// Должен быть самым первым middleware, чтобы логировать абсолютно все запросы,
+// включая те что дальше падают на CORS или rate-limit.
+app.use(httpLogger);
+
+// P1.10: Заголовки безопасности через helmet.
+// API-сервер отдаёт только JSON (HTML страницы — через nginx в web-контейнере),
+// поэтому CSP здесь максимально жёсткий: default-src 'none'.
+// Основной CSP для SPA задаётся в webApp/nginx.conf.
 app.use(helmet({
-  contentSecurityPolicy: false, // CSP управляется через nginx
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  // HSTS — Cloudflare Tunnel уже добавляет, но для прямого доступа тоже нужен.
+  strictTransportSecurity: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: false, // preload не ставим — домен может измениться
+  },
+  // Запрещаем MIME sniffing и embedding.
+  xContentTypeOptions: true,
+  xFrameOptions: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  // Не раскрываем Express в заголовке X-Powered-By (helmet убирает по умолчанию).
 }));
 
 // CORS — только разрешённые домены
@@ -107,6 +138,26 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
+
+// P1.11: отдельный лимит на отправку сообщений — 60/мин (~1 msg/sec).
+// Глобальный apiLimiter (200/мин) слишком мягкий для спам-защиты.
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Слишком много сообщений. Подождите.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// P1.11: лимит на загрузку файлов — 30/мин (тяжёлые операции + MinIO writes).
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Слишком много загрузок. Подождите.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // SEC: Ограничить размер JSON body (1MB)
 app.use(express.json({ limit: '1mb' }));
 
@@ -221,6 +272,21 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
       values.push(display_name);
     }
     if (avatar_url !== undefined) {
+      // P1.12: валидация avatar_url — только http/https протокол, до 500 символов.
+      // Защита от SSRF (javascript:, file://, data:, внутренние IP).
+      if (avatar_url !== null) {
+        if (typeof avatar_url !== 'string' || avatar_url.length > 500) {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+        try {
+          const parsed = new URL(avatar_url);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'avatar_url должен использовать http или https' });
+          }
+        } catch {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+      }
       updates.push(`avatar_url = $${idx++}`);
       values.push(avatar_url);
     }
@@ -240,7 +306,7 @@ app.patch('/api/users/me', authMiddleware, async (req, res) => {
 /** POST /api/users/me/avatar — загрузить аватар */
 const AVATAR_MIME_WHITELIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
-app.post('/api/users/me/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+app.post('/api/users/me/avatar', authMiddleware, uploadLimiter, upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     // SEC-2: строгий whitelist для аватаров — только изображения
@@ -641,7 +707,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (r
 });
 
 /** POST /api/chats/:chatId/messages */
-app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (req, res) => {
+app.post('/api/chats/:chatId/messages', authMiddleware, messageLimiter, chatMemberCheck, async (req, res) => {
   const { content, type = 'text', reply_to, self_destruct_seconds, e2ee } = req.body;
   const chatId = req.params.chatId;
 
@@ -714,13 +780,23 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
     }
   }
 
+  // P1.12: валидация self_destruct_seconds — число от 5 до 604800 (7 дней).
+  // Без этого клиент может передать NaN, Infinity, отрицательное — Date(NaN).
+  const MAX_SELF_DESTRUCT = 7 * 24 * 3600;
+  if (self_destruct_seconds !== undefined && self_destruct_seconds !== null) {
+    const secs = Number(self_destruct_seconds);
+    if (!Number.isFinite(secs) || secs < 5 || secs > MAX_SELF_DESTRUCT) {
+      return res.status(400).json({ error: 'Недопустимое время самоуничтожения (5 сек — 7 дней)' });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // ME-19: Self-destruct timer
     const selfDestructAt = self_destruct_seconds
-      ? new Date(Date.now() + self_destruct_seconds * 1000).toISOString()
+      ? new Date(Date.now() + Number(self_destruct_seconds) * 1000).toISOString()
       : null;
 
     const result = await client.query(
@@ -808,9 +884,35 @@ app.patch('/api/chats/:chatId', authMiddleware, chatMemberCheck, async (req, res
     const updates = [];
     const values = [];
     let idx = 1;
-    if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
-    if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
-    if (avatar_url !== undefined) { updates.push(`avatar_url = $${idx++}`); values.push(avatar_url); }
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.length < 1 || name.length > 100) {
+        return res.status(400).json({ error: 'Имя группы от 1 до 100 символов' });
+      }
+      updates.push(`name = $${idx++}`); values.push(name.trim());
+    }
+    if (description !== undefined) {
+      if (typeof description !== 'string' || description.length > 500) {
+        return res.status(400).json({ error: 'Описание до 500 символов' });
+      }
+      updates.push(`description = $${idx++}`); values.push(description.trim());
+    }
+    if (avatar_url !== undefined) {
+      // P1.12: та же валидация URL что и в /api/users/me
+      if (avatar_url !== null) {
+        if (typeof avatar_url !== 'string' || avatar_url.length > 500) {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+        try {
+          const parsed = new URL(avatar_url);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'avatar_url должен использовать http или https' });
+          }
+        } catch {
+          return res.status(400).json({ error: 'Некорректный avatar_url' });
+        }
+      }
+      updates.push(`avatar_url = $${idx++}`); values.push(avatar_url);
+    }
     if (updates.length === 0) return res.status(400).json({ error: 'Нет данных' });
     values.push(req.params.chatId);
     const result = await pool.query(
@@ -861,11 +963,19 @@ app.patch('/api/chats/:chatId/messages/:id', authMiddleware, chatMemberCheck, as
 
 // ==================== РЕАКЦИИ ====================
 
+// P1.12: whitelist реакций — только известные emoji.
+// Без whitelist поле VARCHAR(10) принимает любой текст, включая HTML-подобный.
+const ALLOWED_EMOJIS = new Set([
+  '❤️', '👍', '👎', '😂', '😮', '😢', '😡', '🔥', '👏', '🎉',
+  '💯', '🤔', '👀', '🙏', '💪', '✅', '❌', '⭐', '🤣', '😍',
+]);
+
 /** POST /api/chats/:chatId/messages/:id/reactions — добавить/убрать реакцию (toggle) */
 app.post('/api/chats/:chatId/messages/:id/reactions', authMiddleware, chatMemberCheck, async (req, res) => {
   try {
     const { emoji } = req.body;
-    if (!emoji) return res.status(400).json({ error: 'emoji обязателен' });
+    if (!emoji || typeof emoji !== 'string') return res.status(400).json({ error: 'emoji обязателен' });
+    if (!ALLOWED_EMOJIS.has(emoji)) return res.status(400).json({ error: 'Недопустимая реакция' });
     // Toggle: если реакция уже есть — удалить, иначе — добавить
     const existing = await pool.query(
       'SELECT id FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
@@ -1479,7 +1589,7 @@ app.get('/api/keys/count', authMiddleware, async (req, res) => {
 // ==================== ФАЙЛЫ ====================
 
 /** POST /api/media/upload — загрузка файла */
-app.post('/api/media/upload', authMiddleware, upload.single('file'), async (req, res) => {
+app.post('/api/media/upload', authMiddleware, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не прикреплён' });
 
@@ -1568,7 +1678,7 @@ app.post('/api/media/download', authMiddleware, async (req, res) => {
 });
 
 /** POST /api/media/upload-url — получить pre-signed URL для прямой загрузки */
-app.post('/api/media/upload-url', authMiddleware, async (req, res) => {
+app.post('/api/media/upload-url', authMiddleware, uploadLimiter, async (req, res) => {
   try {
     const { fileName, folder } = req.body || {};
 
@@ -1687,49 +1797,154 @@ app.get('/api/users/blocked', authMiddleware, async (req, res) => {
 
 // ==================== HEALTH ====================
 
-/** Проверка здоровья с тестом зависимостей */
-app.get('/health', async (_, res) => {
-  const checks = { service: 'son-api', uptime: process.uptime() };
+/**
+ * P1.7: разделённые health checks.
+ *
+ * /health/live — liveness. Процесс жив, event loop не заблокирован.
+ *   Всегда 200, если Node-процесс отвечает. Используется Kubernetes/Docker
+ *   для перезапуска "зависшего" контейнера.
+ *
+ * /health/ready — readiness. Все зависимости доступны и можно принимать
+ *   трафик. 200 если postgres + redis + minio отвечают, 503 если нет.
+ *
+ * /health — legacy endpoint, поведение: та же проверка что /health/ready.
+ *   Оставлен для обратной совместимости.
+ */
+
+/** Быстрая liveness-проверка */
+app.get('/health/live', (_, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'son-api',
+    uptime: process.uptime(),
+  });
+});
+
+async function checkPostgres() {
   try {
+    const t0 = Date.now();
     await pool.query('SELECT 1');
-    checks.postgres = 'ok';
-  } catch {
-    checks.postgres = 'error';
+    return { status: 'ok', latency_ms: Date.now() - t0 };
+  } catch (err) {
+    return { status: 'error', message: err?.message };
   }
-  const allOk = checks.postgres === 'ok';
-  res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', ...checks });
+}
+
+async function checkRedis() {
+  // В тестовом окружении Redis недоступен — skip.
+  if (process.env.NODE_ENV === 'test') return { status: 'ok', skipped: true };
+
+  // Redis используется только через express-rate-limit и WS-rate-limit,
+  // напрямую клиент не держится. Делаем лёгкий TCP-check через net.
+  // Если redis недоступен — rate-limiters откатятся на memory.
+  const net = require('net');
+  const host = process.env.REDIS_HOST || 'redis';
+  const port = parseInt(process.env.REDIS_PORT || '6379');
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    const timeout = setTimeout(() => {
+      sock.destroy();
+      resolve({ status: 'error', message: 'timeout' });
+    }, 2000);
+    sock.once('connect', () => {
+      clearTimeout(timeout);
+      sock.destroy();
+      resolve({ status: 'ok' });
+    });
+    sock.once('error', (err) => {
+      clearTimeout(timeout);
+      resolve({ status: 'error', message: err?.message });
+    });
+    sock.connect(port, host);
+  });
+}
+
+async function checkMinio() {
+  try {
+    const t0 = Date.now();
+    const ok = await minioHealth();
+    return ok
+      ? { status: 'ok', latency_ms: Date.now() - t0 }
+      : { status: 'error', message: 'bucket check failed' };
+  } catch (err) {
+    return { status: 'error', message: err?.message };
+  }
+}
+
+/** Readiness: все зависимости доступны */
+app.get('/health/ready', async (_, res) => {
+  const [postgres, redis, minio] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+    checkMinio(),
+  ]);
+  const allOk =
+    postgres.status === 'ok' &&
+    redis.status === 'ok' &&
+    minio.status === 'ok';
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ready' : 'not-ready',
+    service: 'son-api',
+    uptime: process.uptime(),
+    checks: { postgres, redis, minio },
+  });
+});
+
+/** Legacy endpoint — для обратной совместимости */
+app.get('/health', async (_, res) => {
+  const [postgres, redis, minio] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+    checkMinio(),
+  ]);
+  const allOk =
+    postgres.status === 'ok' &&
+    redis.status === 'ok' &&
+    minio.status === 'ok';
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ok' : 'degraded',
+    service: 'son-api',
+    uptime: process.uptime(),
+    postgres: postgres.status,
+    redis: redis.status,
+    minio: minio.status,
+  });
 });
 
 // ==================== Global Error Handlers ====================
+
+// P1.2: Sentry Express error handler. Должен быть ПЕРЕД кастомным
+// error middleware, чтобы захватить ошибку до того как мы отдадим
+// пользователю 500. Если SENTRY_DSN не задан — no-op.
+sentry.setupExpressErrorHandler(app);
 
 // Express error-handling middleware — ловит async rejections из route handlers
 // и middleware (Express 5 автоматически передаёт их сюда через next(err)).
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
-  const reqId = req.headers['x-request-id'] || '';
-  console.error('[express error]', {
-    reqId,
+  // req.log создан pino-http с привязанным req.id
+  const log = req.log || logger;
+  log.error({
+    err,
     method: req.method,
     path: req.path,
     userId: req.user?.id,
-    message: err?.message,
-    code: err?.code,
-  });
+  }, 'express error');
   if (res.headersSent) return;
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
 // Safety net на уровне процесса — не даём процессу умереть от rejected
 // promises, которые не попали в route handlers (например из WS callback'ов).
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[unhandledRejection]', {
-    message: reason?.message || String(reason),
-    stack: reason?.stack,
-  });
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error({ err }, 'unhandledRejection');
+  sentry.captureException(err, { source: 'unhandledRejection' });
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', { message: err?.message, stack: err?.stack });
+  logger.error({ err }, 'uncaughtException');
+  sentry.captureException(err, { source: 'uncaughtException' });
   // Не выходим — пусть процесс дожмёт запросы, а потом систем-ди перезапустит
 });
 
@@ -1737,45 +1952,85 @@ process.on('uncaughtException', (err) => {
 
 async function start() {
   await initDB();
-  await ensureBucket().catch((err) => console.warn('⚠️ MinIO недоступен:', err.message));
+  await ensureBucket().catch((err) => logger.warn({ err }, 'MinIO недоступен при старте'));
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 sOn API сервер запущен на http://localhost:${PORT}`);
-    console.log(`🔌 WebSocket на ws://localhost:${PORT}/ws`);
+    logger.info({ port: PORT }, 'sOn API сервер запущен');
   });
 }
 
 // ==================== Graceful Shutdown ====================
 
-function shutdown(signal) {
+/**
+ * Корректное завершение:
+ * 1) отклоняем новые подключения, но даём отработать текущим HTTP-запросам,
+ * 2) закрываем активные WebSocket соединения,
+ * 3) закрываем пул PostgreSQL,
+ * 4) выходим.
+ *
+ * P1.6: ранее server.close() не ожидался, pool.end() вызывался параллельно,
+ * активные HTTP-запросы могли получить разорванное соединение.
+ */
+let shuttingDown = false;
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n⏹️  ${signal} — завершение сервера...`);
 
-  // Перестать принимать новые подключения
-  server.close(() => {
+  // Жёсткий таймаут на случай зависания (safety net)
+  const hardTimeout = setTimeout(() => {
+    console.error('⚠️ Принудительное завершение через 15 секунд');
+    process.exit(1);
+  }, 15000);
+  hardTimeout.unref?.();
+
+  try {
+    // 1. Перестать принимать новые HTTP-подключения и дождаться активных запросов.
+    await new Promise((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
     console.log('✅ HTTP сервер остановлен');
-  });
 
-  // Закрыть все WebSocket соединения
-  wss.clients.forEach((ws) => {
-    ws.close(1001, 'Сервер перезапускается');
-  });
+    // 2. Закрыть все WebSocket соединения (мягко, с кодом 1001).
+    for (const ws of wss.clients) {
+      try {
+        ws.close(1001, 'Сервер перезапускается');
+      } catch (err) {
+        console.error('[shutdown] ws.close failed:', err?.message);
+      }
+    }
+    // Даём WS клиентам коротенькую паузу, чтобы close frame ушёл
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    console.log('✅ WebSocket соединения закрыты');
 
-  // Закрыть пул PostgreSQL
-  pool.end().then(() => {
+    // 3. Закрыть пул PostgreSQL (после того как запросы прошли).
+    await pool.end();
     console.log('✅ PostgreSQL пул закрыт');
-    process.exit(0);
-  }).catch(() => {
-    process.exit(1);
-  });
 
-  // Таймаут на случай зависания
-  setTimeout(() => {
-    console.error('⚠️ Принудительное завершение через 10 секунд');
+    // 4. Flush Sentry events (no-op если DSN не задан).
+    await sentry.close(2000);
+
+    clearTimeout(hardTimeout);
+    process.exit(0);
+  } catch (err) {
+    console.error('[shutdown] error:', err?.message);
+    clearTimeout(hardTimeout);
     process.exit(1);
-  }, 10000);
+  }
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[shutdown] unhandled error:', err?.message);
+    process.exit(1);
+  });
+});
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((err) => {
+    console.error('[shutdown] unhandled error:', err?.message);
+    process.exit(1);
+  });
+});
 
 // Запуск только при прямом вызове (не при импорте для тестов)
 if (require.main === module) {

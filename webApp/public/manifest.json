@@ -2,6 +2,7 @@
   "name": "sOn Messenger",
   "short_name": "sOn",
   "description": "Защищённый семейный мессенджер с end-to-end шифрованием",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -28,6 +29,16 @@
       "purpose": "any maskable"
     }
   ],
+  "shortcuts": [
+    {
+      "name": "Новое сообщение",
+      "short_name": "Написать",
+      "url": "/?action=new-chat",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "categories": ["social", "communication"],
-  "lang": "ru"
+  "lang": "ru",
+  "dir": "ltr",
+  "prefer_related_applications": false
 }

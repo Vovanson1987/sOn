@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getMe, removeToken, setToken, setUnauthorizedHandler } from '@/api/client';
+import { setSentryUser } from '@/lib/sentry';
 
 interface AuthUser {
   id: string;
@@ -62,12 +63,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
     setToken(token);
     // Кешируем только профиль пользователя (без токена).
     saveCachedUser(user);
+    setSentryUser({ id: user.id, email: user.email });
     set({ token, user, isAuthenticated: true });
   },
 
   logout: () => {
     removeToken();
     saveCachedUser(null);
+    setSentryUser(null);
     set({ token: null, user: null, isAuthenticated: false });
   },
 
@@ -87,6 +90,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         avatar_url: fresh.avatar_url,
       };
       saveCachedUser(user);
+      setSentryUser({ id: user.id, email: user.email });
       set({ token: null, user, isAuthenticated: true, isRestoring: false });
       return true;
     } catch {
@@ -95,6 +99,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       if (cachedUser) {
         saveCachedUser(null);
       }
+      setSentryUser(null);
       set({ token: null, user: null, isAuthenticated: false, isRestoring: false });
       return false;
     }

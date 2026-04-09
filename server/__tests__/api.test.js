@@ -49,6 +49,7 @@ jest.mock('../storage', () => {
     }),
     getDownloadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-url'),
     getUploadUrl: jest.fn().mockResolvedValue('http://localhost:9000/presigned-upload-url'),
+    minioHealth: jest.fn().mockResolvedValue(true),
     isAllowedFolder: (folder) => typeof folder === 'string' && ALLOWED_FOLDERS.has(folder),
     isAllowedMime: (mime) => typeof mime === 'string' && ALLOWED_MIME_TYPES.has(mime),
     sanitizeExt: (fileName) => {
@@ -88,8 +89,40 @@ beforeEach(() => {
 
 // ==================== Health ====================
 
-describe('GET /health', () => {
-  it('возвращает ok когда PostgreSQL доступен', async () => {
+describe('GET /health/live', () => {
+  it('всегда возвращает 200 (liveness)', async () => {
+    const res = await request(app).get('/health/live');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.service).toBe('son-api');
+    expect(typeof res.body.uptime).toBe('number');
+  });
+});
+
+describe('GET /health/ready', () => {
+  it('возвращает ready когда все зависимости доступны', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+
+    const res = await request(app).get('/health/ready');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+    expect(res.body.checks.postgres.status).toBe('ok');
+    expect(res.body.checks.redis.status).toBe('ok');
+    expect(res.body.checks.minio.status).toBe('ok');
+  });
+
+  it('возвращает not-ready когда PostgreSQL недоступен', async () => {
+    mockQuery.mockRejectedValueOnce(new Error('Connection refused'));
+
+    const res = await request(app).get('/health/ready');
+    expect(res.status).toBe(503);
+    expect(res.body.status).toBe('not-ready');
+    expect(res.body.checks.postgres.status).toBe('error');
+  });
+});
+
+describe('GET /health (legacy)', () => {
+  it('возвращает ok когда все зависимости доступны', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
     const res = await request(app).get('/health');
@@ -631,5 +664,111 @@ describe('POST /api/media/download', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.url).toContain('presigned');
+  });
+});
+
+// ==================== P1.16: КРИТИЧНЫЕ ТЕСТЫ ====================
+
+describe('Валидация self_destruct_seconds (P1.12)', () => {
+  it('400 при отрицательном self_destruct_seconds', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    // SELECT type FROM chats
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
+    // blocked check
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ content: 'test', self_destruct_seconds: -5 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('самоуничтожения');
+  });
+
+  it('400 при NaN self_destruct_seconds', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ type: 'direct' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ content: 'test', self_destruct_seconds: 'not-a-number' });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('Emoji whitelist (P1.12)', () => {
+  it('400 при недопустимом emoji в реакции', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages/msg-1/reactions')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ emoji: '<script>' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('реакция');
+  });
+
+  it('принимает допустимый emoji', async () => {
+    // chatMemberCheck
+    mockQuery.mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] });
+    // SELECT existing reaction
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    // INSERT reaction
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    // broadcastToChat: SELECT user_id FROM chat_members
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/chats/chat-1/messages/msg-1/reactions')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ emoji: '❤️' });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('avatar_url валидация (P1.12)', () => {
+  it('400 при javascript: протоколе в avatar_url', async () => {
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'javascript:alert(1)' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('400 при file:// протоколе', async () => {
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'file:///etc/passwd' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('принимает https:// URL', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'user-1', avatar_url: 'https://example.com/photo.jpg' }] });
+
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ avatar_url: 'https://example.com/photo.jpg' });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('Health endpoints (P1.7)', () => {
+  it('/health/live всегда 200', async () => {
+    const res = await request(app).get('/health/live');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
   });
 });

@@ -7,6 +7,13 @@ vi.mock('@/api/client', () => ({
   getMe: vi.fn(),
 }));
 
+vi.mock('@/lib/sentry', () => ({
+  setSentryUser: vi.fn(),
+  initSentry: vi.fn(),
+  captureException: vi.fn(),
+  SentryErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 import { useAuthStore } from '../authStore';
 import { setToken, removeToken, getMe } from '@/api/client';
 

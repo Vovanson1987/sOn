@@ -25,6 +25,13 @@ export default defineConfig({
       reporter: ['text', 'text-summary'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/test/**', 'src/main.tsx', 'src/**/*.d.ts'],
+      // P1.9: пороги покрытия — CI будет падать если coverage ниже.
+      // Начинаем с реалистичных значений, постепенно повышаем.
+      thresholds: {
+        lines: 40,
+        functions: 35,
+        branches: 30,
+      },
     },
   },
 });
