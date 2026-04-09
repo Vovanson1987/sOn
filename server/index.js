@@ -55,6 +55,13 @@ if (process.env.NODE_ENV !== 'test') {
     if (process.env.DATABASE_URL?.includes('postgres:postgres')) {
       console.warn('⚠️  ВНИМАНИЕ: PostgreSQL использует credentials по умолчанию — смените для production!');
     }
+    // C-S4: Проверка LiveKit secrets в production
+    if (!process.env.LIVEKIT_API_KEY || process.env.LIVEKIT_API_KEY === 'devkey') {
+      console.warn('⚠️  ВНИМАНИЕ: LIVEKIT_API_KEY не задан или использует dev-значение — звонки небезопасны!');
+    }
+    if (!process.env.LIVEKIT_API_SECRET || process.env.LIVEKIT_API_SECRET === 'secret') {
+      console.warn('⚠️  ВНИМАНИЕ: LIVEKIT_API_SECRET не задан или использует dev-значение — звонки небезопасны!');
+    }
   }
 }
 
@@ -220,13 +227,29 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 /** POST /api/auth/login */
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, totp_code } = req.body;
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'Неверный email или пароль' });
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный email или пароль' });
+
+    // C-D1: Проверка 2FA при логине — если включена, требовать TOTP код
+    const mfa = await pool.query(
+      'SELECT totp_secret, is_enabled FROM user_mfa WHERE user_id = $1 AND is_enabled = true',
+      [user.id]
+    );
+    if (mfa.rows.length > 0) {
+      if (!totp_code) {
+        return res.status(403).json({ error: 'Требуется код 2FA', requires_mfa: true });
+      }
+      const { authenticator } = require('otplib');
+      const isValid = authenticator.check(totp_code, mfa.rows[0].totp_secret);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Неверный код 2FA' });
+      }
+    }
 
     const token = jwt.sign({ id: user.id, email: user.email, display_name: user.display_name }, JWT_SECRET, { expiresIn: '7d' });
     await pool.query('UPDATE users SET is_online = true WHERE id = $1', [user.id]);
@@ -1707,7 +1730,23 @@ function getCookieValue(cookieHeader, name) {
   return null;
 }
 
+// C-P1: WS heartbeat — обнаруживает мёртвые TCP соединения
+const WS_HEARTBEAT_INTERVAL = 30000; // 30 секунд
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, WS_HEARTBEAT_INTERVAL);
+
+wss.on('close', () => clearInterval(heartbeatInterval));
+
 wss.on('connection', (ws, req) => {
+  // C-P1: Инициализация heartbeat для соединения
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   // Аутентификация через cookie на handshake (основной путь)
   // и через первое auth-сообщение (fallback).
   let user = null;
@@ -2425,6 +2464,14 @@ app.get('/api/polls/:pollId', authMiddleware, async (req, res) => {
     const poll = await pool.query('SELECT * FROM polls WHERE id = $1', [pollId]);
     if (poll.rows.length === 0) return res.status(404).json({ error: 'Опрос не найден' });
 
+    // C-S3: Проверка membership — опрос привязан к сообщению в чате
+    const chatCheck = await pool.query(`
+      SELECT 1 FROM messages m
+      JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = $2
+      WHERE m.id = $1
+    `, [poll.rows[0].message_id, req.user.id]);
+    if (chatCheck.rows.length === 0) return res.status(403).json({ error: 'Нет доступа к опросу' });
+
     const results = await pool.query(`
       SELECT po.id, po.text, po.sort_order,
         COUNT(pv.id)::int as votes,
@@ -3104,7 +3151,8 @@ app.get('/api/auth/mfa/status', authMiddleware, async (req, res) => {
  * В production нужно подключить Twilio/SMS.ru/другой провайдер.
  * Сейчас — в dev-режиме код логируется в консоль.
  */
-app.post('/api/auth/phone/send-code', async (req, res) => {
+// C-S1: authLimiter на SMS endpoints — защита от DoS/SMS-спама
+app.post('/api/auth/phone/send-code', authLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone || typeof phone !== 'string' || phone.length < 10 || phone.length > 15) {
@@ -3118,8 +3166,9 @@ app.post('/api/auth/phone/send-code', async (req, res) => {
     if (recent.rows[0].count >= 3) {
       return res.status(429).json({ error: 'Слишком много попыток. Подождите 10 минут.' });
     }
-    // Генерируем 6-значный код
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // C-S2: Криптографически стойкий OTP (не Math.random)
+    const { randomInt } = require('crypto');
+    const code = String(randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 минут
     await pool.query(
       'INSERT INTO phone_verifications (phone, code, expires_at) VALUES ($1, $2, $3)',
@@ -3142,7 +3191,7 @@ app.post('/api/auth/phone/send-code', async (req, res) => {
 });
 
 /** POST /api/auth/phone/verify — подтвердить код и войти/зарегистрироваться */
-app.post('/api/auth/phone/verify', async (req, res) => {
+app.post('/api/auth/phone/verify', authLimiter, async (req, res) => {
   try {
     const { phone, code, display_name } = req.body;
     if (!phone || !code) {
