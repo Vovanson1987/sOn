@@ -2,12 +2,19 @@
 
 import { API_URL, WS_URL } from './config';
 
-/** HI-18: JWT хранится в памяти, НЕ в localStorage (защита от XSS) */
+/**
+ * SEC-1: JWT хранится ТОЛЬКО в памяти. Никакого fallback на localStorage —
+ * иначе любой XSS получает токен и использует его 7 дней.
+ * Основной механизм аутентификации — httpOnly cookie, выставляется сервером.
+ * Это значение используется как дополнительный Authorization header
+ * только пока текущая вкладка жива — после reload токен получается заново
+ * через GET /api/users/me (cookie) в authStore.restore().
+ */
 let memoryToken: string | null = null;
 
-/** Получить JWT токен (из памяти — только для WebSocket auth) */
+/** Получить JWT токен из памяти (для WebSocket auth и Bearer fallback) */
 export function getToken(): string | null {
-  return memoryToken || localStorage.getItem('son-token');
+  return memoryToken;
 }
 
 /** Сохранить JWT токен в памяти */
@@ -18,7 +25,13 @@ export function setToken(token: string): void {
 /** Удалить токен из памяти */
 export function removeToken(): void {
   memoryToken = null;
-  localStorage.removeItem('son-token');
+  // Чистим старое значение из localStorage для юзеров со старой версией,
+  // чтобы оно не продолжало висеть после обновления приложения.
+  try {
+    localStorage.removeItem('son-token');
+  } catch {
+    // localStorage может быть недоступен (private mode, security error)
+  }
 }
 
 /** Callback для обработки 401 (устанавливается из authStore) */
