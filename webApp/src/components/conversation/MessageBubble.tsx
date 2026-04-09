@@ -7,6 +7,7 @@ import { VoiceMessage } from '@components/media/VoiceMessage';
 import { ImageViewer } from '@components/media/ImageViewer';
 import { MarkdownText } from './MarkdownText';
 import { ForwardedHeader } from './ForwardedHeader';
+import { UrlPreviewCard, extractFirstUrl } from './UrlPreviewCard';
 
 interface MessageBubbleProps {
   message: Message;
@@ -145,13 +146,20 @@ export const MessageBubble = memo(function MessageBubble({
             onTogglePlay={() => {}}
           />
         ) : (
-          <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
-            {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" aria-hidden="true" />}
-            <MarkdownText text={message.content} />
-            {message.editedAt && (
-              <span className="text-[11px] ml-1 opacity-50" aria-label="Отредактировано">(ред.)</span>
-            )}
-          </p>
+          <>
+            <p className="text-[17px] leading-[1.35] text-white whitespace-pre-wrap break-words">
+              {isSecret && <Lock size={12} color="rgba(255,255,255,0.5)" className="inline mr-1 mb-[2px]" aria-hidden="true" />}
+              <MarkdownText text={message.content} />
+              {message.editedAt && (
+                <span className="text-[11px] ml-1 opacity-50" aria-label="Отредактировано">(ред.)</span>
+              )}
+            </p>
+            {/* P2.10: URL preview — показываем карточку если в тексте есть ссылка */}
+            {(() => {
+              const url = !isSecret && message.type === 'text' ? extractFirstUrl(message.content) : null;
+              return url ? <UrlPreviewCard url={url} /> : null;
+            })()}
+          </>
         )}
       </div>
 
