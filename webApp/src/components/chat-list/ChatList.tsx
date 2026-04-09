@@ -5,6 +5,7 @@ import { SearchBar } from '@components/ui/SearchBar';
 import { ChatListHeader } from './ChatListHeader';
 import { ChatListItem } from './ChatListItem';
 import { NewChatModal } from './NewChatModal';
+import { StoriesBar } from '@components/stories/StoriesBar';
 import type { Chat } from '@/types/chat';
 
 /** LO-16: Виртуализированная строка чата для react-window */
@@ -101,6 +102,9 @@ export function ChatList() {
         }}
         filterActive={filter !== 'all'}
       />
+      {/* P2.11: Stories bar */}
+      <StoriesBar />
+
       <div className="px-2 pb-1">
         <SearchBar value={localSearch} onChange={handleSearchChange} placeholder="Поиск чатов" />
       </div>
