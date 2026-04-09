@@ -127,6 +127,11 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?required}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # P1.2 observability — если DSN не задан, Sentry не инициализируется
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: ${LOG_PRETTY:-false}
     deploy:
       resources:
         limits:

@@ -1,4 +1,10 @@
 /** sOn Messenger — Node.js API сервер + WebSocket */
+// P1.2: Sentry должен инициализироваться ДО всех остальных require,
+// чтобы корректно инструментировать http/express.
+require('dotenv').config();
+const sentry = require('./sentry');
+sentry.init();
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -23,7 +29,6 @@ const {
   ALLOWED_FOLDERS,
 } = require('./storage');
 const { logger, httpLogger } = require('./logger');
-require('dotenv').config();
 
 // ==================== Валидация окружения ====================
 
@@ -1810,6 +1815,11 @@ app.get('/health', async (_, res) => {
 
 // ==================== Global Error Handlers ====================
 
+// P1.2: Sentry Express error handler. Должен быть ПЕРЕД кастомным
+// error middleware, чтобы захватить ошибку до того как мы отдадим
+// пользователю 500. Если SENTRY_DSN не задан — no-op.
+sentry.setupExpressErrorHandler(app);
+
 // Express error-handling middleware — ловит async rejections из route handlers
 // и middleware (Express 5 автоматически передаёт их сюда через next(err)).
 // eslint-disable-next-line no-unused-vars
@@ -1829,13 +1839,14 @@ app.use((err, req, res, _next) => {
 // Safety net на уровне процесса — не даём процессу умереть от rejected
 // promises, которые не попали в route handlers (например из WS callback'ов).
 process.on('unhandledRejection', (reason) => {
-  logger.error({
-    err: reason instanceof Error ? reason : new Error(String(reason)),
-  }, 'unhandledRejection');
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error({ err }, 'unhandledRejection');
+  sentry.captureException(err, { source: 'unhandledRejection' });
 });
 
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaughtException');
+  sentry.captureException(err, { source: 'uncaughtException' });
   // Не выходим — пусть процесс дожмёт запросы, а потом систем-ди перезапустит
 });
 
@@ -1897,6 +1908,9 @@ async function shutdown(signal) {
     // 3. Закрыть пул PostgreSQL (после того как запросы прошли).
     await pool.end();
     console.log('✅ PostgreSQL пул закрыт');
+
+    // 4. Flush Sentry events (no-op если DSN не задан).
+    await sentry.close(2000);
 
     clearTimeout(hardTimeout);
     process.exit(0);
