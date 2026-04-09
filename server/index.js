@@ -639,6 +639,22 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
   }
   const chatType = chatResult.rows[0].type;
 
+  // SEC-5: reply_to должен принадлежать тому же чату.
+  // Защищает от утечки message_id из других чатов, в т.ч. секретных,
+  // и от нарушения изоляции секретных чатов от обычных.
+  if (reply_to !== undefined && reply_to !== null) {
+    if (typeof reply_to !== 'string') {
+      return res.status(400).json({ error: 'Некорректный reply_to' });
+    }
+    const replyCheck = await pool.query(
+      'SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2',
+      [reply_to, chatId]
+    );
+    if (replyCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'Сообщение для ответа не найдено в этом чате' });
+    }
+  }
+
   // Проверка блокировки: если отправитель заблокирован кем-то из участников (для direct чатов)
   if (chatType === 'direct') {
     const blocked = await pool.query(
@@ -710,8 +726,11 @@ app.post('/api/chats/:chatId/messages', authMiddleware, chatMemberCheck, async (
 
     // Отправить через WebSocket всем участникам чата (кроме отправителя — у него уже есть optimistic update)
     broadcastToChat(chatId, { type: 'new_message', message: msg }, req.user.id);
-    // Push-уведомления для офлайн-пользователей
-    sendPushToOfflineMembers(req.params.chatId, req.user.id, content, req.user.display_name);
+    // Push-уведомления для офлайн-пользователей.
+    // SEC: для секретных чатов НЕ отправляем содержимое — оно зашифровано
+    // и клиент всё равно его не покажет. Вместо этого — заглушка.
+    const pushContent = chatType === 'secret' ? null : content;
+    sendPushToOfflineMembers(req.params.chatId, req.user.id, pushContent, req.user.display_name);
     res.status(201).json(msg);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1245,9 +1264,14 @@ async function sendPushToOfflineMembers(chatId, senderId, messageContent, sender
           endpoint: token.endpoint,
           keys: { p256dh: token.p256dh, auth: token.auth },
         };
+        // При messageContent === null (секретный чат) показываем заглушку,
+        // чтобы не сливать plaintext содержимое в push.
+        const pushBody = messageContent === null
+          ? '🔒 Зашифрованное сообщение'
+          : (messageContent?.substring(0, 100) || 'Новое сообщение');
         const payload = JSON.stringify({
           title: senderName || 'sOn',
-          body: messageContent?.substring(0, 100) || 'Новое сообщение',
+          body: pushBody,
           chat_id: chatId,
         });
         webpush
