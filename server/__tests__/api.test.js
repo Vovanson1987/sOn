@@ -98,10 +98,10 @@ function makeToken(user = { id: 'user-1', email: 'test@test.com', display_name: 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockQuery.mockReset();
+  mockConnect.mockReset();
   mockClient.query.mockReset();
   mockClient.release.mockReset();
-  // Default для mockClient (BEGIN/COMMIT/ROLLBACK в транзакциях)
-  mockClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
 // ==================== Health ====================
