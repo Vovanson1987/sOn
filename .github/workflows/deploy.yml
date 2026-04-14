@@ -44,6 +44,9 @@ jobs:
       - name: Smoke-check production
         env:
           SMOKE_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          # Используем уникальные email-ы на каждый прогон, чтобы не упираться
+          # в 409 Conflict от зарегистрированных ранее smoke-пользователей.
+          SMOKE_EPHEMERAL: '1'
         run: |
           if [ -z "$SMOKE_BASE_URL" ]; then
             echo "⚠ PRODUCTION_BASE_URL не задан, пропускаем smoke-test"
