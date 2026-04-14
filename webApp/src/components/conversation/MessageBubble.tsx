@@ -91,7 +91,7 @@ export const MessageBubble = memo(function MessageBubble({
     >
       {/* Имя отправителя в групповых чатах */}
       {showSenderName && !isOwn && isFirstInGroup && (
-        <span className="text-[12px] font-medium mb-[2px] ml-[12px]" style={{ color: '#007AFF' }}>
+        <span className="text-[12px] font-medium mb-[2px] ml-[12px]" style={{ color: '#5B5FC7' }}>
           {message.senderName}
         </span>
       )}

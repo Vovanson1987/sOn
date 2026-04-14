@@ -66,6 +66,8 @@ export interface Chat {
   unreadCount: number;
   isMuted: boolean;
   isArchived: boolean;
+  /** Закреплён ли чат в списке (отображает значок булавки) */
+  isPinned?: boolean;
   isVerified?: boolean;
   isPublic?: boolean;
   /** Ссылка (для публичных чатов/каналов) */

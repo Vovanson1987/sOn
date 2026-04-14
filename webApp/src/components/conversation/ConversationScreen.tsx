@@ -3,6 +3,8 @@ import { List, useDynamicRowHeight, useListRef, type RowComponentProps } from 'r
 import { Video, Shield, Timer } from 'lucide-react';
 import { FrostedGlassBar } from '@components/ui/FrostedGlassBar';
 import { Avatar } from '@components/ui/Avatar';
+import { confirm } from '@components/ui/ConfirmDialog';
+import { toast } from '@components/ui/Toast';
 import { MessageBubble } from './MessageBubble';
 import { DateSeparator } from './DateSeparator';
 import { DeliveryStatus } from './DeliveryStatus';
@@ -439,8 +441,99 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
     }
   }, [forwardMessage, sendMessage]);
 
+  // Drag-and-drop файлов в область чата ------------------------------
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
+
+  const handleFilesDropped = useCallback(
+    async (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      for (const file of list) {
+        try {
+          const isImageOrVideo = file.type.startsWith('image/') || file.type.startsWith('video/');
+          if (isImageOrVideo) {
+            const result = await uploadImage(file);
+            const msgType = file.type.startsWith('video/') ? 'video' : 'image';
+            await apiSendMessage(chat.id, result.url, msgType, undefined, undefined, {
+              url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
+            });
+          } else {
+            const result = await uploadFile(file);
+            await apiSendMessage(chat.id, file.name, 'file', undefined, undefined, {
+              url: result.url, fileName: file.name, fileSize: result.size, mimeType: result.mimeType,
+            });
+          }
+        } catch (err) {
+          console.error('[drop] upload failed', err);
+          const { toast } = await import('@components/ui/Toast');
+          toast.error(`Не удалось загрузить ${file.name}`);
+        }
+      }
+    },
+    [chat.id],
+  );
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragDepthRef.current++;
+    setIsDragOver(true);
+  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragOver(false);
+  }, []);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes('Files')) return;
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDragOver(false);
+      if (e.dataTransfer.files.length > 0) {
+        void handleFilesDropped(e.dataTransfer.files);
+      }
+    },
+    [handleFilesDropped],
+  );
+
   return (
-    <div className="flex flex-col h-full" style={{ background: '#141420', animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}>
+    <div
+      className="flex flex-col h-full relative"
+      style={{ background: '#141420', animation: 'slideInRight 0.35s cubic-bezier(0.25,0.1,0.25,1) both' }}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Dropzone overlay */}
+      {isDragOver && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
+          style={{
+            background: 'rgba(91,95,199,0.15)',
+            border: '2px dashed #5B5FC7',
+            borderRadius: 12,
+            margin: 8,
+            backdropFilter: 'blur(2px)',
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="text-center">
+            <div className="text-[17px] font-semibold text-white mb-1">Отпустите, чтобы отправить</div>
+            <div className="text-[13px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              Файлы будут загружены в этот чат
+            </div>
+          </div>
+        </div>
+      )}
       {/* Анимация обмена ключами */}
       {showKeyExchange && isSecret && (
         <KeyExchangeAnimation
@@ -476,17 +569,35 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
           ratchetIndex={secretSession.ratchetState?.sendCount || 0}
           isVerified={secretSession.isVerified}
           onVerify={() => { setShowEncryptionInfo(false); setShowVerification(true); }}
-          onRegenerateKeys={() => {
-            if (window.confirm('Пересоздать ключи шифрования? Текущая сессия будет сброшена.')) {
-              regenerateKeys(chat.id)
-                .then(() => { setShowEncryptionInfo(false); setShowKeyExchange(true); })
-                .catch((err) => console.error('[secretChat] regenerateKeys failed', err));
+          onRegenerateKeys={async () => {
+            const ok = await confirm({
+              title: 'Пересоздать ключи шифрования?',
+              description: 'Текущая Signal-сессия будет сброшена, потребуется новое рукопожатие.',
+              confirmLabel: 'Пересоздать',
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              await regenerateKeys(chat.id);
+              setShowEncryptionInfo(false);
+              setShowKeyExchange(true);
+              toast.success('Ключи пересозданы');
+            } catch (err) {
+              console.error('[secretChat] regenerateKeys failed', err);
+              toast.error('Не удалось пересоздать ключи');
             }
           }}
-          onEndSecretChat={() => {
-            if (window.confirm('Завершить секретный чат? Все сообщения будут удалены.')) {
-              endSession(chat.id); setShowEncryptionInfo(false);
-            }
+          onEndSecretChat={async () => {
+            const ok = await confirm({
+              title: 'Завершить секретный чат?',
+              description: 'Все сообщения и ключи будут удалены безвозвратно.',
+              confirmLabel: 'Завершить',
+              danger: true,
+            });
+            if (!ok) return;
+            endSession(chat.id);
+            setShowEncryptionInfo(false);
+            toast.info('Секретный чат завершён');
           }}
           onClose={() => setShowEncryptionInfo(false)}
         />
@@ -536,7 +647,7 @@ export function ConversationScreen({ chat, onBack: _onBack }: ConversationScreen
               </button>
             </>
           )}
-          <button onClick={() => alert('Видеозвонки скоро будут доступны')} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
+          <button onClick={() => toast.info('Видеозвонки скоро будут доступны')} className="w-[44px] h-[44px] flex items-center justify-center" aria-label="Видеозвонок"><Video size={22} color="#8E8E93" /></button>
         </div>
       </FrostedGlassBar>
 

@@ -64,7 +64,7 @@ export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: 
                 aria-pressed={isActive}
               >
                 <span className="text-[16px] text-white">{opt.label}</span>
-                {isActive && <span className="text-[16px]" style={{ color: '#007AFF' }}>✓</span>}
+                {isActive && <span className="text-[16px]" style={{ color: '#5B5FC7' }}>✓</span>}
               </button>
             </div>
           );
@@ -74,7 +74,7 @@ export function SelfDestructPicker({ isOpen, currentValue, onSelect, onClose }: 
         <button
           onClick={onClose}
           className="w-full py-[14px] text-center text-[16px] font-semibold transition-colors duration-150 hover:bg-[#2C2C2E]"
-          style={{ background: '#1C1C1E', color: '#007AFF' }}
+          style={{ background: '#1C1C1E', color: '#5B5FC7' }}
         >
           Отмена
         </button>

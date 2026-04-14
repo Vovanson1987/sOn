@@ -86,7 +86,7 @@ export const StickerPicker = memo(function StickerPicker({ isOpen, onClose, onSe
               className="px-2.5 py-1 rounded-lg text-[12px] whitespace-nowrap flex-shrink-0"
               style={{
                 background: activePackId === pack.id ? 'rgba(0,122,255,0.2)' : 'transparent',
-                color: activePackId === pack.id ? '#007AFF' : 'rgba(255,255,255,0.5)',
+                color: activePackId === pack.id ? '#5B5FC7' : 'rgba(255,255,255,0.5)',
               }}
             >
               {pack.name}

@@ -49,7 +49,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
             className="flex flex-col items-center gap-[2px] relative min-w-[64px]"
           >
             <div className="relative">
-              <Icon size={24} color={isActive ? '#007AFF' : '#8E8E93'} />
+              <Icon size={24} color={isActive ? '#5B5FC7' : '#8E8E93'} />
               {badge > 0 && (
                 <div
                   className="absolute -top-[4px] -right-[8px] min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-[4px]"
@@ -61,7 +61,7 @@ export function TabBar({ activeTab, onTabChange, unreadChats = 0, missedCalls = 
             </div>
             <span
               className="text-[11px]"
-              style={{ color: isActive ? '#007AFF' : '#ABABAF' }}
+              style={{ color: isActive ? '#5B5FC7' : '#ABABAF' }}
             >
               {label}
             </span>

@@ -90,7 +90,7 @@ function highlightMentions(nodes: ReactNode[], names: string[]): ReactNode[] {
 
     return parts.map((part, j) =>
       part.startsWith('@') && names.some(n => part === `@${n}`)
-        ? <span key={`m-${i}-${j}`} className="font-semibold" style={{ color: '#007AFF' }}>{part}</span>
+        ? <span key={`m-${i}-${j}`} className="font-semibold" style={{ color: '#5B5FC7' }}>{part}</span>
         : part
     );
   });

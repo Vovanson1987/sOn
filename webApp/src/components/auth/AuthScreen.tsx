@@ -101,7 +101,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
         <div className="flex flex-col items-center mb-8">
           <div
             className="w-[64px] h-[64px] rounded-[16px] flex items-center justify-center mb-4"
-            style={{ background: '#007AFF' }}
+            style={{ background: '#5B5FC7' }}
           >
             <Lock size={32} color="white" />
           </div>
@@ -164,7 +164,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
             type="submit"
             disabled={loading}
             className="w-full py-[12px] rounded-[10px] text-[16px] font-semibold text-white"
-            style={{ background: loading ? '#636366' : '#007AFF' }}
+            style={{ background: loading ? '#636366' : '#5B5FC7' }}
           >
             {loading ? 'Подождите...' : isLogin ? 'Войти' : 'Зарегистрироваться'}
           </button>
@@ -176,7 +176,7 @@ export function AuthScreen({ onAuth }: AuthScreenProps) {
           <button
             onClick={() => { setIsLogin(!isLogin); setError(''); }}
             className="font-semibold"
-            style={{ color: '#007AFF' }}
+            style={{ color: '#5B5FC7' }}
           >
             {isLogin ? 'Регистрация' : 'Войти'}
           </button>

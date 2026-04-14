@@ -108,7 +108,7 @@ export const VoiceMessage = memo(function VoiceMessage({
       >
         <div
           className="w-[32px] h-[32px] rounded-full flex items-center justify-center"
-          style={{ background: '#007AFF' }}
+          style={{ background: '#5B5FC7' }}
         >
           {isPlaying ? <Pause size={14} color="white" /> : <Play size={14} color="white" style={{ marginLeft: '2px' }} />}
         </div>
@@ -131,7 +131,7 @@ export const VoiceMessage = memo(function VoiceMessage({
               className="flex-1 rounded-full"
               style={{
                 height: `${h * 100}%`,
-                background: played ? '#007AFF' : '#636366',
+                background: played ? '#5B5FC7' : '#636366',
                 minWidth: '2px',
               }}
             />

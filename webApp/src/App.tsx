@@ -4,6 +4,10 @@ import { MessageSquare } from 'lucide-react';
 import { ChatList } from '@components/chat-list/ChatList';
 import { Sidebar, type SidebarTab } from '@components/layout/Sidebar';
 import { TabBar, type TabId } from '@components/layout/TabBar';
+import { ToastHost } from '@components/ui/Toast';
+import { ConfirmHost } from '@components/ui/ConfirmDialog';
+import { EmptyState } from '@components/ui/EmptyState';
+import { NetworkBanner } from '@components/ui/NetworkBanner';
 
 // Lazy-загрузка тяжёлых компонентов (code splitting)
 const ConversationScreen = lazy(() => import('@components/conversation/ConversationScreen').then(m => ({ default: m.ConversationScreen })));
@@ -326,6 +330,10 @@ export default function App() {
             unreadChats={unreadChats}
           />
         )}
+
+        <ToastHost />
+        <ConfirmHost />
+        <NetworkBanner />
       </div>
     );
   }
@@ -380,19 +388,21 @@ export default function App() {
             <ConversationScreen chat={activeChat} onBack={handleBack} />
           ) : activeTab === 'chats' ? (
             <div className="flex items-center justify-center h-full" style={{ background: '#141420' }}>
-              <div className="flex flex-col items-center gap-3">
-                <MessageSquare size={48} className="text-white/10" />
-                <p className="text-[15px] text-white/30">Выберите чат</p>
-              </div>
+              <EmptyState
+                icon={<MessageSquare size={28} />}
+                title="Выберите чат"
+                description="Откройте существующий разговор слева или начните новый"
+              />
             </div>
           ) : (
             /* Для настроек/каналов — правая панель пока пустая (детали будут позже) */
-            <div className="flex items-center justify-center h-full" style={{ background: '#141420' }}>
-              <p className="text-[15px] text-white/20"></p>
-            </div>
+            <div className="flex items-center justify-center h-full" style={{ background: '#141420' }} />
           )}
         </Suspense>
       </main>
+
+      <ToastHost />
+      <ConfirmHost />
     </div>
   );
 }

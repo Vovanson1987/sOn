@@ -99,7 +99,7 @@ export function TapbackOverlay({
               <button
                 key={emoji}
                 onClick={() => onReact(emoji)}
-                className="w-[44px] h-[44px] flex items-center justify-center rounded-full text-[22px] transition-transform active:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#007AFF]"
+                className="w-[44px] h-[44px] flex items-center justify-center rounded-full text-[22px] transition-transform active:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5B5FC7]"
                 style={{ background: isActive ? '#38383A' : 'transparent' }}
                 aria-label={`Реакция ${emoji}`}
                 aria-pressed={isActive}
@@ -114,7 +114,7 @@ export function TapbackOverlay({
         <div
           className="px-[12px] py-[8px] rounded-[18px] mb-2"
           style={{
-            background: isOwn ? '#007AFF' : '#3A3A3C',
+            background: isOwn ? '#5B5FC7' : '#3A3A3C',
             transform: 'scale(1.05)',
             transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}

@@ -44,7 +44,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
   if (status === 'read') {
     const dateStr = readAt ? ` ${formatReadDate(readAt)}` : '';
     return (
-      <span className="text-[11px] flex items-center gap-1" style={{ color: '#007AFF' }} role="status" aria-live="polite">
+      <span className="text-[11px] flex items-center gap-1" style={{ color: '#5B5FC7' }} role="status" aria-live="polite">
         <CheckCheck size={12} aria-hidden="true" />
         {t('status.read')}{dateStr}
       </span>
@@ -59,7 +59,7 @@ export const DeliveryStatus = memo(function DeliveryStatus({ status, readAt, onR
           <button
             onClick={onRetry}
             className="underline ml-1"
-            style={{ color: '#007AFF' }}
+            style={{ color: '#5B5FC7' }}
             aria-label="Повторить отправку"
           >
             Повторить

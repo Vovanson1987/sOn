@@ -216,7 +216,7 @@ export function McpIntegrationCard() {
           value={url}
           onChange={(event) => setUrl(event.target.value)}
           placeholder="https://chat.sonchat.uk/mcp"
-          className="rounded-2xl border px-4 py-3 text-[14px] text-white outline-none transition-colors focus:border-[#007AFF]"
+          className="rounded-2xl border px-4 py-3 text-[14px] text-white outline-none transition-colors focus:border-[#5B5FC7]"
           style={{ background: '#121214', borderColor: 'rgba(255, 255, 255, 0.08)' }}
           spellCheck={false}
           autoCapitalize="none"
@@ -234,7 +234,7 @@ export function McpIntegrationCard() {
             onChange={(event) => setToken(event.target.value)}
             type={showToken ? 'text' : 'password'}
             placeholder="Оставь пустым, если gateway принимает cookie/auth upstream"
-            className="w-full rounded-2xl border px-4 py-3 pr-12 text-[14px] text-white outline-none transition-colors focus:border-[#007AFF]"
+            className="w-full rounded-2xl border px-4 py-3 pr-12 text-[14px] text-white outline-none transition-colors focus:border-[#5B5FC7]"
             style={{ background: '#121214', borderColor: 'rgba(255, 255, 255, 0.08)' }}
             spellCheck={false}
             autoCapitalize="none"
@@ -300,7 +300,7 @@ export function McpIntegrationCard() {
           type="button"
           onClick={saveDraft}
           className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-[14px] font-semibold text-white transition-opacity disabled:opacity-50"
-          style={{ background: '#007AFF' }}
+          style={{ background: '#5B5FC7' }}
         >
           <Save size={16} aria-hidden="true" />
           Сохранить

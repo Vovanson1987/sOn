@@ -263,12 +263,29 @@ let wsReconnectAttempt = 0;
 // H9: generation counter предотвращает reconnect после disconnectWS
 let wsGeneration = 0;
 
+// ---- WS status: подписка для UI-индикаторов (reconnect-баннер и т.п.) ----
+export type WSStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+let wsStatus: WSStatus = 'idle';
+const wsStatusListeners = new Set<(s: WSStatus) => void>();
+function setWSStatus(s: WSStatus) {
+  if (wsStatus === s) return;
+  wsStatus = s;
+  wsStatusListeners.forEach((fn) => fn(s));
+}
+export function onWSStatus(cb: (s: WSStatus) => void): () => void {
+  wsStatusListeners.add(cb);
+  cb(wsStatus);
+  return () => { wsStatusListeners.delete(cb); };
+}
+export function getWSStatus(): WSStatus { return wsStatus; }
+
 /** Подключиться к WebSocket */
 export function connectWS(): void {
   const token = getToken();
   if (ws?.readyState === WebSocket.OPEN) return;
 
   intentionalClose = false;
+  setWSStatus(wsReconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 
   // Подключение без токена в URL.
   // При наличии memory-token отправляем auth-сообщение.
@@ -277,6 +294,7 @@ export function connectWS(): void {
 
   ws.onopen = () => {
     wsReconnectAttempt = 0; // Сброс backoff при успешном подключении
+    setWSStatus('open');
     if (token) {
       // Отправить токен в первом сообщении (безопасный способ)
       ws?.send(JSON.stringify({ type: 'auth', token }));
@@ -306,7 +324,11 @@ export function connectWS(): void {
   };
 
   ws.onclose = () => {
-    if (intentionalClose) return;
+    if (intentionalClose) {
+      setWSStatus('closed');
+      return;
+    }
+    setWSStatus('reconnecting');
     const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempt), 60000);
     wsReconnectAttempt++;
     // H9: запоминаем generation на момент планирования reconnect.
@@ -342,6 +364,7 @@ export function disconnectWS(): void {
   wsGeneration++; // H9: отменить запланированные reconnect
   ws?.close();
   ws = null;
+  setWSStatus('closed');
 }
 
 // ==================== PROFILE ====================

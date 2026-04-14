@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties, type ReactElement } from 'react';
 import { List, type RowComponentProps } from 'react-window';
+import { MessageSquarePlus, SearchX } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
 import { SearchBar } from '@components/ui/SearchBar';
+import { ChatListItemSkeleton } from '@components/ui/Skeleton';
+import { EmptyState } from '@components/ui/EmptyState';
+import { Button } from '@components/ui/Button';
 import { ChatListHeader } from './ChatListHeader';
 import { ChatListItem } from './ChatListItem';
 import { NewChatModal } from './NewChatModal';
@@ -86,11 +90,46 @@ export function ChatList() {
     [setActiveChat],
   );
 
+  // Клавиатурная навигация: ↑/↓ — предыдущий/следующий чат, Home/End — крайние.
+  // Работает, когда фокус находится внутри nav (и не в инпуте поиска).
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (filteredChats.length === 0) return;
+      const curIdx = filteredChats.findIndex((c) => c.id === activeChatId);
+      let next = curIdx;
+      switch (e.key) {
+        case 'ArrowDown':
+          next = curIdx < 0 ? 0 : Math.min(filteredChats.length - 1, curIdx + 1);
+          break;
+        case 'ArrowUp':
+          next = curIdx < 0 ? filteredChats.length - 1 : Math.max(0, curIdx - 1);
+          break;
+        case 'Home':
+          next = 0;
+          break;
+        case 'End':
+          next = filteredChats.length - 1;
+          break;
+        default:
+          return;
+      }
+      if (next !== curIdx && filteredChats[next]) {
+        e.preventDefault();
+        setActiveChat(filteredChats[next].id);
+      }
+    },
+    [filteredChats, activeChatId, setActiveChat],
+  );
+
   return (
     <nav
-      className="flex flex-col h-full"
+      className="flex flex-col h-full outline-none"
       style={{ background: '#1e1e2e' }}
       aria-label="Список чатов"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       <ChatListHeader
         onNewChat={() => setShowNewChat(true)}
@@ -114,34 +153,36 @@ export function ChatList() {
         className="flex-1 overflow-hidden px-3"
         aria-label="Чаты"
       >
-        {/* Skeleton при загрузке */}
+        {/* Shimmer-скелетоны при первичной загрузке */}
         {isLoading && chats.length === 0 ? (
-          <div className="space-y-1 px-1" role="status" aria-label="Загрузка чатов">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-[10px] animate-pulse">
-                <div className="w-[50px] h-[50px] rounded-full" style={{ background: '#2C2C2E' }} />
-                <div className="flex-1 space-y-2">
-                  <div className="h-[14px] rounded" style={{ background: '#2C2C2E', width: '60%' }} />
-                  <div className="h-[12px] rounded" style={{ background: '#2C2C2E', width: '80%' }} />
-                </div>
-              </div>
+          <div role="status" aria-label="Загрузка чатов">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <ChatListItemSkeleton key={i} />
             ))}
           </div>
         ) : filteredChats.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-3">
-            <p className="text-[14px]" style={{ color: '#ABABAF' }}>
-              {searchQuery ? 'Ничего не найдено' : 'Нет чатов'}
-            </p>
-            {!searchQuery && (
-              <button
-                onClick={() => setShowNewChat(true)}
-                className="px-4 min-h-[44px] rounded-[10px] text-[14px] font-medium text-white"
-                style={{ background: '#007AFF' }}
-              >
-                Начать чат
-              </button>
-            )}
-          </div>
+          searchQuery ? (
+            <EmptyState
+              icon={<SearchX size={24} />}
+              title="Ничего не найдено"
+              description={`По запросу «${searchQuery}» чатов нет`}
+            />
+          ) : (
+            <EmptyState
+              icon={<MessageSquarePlus size={24} />}
+              title="Нет чатов"
+              description="Начните первый разговор — выберите контакт или создайте группу"
+              action={
+                <Button
+                  variant="primary"
+                  leftIcon={<MessageSquarePlus size={16} />}
+                  onClick={() => setShowNewChat(true)}
+                >
+                  Начать чат
+                </Button>
+              }
+            />
+          )
         ) : containerHeight > 0 ? (
           /* LO-16: Виртуализированный список чатов */
           <List

@@ -57,7 +57,7 @@ export const ChannelsScreen = memo(function ChannelsScreen({ onSelectChannel }: 
         <button
           onClick={() => setShowCreate(!showCreate)}
           className="w-[36px] h-[36px] rounded-full flex items-center justify-center"
-          style={{ background: '#007AFF' }}
+          style={{ background: '#5B5FC7' }}
         >
           <Plus size={18} color="white" />
         </button>
@@ -78,7 +78,7 @@ export const ChannelsScreen = memo(function ChannelsScreen({ onSelectChannel }: 
             onClick={handleCreate}
             disabled={!newName.trim() || creating}
             className="text-[15px] font-medium"
-            style={{ color: newName.trim() ? '#007AFF' : '#48484A' }}
+            style={{ color: newName.trim() ? '#5B5FC7' : '#48484A' }}
           >
             Создать
           </button>

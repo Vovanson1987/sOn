@@ -6,10 +6,15 @@
 import { memo, useState, useCallback } from 'react';
 import { Lock, Pin, BellOff, Trash2 } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
+import { confirm } from '@components/ui/ConfirmDialog';
+import { toast } from '@components/ui/Toast';
 import { formatChatDate } from '@utils/dateFormat';
+import { useSwipeAction } from '@/hooks/useSwipeAction';
 import { useAuthStore } from '@stores/authStore';
 import { useChatStore } from '@stores/chatStore';
 import type { Chat } from '@/types/chat';
+
+const SWIPE_ACTION_WIDTH = 88;
 
 interface ChatListItemProps {
   chat: Chat;
@@ -50,27 +55,76 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
     setShowDelete(true);
   }, []);
 
-  const handleDelete = useCallback(() => {
-    const confirmMsg = isSecret
-      ? 'Удалить секретный чат? Все сообщения и ключи будут удалены.'
-      : 'Удалить чат? Все сообщения будут потеряны.';
-    if (window.confirm(confirmMsg)) {
-      deleteChat(chat.id);
-    }
+  const handleDelete = useCallback(async () => {
     setShowDelete(false);
+    const ok = await confirm({
+      title: isSecret ? 'Удалить секретный чат?' : 'Удалить чат?',
+      description: isSecret
+        ? 'Все сообщения и ключи шифрования будут удалены безвозвратно.'
+        : 'Все сообщения будут потеряны. Это действие нельзя отменить.',
+      confirmLabel: 'Удалить',
+      cancelLabel: 'Отмена',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteChat(chat.id);
+      toast.success('Чат удалён');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Не удалось удалить чат';
+      toast.error(message);
+    }
   }, [chat.id, deleteChat, isSecret]);
 
+  // Swipe-to-delete для мобилки (отключается на устройствах без touch)
+  const isTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
+  const swipe = useSwipeAction({ threshold: 48, maxOffset: SWIPE_ACTION_WIDTH, disabled: !isTouch });
+
   return (
-    <div className="relative" onContextMenu={handleContextMenu}>
+    <div
+      className="relative overflow-hidden"
+      onContextMenu={handleContextMenu}
+      {...swipe.handlers}
+    >
+      {/* Задняя action-зона (удаление). Видна только при swipe. */}
+      {swipe.offset > 0 && (
+        <button
+          onClick={() => {
+            swipe.reset();
+            void handleDelete();
+          }}
+          className="absolute top-0 right-0 h-full flex items-center justify-center"
+          style={{
+            width: SWIPE_ACTION_WIDTH,
+            background: '#FF453A',
+            color: '#fff',
+          }}
+          aria-label="Удалить чат"
+        >
+          <div className="flex flex-col items-center gap-1">
+            <Trash2 size={18} />
+            <span className="text-[11px] font-semibold">Удалить</span>
+          </div>
+        </button>
+      )}
+
       <button
-        onClick={() => onSelect(chat.id)}
-        className="w-full flex items-center gap-3 px-4 text-left transition-colors"
+        onClick={() => {
+          if (swipe.isOpen) {
+            swipe.reset();
+            return;
+          }
+          onSelect(chat.id);
+        }}
+        className="w-full flex items-center gap-3 px-4 text-left transition-transform"
         style={{
           height: '72px',
           background: isActive
             ? 'rgba(91,95,199,0.15)'
-            : 'transparent',
+            : '#1e1e2e',
           borderLeft: isActive ? '3px solid #5B5FC7' : '3px solid transparent',
+          transform: `translateX(${-swipe.offset}px)`,
+          willChange: 'transform',
         }}
         onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
         onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
@@ -107,8 +161,8 @@ export const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelec
               {preview}
             </p>
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {chat.isArchived && (
-                <Pin size={12} style={{ color: 'rgba(255,255,255,0.25)' }} />
+              {chat.isPinned && (
+                <Pin size={12} style={{ color: 'rgba(255,255,255,0.35)' }} aria-label="Закреплённый чат" />
               )}
               {chat.unreadCount > 0 && (
                 <div

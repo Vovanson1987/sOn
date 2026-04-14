@@ -14,10 +14,10 @@ export function ReplyQuote({ senderName, preview, onCancel }: ReplyQuoteProps) {
       style={{ borderColor: '#38383A', background: '#1C1C1E' }}
     >
       {/* Серая вертикальная полоска */}
-      <div className="w-[3px] h-[32px] rounded-full flex-shrink-0" style={{ background: '#007AFF' }} />
+      <div className="w-[3px] h-[32px] rounded-full flex-shrink-0" style={{ background: '#5B5FC7' }} />
 
       <div className="flex-1 min-w-0">
-        <span className="text-[12px] font-semibold block" style={{ color: '#007AFF' }}>
+        <span className="text-[12px] font-semibold block" style={{ color: '#5B5FC7' }}>
           {senderName}
         </span>
         <span className="text-[13px] block truncate" style={{ color: '#ABABAF' }}>

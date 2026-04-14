@@ -64,7 +64,7 @@ const ParticipantView = memo(function ParticipantView({ tile }: { tile: Particip
         <div className="flex flex-col items-center gap-2">
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
-            style={{ background: '#007AFF', color: '#fff' }}
+            style={{ background: '#5B5FC7', color: '#fff' }}
           >
             {tile.name?.charAt(0)?.toUpperCase() || '?'}
           </div>
@@ -262,7 +262,7 @@ export const GroupCallScreen = memo(function GroupCallScreen({
         <button
           onClick={handleToggleScreen}
           className="w-[56px] h-[56px] rounded-full flex items-center justify-center"
-          style={{ background: isScreenOn ? '#007AFF' : '#3A3A3C' }}
+          style={{ background: isScreenOn ? '#5B5FC7' : '#3A3A3C' }}
         >
           {isScreenOn ? <Monitor size={24} color="white" /> : <MonitorOff size={24} color="white" />}
         </button>

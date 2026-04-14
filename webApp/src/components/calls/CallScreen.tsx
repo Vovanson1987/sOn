@@ -149,7 +149,7 @@ export function CallScreen() {
             <button
               onClick={toggleSpeaker}
               className="w-[56px] h-[56px] rounded-full flex items-center justify-center"
-              style={{ background: call.isSpeakerOn ? '#007AFF' : 'rgba(255,255,255,0.15)' }}
+              style={{ background: call.isSpeakerOn ? '#5B5FC7' : 'rgba(255,255,255,0.15)' }}
               aria-label={call.isSpeakerOn ? 'Выключить динамик' : 'Включить динамик'}
             >
               <Volume2 size={24} color="white" />

@@ -10,7 +10,7 @@ interface AttachmentPickerProps {
 
 const ITEMS = [
   { type: 'camera' as const, icon: Camera, label: 'Камера', color: '#FF9500' },
-  { type: 'photo' as const, icon: Image, label: 'Фото и видео', color: '#007AFF' },
+  { type: 'photo' as const, icon: Image, label: 'Фото и видео', color: '#5B5FC7' },
   { type: 'document' as const, icon: FileText, label: 'Документ', color: '#8E8E93' },
   { type: 'location' as const, icon: MapPin, label: 'Геолокация', color: '#30D158' },
 ];
@@ -69,7 +69,7 @@ export function AttachmentPicker({ isOpen, onClose, onSelect }: AttachmentPicker
         <button
           onClick={onClose}
           className="w-full py-[14px] text-center text-[16px] font-semibold"
-          style={{ background: '#1C1C1E', color: '#007AFF' }}
+          style={{ background: '#1C1C1E', color: '#5B5FC7' }}
         >
           Отмена
         </button>

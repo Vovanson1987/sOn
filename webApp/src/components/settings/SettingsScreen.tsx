@@ -11,6 +11,8 @@ import {
   Check, X, Camera,
 } from 'lucide-react';
 import { Avatar } from '@components/ui/Avatar';
+import { toast } from '@components/ui/Toast';
+import { confirm } from '@components/ui/ConfirmDialog';
 import { McpIntegrationCard } from '@components/settings/McpIntegrationCard';
 import { useAuthStore } from '@stores/authStore';
 import { useSettingsStore } from '@stores/settingsStore';
@@ -22,31 +24,82 @@ import { isDesktopRuntime } from '@/utils/desktopMcp';
 // ==================== Вспомогательные ====================
 
 const THEME_ORDER = ['dark', 'light', 'system'] as const;
-// THEME_LABELS используется в MenuItem через cycleTheme (label показывается inline)
+const THEME_LABELS: Record<(typeof THEME_ORDER)[number], string> = {
+  dark: 'Тёмная',
+  light: 'Светлая',
+  system: 'Системная',
+};
 const LOCALE_LABELS: Record<Locale, string> = { ru: 'Русский', en: 'English', kz: 'Қазақша' };
 
 interface MenuItemProps {
   icon: React.ReactNode;
   label: string;
+  /** Текст справа (например, текущая тема или язык) */
+  rightLabel?: string;
+  /** Toggle-режим: показывает переключатель вместо шеврона */
+  toggle?: boolean;
   isActive?: boolean;
   onClick?: () => void;
 }
 
-function MenuItem({ icon, label, isActive, onClick }: MenuItemProps) {
+function Toggle({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-block',
+        width: 34,
+        height: 20,
+        borderRadius: 10,
+        background: on ? '#5B5FC7' : 'rgba(255,255,255,0.15)',
+        position: 'relative',
+        transition: 'background 150ms ease',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: on ? 16 : 2,
+          width: 16,
+          height: 16,
+          borderRadius: '50%',
+          background: '#fff',
+          transition: 'left 150ms ease',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        }}
+      />
+    </span>
+  );
+}
+
+function MenuItem({ icon, label, rightLabel, toggle, isActive, onClick }: MenuItemProps) {
   return (
     <button
       onClick={onClick}
+      role={toggle ? 'switch' : undefined}
+      aria-checked={toggle ? !!isActive : undefined}
       className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
       style={{
-        background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
-        color: isActive ? '#fff' : 'rgba(255,255,255,0.8)',
+        background: 'transparent',
+        color: 'rgba(255,255,255,0.88)',
       }}
-      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
     >
       {icon}
       <span className="text-[15px] flex-1">{label}</span>
-      <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.2)' }} />
+      {rightLabel !== undefined && (
+        <span className="text-[13px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          {rightLabel}
+        </span>
+      )}
+      {toggle ? (
+        <Toggle on={!!isActive} />
+      ) : (
+        <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.2)' }} />
+      )}
     </button>
   );
 }
@@ -88,8 +141,10 @@ function ProfileEditor() {
         avatar_url: updated.avatar_url ?? undefined,
       });
       setEditingName(false);
+      toast.success('Имя обновлено');
     } catch (err) {
       console.error('[settings] save name failed', err);
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить имя');
     } finally {
       setNameSaving(false);
     }
@@ -98,27 +153,42 @@ function ProfileEditor() {
   const handleAvatarChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Максимальный размер аватара — 5 МБ');
+      return;
+    }
     try {
       const result = await uploadAvatar(file);
       if (user) {
         loginAction(token || '', { ...user, avatar_url: result.avatar_url });
       }
+      toast.success('Аватар обновлён');
     } catch (err) {
       console.error('[settings] avatar upload failed', err);
+      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить аватар');
     }
   }, [user, token, loginAction]);
 
   const handleChangePassword = useCallback(async () => {
-    if (!currentPassword || !newPassword) return;
+    if (!currentPassword || !newPassword) {
+      toast.error('Заполните оба поля');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('Пароль должен быть не короче 8 символов');
+      return;
+    }
     try {
       await changePassword(currentPassword, newPassword);
-      setPasswordMsg('Пароль изменён');
       setCurrentPassword('');
       setNewPassword('');
       setShowPassword(false);
-      setTimeout(() => setPasswordMsg(''), 3000);
+      setPasswordMsg('');
+      toast.success('Пароль изменён');
     } catch (err) {
-      setPasswordMsg(err instanceof Error ? err.message : 'Ошибка');
+      const msg = err instanceof Error ? err.message : 'Ошибка';
+      setPasswordMsg(msg);
+      toast.error(msg);
     }
   }, [currentPassword, newPassword]);
 
@@ -238,7 +308,14 @@ export function SettingsScreen() {
     setCurrentLocaleState(next);
   }, [currentLocale]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    const ok = await confirm({
+      title: 'Выйти из профиля?',
+      description: 'Придётся войти заново с email и паролем. Секретные сессии будут закрыты.',
+      confirmLabel: 'Выйти',
+      danger: true,
+    });
+    if (!ok) return;
     disconnectWS();
     logout();
   }, [logout]);
@@ -259,28 +336,29 @@ export function SettingsScreen() {
       <div className="flex-1">
         <MenuItem
           icon={<Shield size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-          label="Безопасность"
-          onClick={() => {
-            updateSetting('app_lock', !appLock);
-          }}
-        />
-        <MenuItem
-          icon={<Monitor size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-          label="Устройства"
+          label="Блокировка приложения"
+          toggle
+          isActive={appLock}
+          onClick={() => updateSetting('app_lock', !appLock)}
         />
         <MenuItem
           icon={<Bell size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label={t('settings.notifications')}
-          onClick={() => {
-            updateSetting('notifications_enabled', !notificationsEnabled);
-          }}
+          toggle
+          isActive={notificationsEnabled}
+          onClick={() => updateSetting('notifications_enabled', !notificationsEnabled)}
         />
         <MenuItem
           icon={<Eye size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-          label="Приватность"
-          onClick={() => {
-            updateSetting('read_receipts', !readReceipts);
-          }}
+          label="Отчёты о прочтении"
+          toggle
+          isActive={readReceipts}
+          onClick={() => updateSetting('read_receipts', !readReceipts)}
+        />
+        <MenuItem
+          icon={<Monitor size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
+          label="Устройства"
+          onClick={() => toast.info('Управление устройствами скоро будет доступно')}
         />
 
         <Separator />
@@ -288,16 +366,21 @@ export function SettingsScreen() {
         <MenuItem
           icon={<Palette size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label="Оформление"
+          rightLabel={THEME_LABELS[theme as (typeof THEME_ORDER)[number]] ?? 'Тёмная'}
           onClick={cycleTheme}
         />
         <MenuItem
           icon={<Globe size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-          label={`Язык: ${LOCALE_LABELS[currentLocale]}`}
+          label="Язык"
+          rightLabel={LOCALE_LABELS[currentLocale]}
           onClick={cycleLocale}
         />
         <MenuItem
           icon={<Keyboard size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label="Сочетания клавиш"
+          onClick={() =>
+            toast.info('Cmd/Ctrl+K — поиск · Esc — закрыть чат', 5000)
+          }
         />
 
         <Separator />
@@ -312,14 +395,25 @@ export function SettingsScreen() {
         <MenuItem
           icon={<Lock size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label={t('settings.encryption')}
+          rightLabel="Signal"
+          onClick={() =>
+            toast.info('E2E-шифрование Signal (X3DH + Double Ratchet) активно для секретных чатов')
+          }
         />
         <MenuItem
           icon={<HelpCircle size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label="Помощь"
+          onClick={() => {
+            window.open('https://docs.sonchat.uk/help', '_blank', 'noopener');
+          }}
         />
         <MenuItem
           icon={<Info size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />}
           label="О приложении"
+          rightLabel={`v${import.meta.env.VITE_APP_VERSION ?? '1.0'}`}
+          onClick={() =>
+            toast.info('sOn Messenger — защищённый мессенджер с E2E шифрованием', 4000)
+          }
         />
       </div>
 

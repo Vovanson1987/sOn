@@ -81,7 +81,7 @@ export const StoriesBar = memo(function StoriesBar({ onAddStory, onViewStory }: 
               className="w-[56px] h-[56px] rounded-full p-[2px]"
               style={{
                 background: user.has_unviewed
-                  ? 'linear-gradient(135deg, #007AFF, #5856D6)'
+                  ? 'linear-gradient(135deg, #5B5FC7, #5856D6)'
                   : '#48484A',
               }}
             >

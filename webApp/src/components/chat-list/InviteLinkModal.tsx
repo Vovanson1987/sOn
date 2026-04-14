@@ -105,7 +105,7 @@ export const InviteLinkModal = memo(function InviteLinkModal({
             onClick={handleCreate}
             disabled={creating}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[15px] font-medium"
-            style={{ background: '#007AFF', color: '#fff', opacity: creating ? 0.6 : 1 }}
+            style={{ background: '#5B5FC7', color: '#fff', opacity: creating ? 0.6 : 1 }}
           >
             {creating ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}
             Создать ссылку

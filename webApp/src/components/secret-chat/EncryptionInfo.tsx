@@ -92,8 +92,8 @@ export function EncryptionInfo({
               className="w-full flex items-center gap-3 px-4 py-[10px] rounded-[10px]"
               style={{ background: '#2C2C2E' }}
             >
-              <Key size={18} color="#007AFF" />
-              <span className="text-[15px]" style={{ color: '#007AFF' }}>Верифицировать ключи</span>
+              <Key size={18} color="#5B5FC7" />
+              <span className="text-[15px]" style={{ color: '#5B5FC7' }}>Верифицировать ключи</span>
             </button>
           )}
 
