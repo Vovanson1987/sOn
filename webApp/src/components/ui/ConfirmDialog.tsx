@@ -7,6 +7,7 @@
  *
  * В корне приложения подключить <ConfirmHost /> один раз.
  */
+/* eslint-disable react-refresh/only-export-components */
 
 import { useEffect, useSyncExternalStore } from 'react';
 import { Button } from './Button';

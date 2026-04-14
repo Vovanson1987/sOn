@@ -43,8 +43,8 @@ describe('AttachmentPicker', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('кнопка "Отмена" синего цвета', () => {
+  it('кнопка "Отмена" в акцентном MAX-цвете', () => {
     render(<AttachmentPicker isOpen onClose={() => {}} onSelect={() => {}} />);
-    expect(screen.getByText('Отмена')).toHaveStyle({ color: '#007AFF' });
+    expect(screen.getByText('Отмена')).toHaveStyle({ color: '#5B5FC7' });
   });
 });

@@ -3,7 +3,7 @@
  * Варианты: прямоугольник, круг, текстовая строка, ChatListItem row.
  */
 
-import { memo, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 
 interface SkeletonProps {
   width?: number | string;
@@ -66,6 +66,8 @@ export const ChatListItemSkeleton = memo(function ChatListItemSkeleton() {
 export const MessageBubbleSkeleton = memo(function MessageBubbleSkeleton({
   outgoing = false,
 }: { outgoing?: boolean }) {
+  // Фиксируем ширину пузыря один раз на маунт, чтобы не ломать чистоту рендера.
+  const [width] = useState(() => 180 + Math.random() * 140);
   return (
     <div
       className="px-4 py-1.5 flex"
@@ -73,7 +75,7 @@ export const MessageBubbleSkeleton = memo(function MessageBubbleSkeleton({
       aria-hidden="true"
     >
       <Skeleton
-        width={180 + Math.random() * 140}
+        width={width}
         height={36}
         radius={18}
         style={{

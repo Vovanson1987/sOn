@@ -33,11 +33,13 @@ export function NetworkBanner() {
   // WS status с debounce: показываем reconnect-баннер только если висит >1.5с
   useEffect(() => onWSStatus(setWsStatus), []);
   useEffect(() => {
-    if (wsStatus === 'reconnecting') {
-      const t = setTimeout(() => setShowReconnect(true), 1500);
-      return () => clearTimeout(t);
+    if (wsStatus !== 'reconnecting') {
+      // Сбрасываем через микрозадачу, чтобы не дёргать setState в теле эффекта
+      const id = setTimeout(() => setShowReconnect(false), 0);
+      return () => clearTimeout(id);
     }
-    setShowReconnect(false);
+    const t = setTimeout(() => setShowReconnect(true), 1500);
+    return () => clearTimeout(t);
   }, [wsStatus]);
 
   const visible = !online || showReconnect;

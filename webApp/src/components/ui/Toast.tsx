@@ -9,6 +9,7 @@
  *
  * В корне приложения подключить <ToastHost /> один раз.
  */
+/* eslint-disable react-refresh/only-export-components */
 
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';

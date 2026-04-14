@@ -96,6 +96,13 @@ vi.mock('@/utils/desktopMcp', () => ({
   probeMcpConnection: (...args: unknown[]) => mockProbeMcpConnection(...args),
 }));
 
+// ConfirmDialog теперь используется для подтверждения выхода — в тестах считаем,
+// что пользователь всегда подтверждает действие.
+vi.mock('@components/ui/ConfirmDialog', () => ({
+  confirm: vi.fn().mockResolvedValue(true),
+  ConfirmHost: () => null,
+}));
+
 describe('SettingsScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,7 +120,7 @@ describe('SettingsScreen', () => {
 
   it('отображает разделы настроек MAX-стиля', () => {
     render(<SettingsScreen />);
-    expect(screen.getByText('Безопасность')).toBeInTheDocument();
+    expect(screen.getByText('Блокировка приложения')).toBeInTheDocument();
     expect(screen.getByText('Оформление')).toBeInTheDocument();
   });
 
@@ -130,7 +137,8 @@ describe('SettingsScreen', () => {
 
   it('отображает секцию приватности', () => {
     render(<SettingsScreen />);
-    expect(screen.getByText('Приватность')).toBeInTheDocument();
+    // В MAX-стиле секции «Приватность» нет — приватность выражена отдельными пунктами
+    expect(screen.getByText('Отчёты о прочтении')).toBeInTheDocument();
   });
 
   it('отображает раздел О приложении', () => {
@@ -186,9 +194,12 @@ describe('SettingsScreen', () => {
     });
   });
 
-  it('вызывает logout при клике на "Выйти из профиля"', () => {
+  it('вызывает logout при клике на "Выйти из профиля"', async () => {
     render(<SettingsScreen />);
     fireEvent.click(screen.getByText('Выйти из профиля'));
-    expect(mockLogout).toHaveBeenCalled();
+    // confirm() теперь асинхронный — ждём, пока резолвнется и вызовется logout
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalled();
+    });
   });
 });
